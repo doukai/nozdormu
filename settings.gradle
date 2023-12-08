@@ -1,0 +1,4 @@
+rootProject.name = 'nozdormu'
+include 'nozdormu-inject'
+include 'nozdormu-spi'
+
