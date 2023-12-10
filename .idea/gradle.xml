@@ -9,6 +9,7 @@
         <option name="modules">
           <set>
             <option value="$PROJECT_DIR$" />
+            <option value="$PROJECT_DIR$/nozdormu-decompiler" />
             <option value="$PROJECT_DIR$/nozdormu-inject" />
             <option value="$PROJECT_DIR$/nozdormu-spi" />
           </set>

@@ -1,26 +1,21 @@
-package io.nozdormu.inject;
+package io.nozdormu.inject.processor;
 
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.Modifier;
 import com.github.javaparser.ast.NodeList;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
-import com.github.javaparser.ast.expr.ClassExpr;
-import com.github.javaparser.ast.expr.Expression;
-import com.github.javaparser.ast.expr.FieldAccessExpr;
-import com.github.javaparser.ast.expr.LambdaExpr;
-import com.github.javaparser.ast.expr.MethodCallExpr;
-import com.github.javaparser.ast.expr.NameExpr;
-import com.github.javaparser.ast.expr.ObjectCreationExpr;
-import com.github.javaparser.ast.expr.SingleMemberAnnotationExpr;
-import com.github.javaparser.ast.expr.StringLiteralExpr;
+import com.github.javaparser.ast.body.ConstructorDeclaration;
+import com.github.javaparser.ast.expr.*;
 import com.github.javaparser.ast.nodeTypes.NodeWithAnnotations;
 import com.github.javaparser.ast.nodeTypes.NodeWithName;
+import com.github.javaparser.ast.nodeTypes.NodeWithSimpleName;
 import com.github.javaparser.ast.stmt.BlockStmt;
 import com.github.javaparser.ast.stmt.ExpressionStmt;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import com.github.javaparser.ast.type.Type;
 import com.google.auto.service.AutoService;
 import com.google.common.collect.Streams;
+import io.nozdormu.inject.ProcessorManager;
 import io.nozdormu.inject.error.InjectionProcessException;
 import io.nozdormu.spi.context.BaseModuleContext;
 import io.nozdormu.spi.context.ModuleContext;
@@ -35,6 +30,7 @@ import jakarta.inject.Provider;
 import jakarta.inject.Singleton;
 import jakarta.transaction.TransactionScoped;
 import org.eclipse.microprofile.config.inject.ConfigProperties;
+import org.tinylog.Logger;
 import reactor.core.publisher.Mono;
 
 import javax.annotation.processing.AbstractProcessor;
@@ -48,12 +44,12 @@ import javax.lang.model.element.TypeElement;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.ServiceLoader;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
-import static io.nozdormu.inject.error.InjectionProcessErrorType.CONSTRUCTOR_NOT_EXIST;
-import static io.nozdormu.inject.error.InjectionProcessErrorType.INSTANCE_TYPE_NOT_EXIST;
-import static io.nozdormu.inject.error.InjectionProcessErrorType.PROVIDER_TYPE_NOT_EXIST;
+import static io.nozdormu.inject.error.InjectionProcessErrorType.*;
 import static javax.lang.model.SourceVersion.RELEASE_11;
 
 @SupportedAnnotationTypes({
@@ -62,43 +58,151 @@ import static javax.lang.model.SourceVersion.RELEASE_11;
         "jakarta.enterprise.context.ApplicationScoped",
         "jakarta.enterprise.context.RequestScoped",
         "jakarta.enterprise.context.SessionScoped",
-        "jakarta.transaction.TransactionScoped",
-        "org.eclipse.microprofile.config.inject.ConfigProperties"
+        "jakarta.transaction.TransactionScoped"
 })
 @SupportedSourceVersion(RELEASE_11)
 @AutoService(Processor.class)
 public class InjectProcessor extends AbstractProcessor {
 
+    private Set<ComponentProxyProcessor> componentProxyProcessors;
     private ProcessorManager processorManager;
 
     @Override
     public synchronized void init(ProcessingEnvironment processingEnv) {
         super.init(processingEnv);
+        ServiceLoader<ComponentProxyProcessor> loader = ServiceLoader.load(ComponentProxyProcessor.class, InjectProcessor.class.getClassLoader());
+        loader.forEach(componentProxyProcessors::add);
         this.processorManager = new ProcessorManager(processingEnv, InjectProcessor.class.getClassLoader());
+        for (ComponentProxyProcessor componentProxyProcessor : this.componentProxyProcessors) {
+            Logger.debug("init {}", componentProxyProcessor.getClass().getName());
+            componentProxyProcessor.init(processorManager);
+        }
     }
 
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
-        processorManager.setRoundEnv(roundEnv);
+        if (annotations.isEmpty()) {
+            return false;
+        }
         Set<? extends Element> singletonSet = roundEnv.getElementsAnnotatedWith(Singleton.class);
         Set<? extends Element> dependentSet = roundEnv.getElementsAnnotatedWith(Dependent.class);
         Set<? extends Element> applicationScopedSet = roundEnv.getElementsAnnotatedWith(ApplicationScoped.class);
         Set<? extends Element> requestScopedSet = roundEnv.getElementsAnnotatedWith(RequestScoped.class);
         Set<? extends Element> sessionScopedSet = roundEnv.getElementsAnnotatedWith(SessionScoped.class);
         Set<? extends Element> transactionScopedSet = roundEnv.getElementsAnnotatedWith(TransactionScoped.class);
-        Set<? extends Element> configPropertiesSet = roundEnv.getElementsAnnotatedWith(ConfigProperties.class);
 
-        List<TypeElement> typeElements = Streams.concat(singletonSet.stream(), dependentSet.stream(), applicationScopedSet.stream(), requestScopedSet.stream(), sessionScopedSet.stream(), transactionScopedSet.stream(), configPropertiesSet.stream())
-                .filter(element -> element.getAnnotation(Generated.class) == null)
+        List<TypeElement> typeElements = Streams
+                .concat(
+                        singletonSet.stream(),
+                        dependentSet.stream(),
+                        applicationScopedSet.stream(),
+                        requestScopedSet.stream(),
+                        sessionScopedSet.stream(),
+                        transactionScopedSet.stream()
+                )
                 .filter(element -> element.getKind().isClass())
                 .map(element -> (TypeElement) element)
                 .collect(Collectors.toList());
 
-        CompilationUnit moduleContextCompilationUnit = buildModuleContext(typeElements.stream().flatMap(typeElement -> processorManager.parse(typeElement).stream()).collect(Collectors.toList()));
+        if (typeElements.size() == 0) {
+            return false;
+        }
+
+        processorManager.setRoundEnv(roundEnv);
+        componentProxyProcessors
+                .forEach(componentProxyProcessor -> {
+                            Logger.debug("inProcess {}", componentProxyProcessor.getClass().getName());
+                            componentProxyProcessor.inProcess();
+                        }
+                );
+
+        List<CompilationUnit> componentProxyCompilationUnits = typeElements.stream()
+                .filter(typeElement -> typeElement.getAnnotation(ConfigProperties.class) == null)
+                .map(this::buildComponentProxy)
+                .collect(Collectors.toList());
+        componentProxyCompilationUnits.forEach(compilationUnit -> processorManager.writeToFiler(compilationUnit));
+        Logger.debug("all proxy class build success");
+
+        CompilationUnit moduleContextCompilationUnit = buildModuleContext(typeElementStream.flatMap(typeElement -> processorManager.parse(typeElement).stream()).collect(Collectors.toList()));
         processorManager.writeToFiler(moduleContextCompilationUnit);
         return false;
     }
 
+    private CompilationUnit buildComponentProxy(TypeElement typeElement) {
+        return processorManager.parse(typeElement).map(this::buildComponentProxy).orElseThrow(() -> new InjectionProcessException(CANNOT_GET_COMPILATION_UNIT.bind(typeElement.getQualifiedName().toString())));
+    }
+
+    private CompilationUnit buildComponentProxy(CompilationUnit componentCompilationUnit) {
+        return buildComponentProxy(
+                componentCompilationUnit,
+                processorManager.getPublicClassOrInterfaceDeclarationOrError(componentCompilationUnit)
+        );
+    }
+
+    private CompilationUnit buildComponentProxy(CompilationUnit componentCompilationUnit, ClassOrInterfaceDeclaration componentClassDeclaration) {
+        ClassOrInterfaceDeclaration proxyClassDeclaration = new ClassOrInterfaceDeclaration()
+                .addModifier(Modifier.Keyword.PUBLIC)
+                .addExtendedType(componentClassDeclaration.getNameAsString())
+                .setName(componentClassDeclaration.getNameAsString() + "Proxy")
+                .addAnnotation(new NormalAnnotationExpr().addPair("value", new StringLiteralExpr(getClass().getName())).setName(Generated.class.getSimpleName()));
+
+        componentClassDeclaration.getConstructors().stream()
+                .map(ConstructorDeclaration::clone)
+                .forEach(constructorDeclaration -> {
+                            constructorDeclaration.setParentNode(proxyClassDeclaration);
+                            proxyClassDeclaration
+                                    .addConstructor(Modifier.Keyword.PUBLIC)
+                                    .setAnnotations(constructorDeclaration.getAnnotations())
+                                    .setParameters(constructorDeclaration.getParameters())
+                                    .createBody()
+                                    .addStatement(
+                                            new MethodCallExpr()
+                                                    .setName(new SuperExpr().toString())
+                                                    .setArguments(
+                                                            constructorDeclaration.getParameters().stream()
+                                                                    .map(NodeWithSimpleName::getNameAsExpression)
+                                                                    .collect(Collectors.toCollection(NodeList::new))
+                                                    )
+                                    );
+                        }
+                );
+
+        CompilationUnit proxyCompilationUnit = new CompilationUnit()
+                .addType(proxyClassDeclaration)
+                .addImport(Generated.class);
+
+        componentClassDeclaration.getAnnotationByClass(Named.class)
+                .map(AnnotationExpr::clone)
+                .ifPresent(annotationExpr -> {
+                            annotationExpr.setParentNode(proxyClassDeclaration);
+                            proxyClassDeclaration.addAnnotation(annotationExpr);
+                            proxyCompilationUnit.addImport(Named.class);
+                        }
+                );
+
+        componentClassDeclaration.getAnnotationByClass(Default.class)
+                .map(AnnotationExpr::clone)
+                .ifPresent(annotationExpr -> {
+                            annotationExpr.setParentNode(proxyClassDeclaration);
+                            proxyClassDeclaration.addAnnotation(annotationExpr);
+                            proxyCompilationUnit.addImport(Default.class);
+                        }
+                );
+
+        componentCompilationUnit.getPackageDeclaration()
+                .ifPresent(packageDeclaration -> proxyCompilationUnit.setPackageDeclaration(packageDeclaration.getNameAsString()));
+
+        processorManager.importAllClassOrInterfaceType(proxyClassDeclaration, componentClassDeclaration);
+
+        componentProxyProcessors
+                .forEach(componentProxyProcessor -> {
+                            Logger.debug("processComponentProxy {}", componentProxyProcessor.getClass().getName());
+                            componentProxyProcessor.processComponentProxy(componentCompilationUnit, componentClassDeclaration, proxyCompilationUnit, proxyClassDeclaration);
+                        }
+                );
+        Logger.info("{} proxy class build success", processorManager.getQualifiedNameByDeclaration(componentClassDeclaration));
+        return proxyCompilationUnit;
+    }
 
     private CompilationUnit buildModuleContext(List<CompilationUnit> compilationUnitList) {
 

@@ -113,19 +113,13 @@ public class BeanContext {
     @SuppressWarnings("unchecked")
     private static <T> Optional<Supplier<T>> getSupplierOptional(Class<T> beanClass, String name) {
         Supplier<?> supplier = CONTEXT_CACHE.get(beanClass).get(name);
-        if (supplier != null) {
-            return Optional.of((Supplier<T>) supplier);
-        }
-        return Optional.empty();
+        return Optional.ofNullable((Supplier<T>) supplier);
     }
 
     @SuppressWarnings("unchecked")
     private static <T> Optional<Supplier<Mono<T>>> getMonoSupplierOptional(Class<T> beanClass, String name) {
         Supplier<?> supplier = CONTEXT_CACHE.get(beanClass).get(name);
-        if (supplier != null) {
-            return Optional.of((Supplier<Mono<T>>) supplier);
-        }
-        return Optional.empty();
+        return Optional.ofNullable((Supplier<Mono<T>>) supplier);
     }
 
     @SuppressWarnings("unchecked")
@@ -148,8 +142,7 @@ public class BeanContext {
                 .map(supplier -> (Supplier<Mono<T>>) CONTEXT_CACHE.get(beanClass).computeIfAbsent(name, k -> supplier));
     }
 
-    @SuppressWarnings("unchecked")
-    public static <T> Map<String, T> getMap(Class<T> beanClass) {
+    public static <T> Stream<Map.Entry<String, Supplier<?>>> getEntryStream(Class<T> beanClass) {
         Logger.debug("search bean map for class {}", beanClass.getName());
         return moduleContexts.stream()
                 .flatMap(moduleContext -> Stream.ofNullable(moduleContext.getSupplierMap(beanClass)))
@@ -161,7 +154,13 @@ public class BeanContext {
                         }
                 )
                 .entrySet().stream()
-                .filter(entry -> !entry.getKey().equals(beanClass.getName()))
+                .filter(entry -> !entry.getKey().equals(beanClass.getName()));
+    }
+
+    @SuppressWarnings("unchecked")
+    public static <T> Map<String, T> getMap(Class<T> beanClass) {
+        Logger.debug("search bean map for class {}", beanClass.getName());
+        return getEntryStream(beanClass)
                 .map(entry -> new AbstractMap.SimpleEntry<>(entry.getKey(), (T) entry.getValue().get()))
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
     }
@@ -169,17 +168,7 @@ public class BeanContext {
     @SuppressWarnings("unchecked")
     public static <T> Map<String, Mono<T>> getMonoMap(Class<T> beanClass) {
         Logger.debug("search bean map for class {}", beanClass.getName());
-        return moduleContexts.stream()
-                .flatMap(moduleContext -> Stream.ofNullable(moduleContext.getSupplierMap(beanClass)))
-                .reduce(
-                        new HashMap<>(),
-                        (pre, current) -> {
-                            current.forEach((key, value) -> pre.merge(key, value, (v1, v2) -> v2));
-                            return pre;
-                        }
-                )
-                .entrySet().stream()
-                .filter(entry -> !entry.getKey().equals(beanClass.getName()))
+        return getEntryStream(beanClass)
                 .map(entry -> new AbstractMap.SimpleEntry<>(entry.getKey(), (Mono<T>) entry.getValue().get()))
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
     }
@@ -187,17 +176,7 @@ public class BeanContext {
     @SuppressWarnings("unchecked")
     public static <T> Map<String, Provider<T>> getProviderMap(Class<T> beanClass) {
         Logger.debug("search bean map for class {}", beanClass.getName());
-        return moduleContexts.stream()
-                .flatMap(moduleContext -> Stream.ofNullable(moduleContext.getSupplierMap(beanClass)))
-                .reduce(
-                        new HashMap<>(),
-                        (pre, current) -> {
-                            current.forEach((key, value) -> pre.merge(key, value, (v1, v2) -> v2));
-                            return pre;
-                        }
-                )
-                .entrySet().stream()
-                .filter(entry -> !entry.getKey().equals(beanClass.getName()))
+        return getEntryStream(beanClass)
                 .map(entry -> {
                             Provider<T> provider = ((Supplier<T>) entry.getValue())::get;
                             return new AbstractMap.SimpleEntry<>(entry.getKey(), provider);
@@ -209,17 +188,7 @@ public class BeanContext {
     @SuppressWarnings("unchecked")
     public static <T> Map<String, Provider<Mono<T>>> getMonoProviderMap(Class<T> beanClass) {
         Logger.debug("search bean map for class {}", beanClass.getName());
-        return moduleContexts.stream()
-                .flatMap(moduleContext -> Stream.ofNullable(moduleContext.getSupplierMap(beanClass)))
-                .reduce(
-                        new HashMap<>(),
-                        (pre, current) -> {
-                            current.forEach((key, value) -> pre.merge(key, value, (v1, v2) -> v2));
-                            return pre;
-                        }
-                )
-                .entrySet().stream()
-                .filter(entry -> !entry.getKey().equals(beanClass.getName()))
+        return getEntryStream(beanClass)
                 .map(entry -> {
                             Provider<Mono<T>> provider = ((Supplier<Mono<T>>) entry.getValue())::get;
                             return new AbstractMap.SimpleEntry<>(entry.getKey(), provider);

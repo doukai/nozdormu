@@ -36,10 +36,7 @@ public abstract class BaseModuleContext implements ModuleContext {
     @SuppressWarnings("unchecked")
     @Override
     public <T> Optional<Supplier<T>> getOptional(Class<T> beanClass, String name) {
-        if (CONTEXT.get(beanClass).get(name) != null) {
-            return Optional.of((Supplier<T>) CONTEXT.get(beanClass).get(name));
-        }
-        return Optional.empty();
+        return Optional.ofNullable((Supplier<T>) CONTEXT.get(beanClass).get(name));
     }
 
     @SuppressWarnings("unchecked")

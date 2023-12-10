@@ -42,6 +42,7 @@ import javax.tools.FileObject;
 import javax.tools.StandardLocation;
 import java.io.IOException;
 import java.io.Writer;
+import java.lang.annotation.Annotation;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -50,6 +51,10 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
+
+import static io.nozdormu.inject.error.InjectionProcessErrorType.CANNOT_PARSER_SOURCE_CODE;
+import static io.nozdormu.inject.error.InjectionProcessErrorType.PUBLIC_CLASS_NOT_EXIST;
+import static javax.lang.model.element.ElementKind.CLASS;
 
 public class ProcessorManager {
 
@@ -62,7 +67,6 @@ public class ProcessorManager {
     private final JavaSymbolSolver javaSymbolSolver;
     private final CombinedTypeSolver combinedTypeSolver;
 
-
     public ProcessorManager(ProcessingEnvironment processingEnv, ClassLoader classLoader) {
         this.processingEnv = processingEnv;
         this.filer = processingEnv.getFiler();
@@ -70,7 +74,6 @@ public class ProcessorManager {
         this.trees = Trees.instance(processingEnv);
         this.combinedTypeSolver = new CombinedTypeSolver();
         Path generatedSourcePath = getGeneratedSourcePath();
-        assert generatedSourcePath != null;
         JavaParserTypeSolver javaParserTypeSolver = new JavaParserTypeSolver(getSourcePath(generatedSourcePath));
         JavaParserTypeSolver generatedJavaParserTypeSolver = new JavaParserTypeSolver(generatedSourcePath);
         ClassLoaderTypeSolver classLoaderTypeSolver = new ClassLoaderTypeSolver(classLoader);
@@ -102,7 +105,7 @@ public class ProcessorManager {
         } catch (IOException e) {
             Logger.error(e);
             processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, "unable to determine generated source path.");
-            return null;
+            throw new RuntimeException(e);
         }
     }
 
@@ -121,7 +124,7 @@ public class ProcessorManager {
                 .orElseGet(() ->
                         roundEnv.getRootElements().stream()
                                 .filter(element -> element.getKind().equals(ElementKind.ENUM) ||
-                                        element.getKind().equals(ElementKind.CLASS) ||
+                                        element.getKind().equals(CLASS) ||
                                         element.getKind().equals(ElementKind.INTERFACE) ||
                                         element.getKind().equals(ElementKind.ANNOTATION_TYPE))
                                 .map(elements::getPackageOf)
@@ -135,16 +138,40 @@ public class ProcessorManager {
         getPublicClassOrInterfaceDeclaration(compilationUnit)
                 .ifPresent(classOrInterfaceDeclaration -> {
                             try {
-                                Writer writer = filer.createSourceFile(classOrInterfaceDeclaration.getFullyQualifiedName().orElseGet(classOrInterfaceDeclaration::getNameAsString)).openWriter();
+                                String qualifiedName = getQualifiedName(classOrInterfaceDeclaration);
+                                Writer writer = filer.createSourceFile(qualifiedName).openWriter();
                                 writer.write(compilationUnit.toString());
                                 writer.close();
-                                Logger.info("{} build success", getQualifiedName(classOrInterfaceDeclaration));
+                                Logger.info("{} build success", qualifiedName);
                             } catch (IOException e) {
                                 Logger.error(e);
                                 processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, "java file create failed");
+                                throw new RuntimeException(e);
                             }
                         }
                 );
+    }
+
+    public void createResource(String name, String content) {
+        try {
+            Writer writer = filer.createResource(StandardLocation.CLASS_OUTPUT, "", name).openWriter();
+            writer.write(content);
+            writer.close();
+            Logger.info("{} build success", name);
+        } catch (IOException e) {
+            Logger.error(e);
+            processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, "resource file create failed");
+            throw new RuntimeException(e);
+        }
+    }
+
+    public Optional<FileObject> getResource(String fileName) {
+        try {
+            FileObject resource = processingEnv.getFiler().getResource(StandardLocation.SOURCE_PATH, "", fileName);
+            return Optional.ofNullable(resource);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public Optional<CompilationUnit> parse(TypeElement typeElement) {
@@ -155,12 +182,29 @@ public class ProcessorManager {
         return javaParser.parse(sourceCode).getResult();
     }
 
+    public List<CompilationUnit> getCompilationUnitListWithAnnotationClass(Class<? extends Annotation> annotationClass) {
+        return roundEnv.getElementsAnnotatedWith(annotationClass).stream()
+                .filter(element -> element.getKind().equals(CLASS))
+                .map(element -> parse((TypeElement) element).orElseThrow(() -> new InjectionProcessException(CANNOT_PARSER_SOURCE_CODE.bind(((TypeElement) element).getQualifiedName()))))
+                .collect(Collectors.toList());
+    }
+
     public Optional<ClassOrInterfaceDeclaration> getPublicClassOrInterfaceDeclaration(CompilationUnit compilationUnit) {
         return compilationUnit.getTypes().stream()
                 .filter(typeDeclaration -> typeDeclaration.hasModifier(Modifier.Keyword.PUBLIC))
                 .filter(BodyDeclaration::isClassOrInterfaceDeclaration)
                 .map(BodyDeclaration::asClassOrInterfaceDeclaration)
                 .findFirst();
+    }
+
+    public ClassOrInterfaceDeclaration getPublicClassOrInterfaceDeclarationOrError(CompilationUnit compilationUnit) {
+        return getPublicClassOrInterfaceDeclaration(compilationUnit)
+                .orElseThrow(() -> new InjectionProcessException(PUBLIC_CLASS_NOT_EXIST.bind(compilationUnit.toString())));
+    }
+
+    public String getQualifiedName(ClassOrInterfaceDeclaration classOrInterfaceDeclaration) {
+        ResolvedReferenceTypeDeclaration resolvedReferenceTypeDeclaration = javaSymbolSolver.resolveDeclaration(classOrInterfaceDeclaration, ResolvedReferenceTypeDeclaration.class);
+        return resolvedReferenceTypeDeclaration.getQualifiedName();
     }
 
     public String getQualifiedName(Type type) {
@@ -179,35 +223,45 @@ public class ProcessorManager {
         return resolvedReferenceType.getQualifiedName();
     }
 
-    public ResolvedReferenceType getResolvedType(Type type) {
+    public ResolvedType getResolvedType(Type type) {
         try {
             return javaSymbolSolver.toResolvedType(type, ResolvedReferenceType.class);
         } catch (UnsolvedSymbolException e) {
-            if (type.isClassOrInterfaceType() && type.asClassOrInterfaceType().getScope().isPresent()) {
-                ClassOrInterfaceType classOrInterfaceType = type.asClassOrInterfaceType();
-                Context context = JavaParserFactory.getContext(type, combinedTypeSolver);
-                String name = classOrInterfaceType.getNameAsString();
-                SymbolReference<ResolvedTypeDeclaration> ref = context.solveType(name);
-                if (!ref.isSolved()) {
-                    throw new UnsolvedSymbolException(name);
-                }
-                ResolvedTypeDeclaration typeDeclaration = ref.getCorrespondingDeclaration();
-                List<ResolvedType> typeParameters = Collections.emptyList();
-                if (classOrInterfaceType.getTypeArguments().isPresent()) {
-                    typeParameters = classOrInterfaceType.getTypeArguments().get().stream().map(this::getResolvedType).collect(Collectors.toList());
-                }
-                if (typeDeclaration.isTypeParameter()) {
-                    return new ResolvedTypeVariable(typeDeclaration.asTypeParameter()).asReferenceType();
-                }
-                return new ReferenceTypeImpl((ResolvedReferenceTypeDeclaration) typeDeclaration, typeParameters);
+            if (type.isClassOrInterfaceType()) {
+                return getResolvedInnerType(type.asClassOrInterfaceType());
             }
             throw e;
         }
     }
 
-    public String getQualifiedName(ClassOrInterfaceDeclaration classOrInterfaceDeclaration) {
-        ResolvedReferenceTypeDeclaration resolvedReferenceTypeDeclaration = javaSymbolSolver.resolveDeclaration(classOrInterfaceDeclaration, ResolvedReferenceTypeDeclaration.class);
-        return resolvedReferenceTypeDeclaration.getQualifiedName();
+    public ResolvedType getResolvedInnerType(ClassOrInterfaceType classOrInterfaceType) {
+        if (classOrInterfaceType.getScope().isPresent()) {
+            Context context = JavaParserFactory.getContext(classOrInterfaceType, combinedTypeSolver);
+            String name = classOrInterfaceType.getNameAsString();
+            SymbolReference<ResolvedTypeDeclaration> ref = context.solveType(
+                    name,
+                    classOrInterfaceType.getTypeArguments()
+                            .map(types ->
+                                    types.stream()
+                                            .map(this::getResolvedType)
+                                            .collect(Collectors.toList())
+                            )
+                            .orElse(null)
+            );
+            if (!ref.isSolved()) {
+                throw new UnsolvedSymbolException(name);
+            }
+            ResolvedTypeDeclaration typeDeclaration = ref.getCorrespondingDeclaration();
+            List<ResolvedType> typeParameters = Collections.emptyList();
+            if (classOrInterfaceType.getTypeArguments().isPresent()) {
+                typeParameters = classOrInterfaceType.getTypeArguments().get().stream().map(this::getResolvedType).collect(Collectors.toList());
+            }
+            if (typeDeclaration.isTypeParameter()) {
+                return new ResolvedTypeVariable(typeDeclaration.asTypeParameter()).asReferenceType();
+            }
+            return new ReferenceTypeImpl((ResolvedReferenceTypeDeclaration) typeDeclaration, typeParameters);
+        }
+        throw new RuntimeException("scope not exist:" + classOrInterfaceType.getNameAsString());
     }
 
     public Optional<Expression> findAnnotationValue(AnnotationExpr annotationExpr) {
