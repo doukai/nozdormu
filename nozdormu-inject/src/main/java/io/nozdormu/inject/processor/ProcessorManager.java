@@ -1,17 +1,20 @@
-package io.nozdormu.inject;
+package io.nozdormu.inject.processor;
 
 import com.github.javaparser.JavaParser;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.Modifier;
 import com.github.javaparser.ast.body.BodyDeclaration;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
+import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MemberValuePair;
+import com.github.javaparser.ast.stmt.ReturnStmt;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import com.github.javaparser.ast.type.Type;
 import com.github.javaparser.resolution.Context;
 import com.github.javaparser.resolution.UnsolvedSymbolException;
+import com.github.javaparser.resolution.declarations.ResolvedAnnotationDeclaration;
 import com.github.javaparser.resolution.declarations.ResolvedReferenceTypeDeclaration;
 import com.github.javaparser.resolution.declarations.ResolvedTypeDeclaration;
 import com.github.javaparser.resolution.model.SymbolReference;
@@ -25,9 +28,12 @@ import com.github.javaparser.symbolsolver.resolution.typesolvers.ClassLoaderType
 import com.github.javaparser.symbolsolver.resolution.typesolvers.CombinedTypeSolver;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.JavaParserTypeSolver;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.ReflectionTypeSolver;
+import com.sun.source.util.TreePath;
 import com.sun.source.util.Trees;
 import io.nozdormu.inject.error.InjectionProcessErrorType;
 import io.nozdormu.inject.error.InjectionProcessException;
+import io.nozdormu.spi.decompiler.TypeElementDecompiler;
+import io.nozdormu.spi.decompiler.TypeElementDecompilerProvider;
 import org.tinylog.Logger;
 
 import javax.annotation.processing.Filer;
@@ -51,6 +57,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static io.nozdormu.inject.error.InjectionProcessErrorType.CANNOT_PARSER_SOURCE_CODE;
 import static io.nozdormu.inject.error.InjectionProcessErrorType.PUBLIC_CLASS_NOT_EXIST;
@@ -66,6 +73,7 @@ public class ProcessorManager {
     private final JavaParser javaParser;
     private final JavaSymbolSolver javaSymbolSolver;
     private final CombinedTypeSolver combinedTypeSolver;
+    private final TypeElementDecompiler typeElementDecompiler;
 
     public ProcessorManager(ProcessingEnvironment processingEnv, ClassLoader classLoader) {
         this.processingEnv = processingEnv;
@@ -75,16 +83,19 @@ public class ProcessorManager {
         this.combinedTypeSolver = new CombinedTypeSolver();
         Path generatedSourcePath = getGeneratedSourcePath();
         JavaParserTypeSolver javaParserTypeSolver = new JavaParserTypeSolver(getSourcePath(generatedSourcePath));
+        JavaParserTypeSolver testJavaParserTypeSolver = new JavaParserTypeSolver(getTestSourcePath(generatedSourcePath));
         JavaParserTypeSolver generatedJavaParserTypeSolver = new JavaParserTypeSolver(generatedSourcePath);
         ClassLoaderTypeSolver classLoaderTypeSolver = new ClassLoaderTypeSolver(classLoader);
         ReflectionTypeSolver reflectionTypeSolver = new ReflectionTypeSolver();
         combinedTypeSolver.add(javaParserTypeSolver);
+        combinedTypeSolver.add(testJavaParserTypeSolver);
         combinedTypeSolver.add(generatedJavaParserTypeSolver);
         combinedTypeSolver.add(classLoaderTypeSolver);
         combinedTypeSolver.add(reflectionTypeSolver);
         this.javaSymbolSolver = new JavaSymbolSolver(combinedTypeSolver);
         this.javaParser = new JavaParser();
         this.javaParser.getParserConfiguration().setSymbolResolver(javaSymbolSolver);
+        this.typeElementDecompiler = TypeElementDecompilerProvider.load(classLoader);
     }
 
     public void setRoundEnv(RoundEnvironment roundEnv) {
@@ -115,20 +126,28 @@ public class ProcessorManager {
         return sourcePath;
     }
 
+    private Path getTestSourcePath(Path generatedSourcePath) {
+        Path sourcePath = generatedSourcePath.getParent().getParent().getParent().getParent().getParent().getParent().resolve("src/test/java");
+        Logger.info("test source path: {}", sourcePath.toString());
+        return sourcePath;
+    }
+
     public String getRootPackageName() {
         return roundEnv.getRootElements().stream()
                 .filter(element -> element.getKind().equals(ElementKind.PACKAGE))
                 .map(element -> (PackageElement) element)
-                .reduce((left, right) -> left.getQualifiedName().toString().length() < right.getQualifiedName().length() ? left : right)
+                .reduce((left, right) -> left.getQualifiedName().toString().split("\\.").length < right.getQualifiedName().toString().split("\\.").length ? left : right)
                 .map(packageElement -> packageElement.getQualifiedName().toString())
                 .orElseGet(() ->
                         roundEnv.getRootElements().stream()
-                                .filter(element -> element.getKind().equals(ElementKind.ENUM) ||
-                                        element.getKind().equals(CLASS) ||
-                                        element.getKind().equals(ElementKind.INTERFACE) ||
-                                        element.getKind().equals(ElementKind.ANNOTATION_TYPE))
+                                .filter(element ->
+                                        element.getKind().equals(ElementKind.ENUM) ||
+                                                element.getKind().equals(CLASS) ||
+                                                element.getKind().equals(ElementKind.INTERFACE) ||
+                                                element.getKind().equals(ElementKind.ANNOTATION_TYPE)
+                                )
                                 .map(elements::getPackageOf)
-                                .reduce((left, right) -> left.getQualifiedName().toString().length() < right.getQualifiedName().length() ? left : right)
+                                .reduce((left, right) -> left.getQualifiedName().toString().split("\\.").length < right.getQualifiedName().toString().split("\\.").length ? left : right)
                                 .map(packageElement -> packageElement.getQualifiedName().toString())
                                 .orElseThrow(() -> new InjectionProcessException(InjectionProcessErrorType.ROOT_PACKAGE_NOT_EXIST))
                 );
@@ -174,6 +193,47 @@ public class ProcessorManager {
         }
     }
 
+    public Optional<CompilationUnit> getCompilationUnit(TypeElement typeElement) {
+        TreePath treePath = trees.getPath(typeElement);
+        if (treePath != null) {
+            return parse(treePath.getCompilationUnit().toString());
+        } else {
+            try {
+                return javaParser.parse(typeElementDecompiler.decompile(typeElement)).getResult();
+            } catch (Exception e) {
+                Logger.warn(e);
+                throw new RuntimeException(e);
+            }
+        }
+    }
+
+    public Optional<CompilationUnit> getCompilationUnit(String qualifiedName) {
+        TypeElement typeElement = elements.getTypeElement(qualifiedName);
+        return getCompilationUnit(typeElement);
+    }
+
+    public CompilationUnit getCompilationUnitOrError(TypeElement typeElement) {
+        return getCompilationUnit(typeElement).orElseThrow(() -> new InjectionProcessException(CANNOT_PARSER_SOURCE_CODE.bind((typeElement).getQualifiedName())));
+    }
+
+    public CompilationUnit getCompilationUnitOrError(String qualifiedName) {
+        return getCompilationUnit(qualifiedName).orElseThrow(() -> new InjectionProcessException(CANNOT_PARSER_SOURCE_CODE.bind(qualifiedName)));
+    }
+
+    public Stream<ResolvedType> getMethodReturnResolvedType(MethodDeclaration methodDeclaration) {
+        return methodDeclaration.findAll(ReturnStmt.class).stream()
+                .map(ReturnStmt::getExpression)
+                .flatMap(Optional::stream)
+                .filter(expression -> !expression.isMethodReferenceExpr())
+                .map(javaSymbolSolver::calculateType);
+    }
+
+    public Stream<ResolvedReferenceType> getMethodReturnResolvedReferenceType(MethodDeclaration methodDeclaration) {
+        return getMethodReturnResolvedType(methodDeclaration)
+                .filter(ResolvedType::isReferenceType)
+                .map(ResolvedType::asReferenceType);
+    }
+
     public Optional<CompilationUnit> parse(TypeElement typeElement) {
         return parse(trees.getPath(typeElement).getCompilationUnit().toString());
     }
@@ -207,6 +267,11 @@ public class ProcessorManager {
         return resolvedReferenceTypeDeclaration.getQualifiedName();
     }
 
+    public String getQualifiedName(AnnotationExpr annotationExpr) {
+        ResolvedAnnotationDeclaration resolvedAnnotationDeclaration = javaSymbolSolver.resolveDeclaration(annotationExpr, ResolvedAnnotationDeclaration.class);
+        return resolvedAnnotationDeclaration.getQualifiedName();
+    }
+
     public String getQualifiedName(Type type) {
         if (type.isClassOrInterfaceType()) {
             return getQualifiedName(type.asClassOrInterfaceType());
@@ -227,7 +292,7 @@ public class ProcessorManager {
         try {
             return javaSymbolSolver.toResolvedType(type, ResolvedReferenceType.class);
         } catch (UnsolvedSymbolException e) {
-            if (type.isClassOrInterfaceType()) {
+            if (type.isClassOrInterfaceType() && type.hasScope()) {
                 return getResolvedInnerType(type.asClassOrInterfaceType());
             }
             throw e;
@@ -235,7 +300,7 @@ public class ProcessorManager {
     }
 
     public ResolvedType getResolvedInnerType(ClassOrInterfaceType classOrInterfaceType) {
-        if (classOrInterfaceType.getScope().isPresent()) {
+        if (classOrInterfaceType.hasScope()) {
             Context context = JavaParserFactory.getContext(classOrInterfaceType, combinedTypeSolver);
             String name = classOrInterfaceType.getNameAsString();
             SymbolReference<ResolvedTypeDeclaration> ref = context.solveType(
@@ -274,5 +339,14 @@ public class ProcessorManager {
                     .map(MemberValuePair::getValue);
         }
         return Optional.empty();
+    }
+
+    public void importAllClassOrInterfaceType(ClassOrInterfaceDeclaration classOrInterfaceDeclaration, ClassOrInterfaceDeclaration sourceClassOrInterfaceDeclaration) {
+        sourceClassOrInterfaceDeclaration.findCompilationUnit().stream()
+                .flatMap(compilationUnit -> compilationUnit.getImports().stream())
+                .forEach(importDeclaration ->
+                        classOrInterfaceDeclaration.findCompilationUnit()
+                                .ifPresent(compilationUnit -> compilationUnit.addImport(importDeclaration))
+                );
     }
 }

@@ -3,7 +3,6 @@ package io.nozdormu.inject.processor;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.stmt.BlockStmt;
-import io.nozdormu.inject.ProcessorManager;
 
 public interface ComponentProxyProcessor {
 

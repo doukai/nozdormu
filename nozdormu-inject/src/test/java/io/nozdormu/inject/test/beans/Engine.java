@@ -3,8 +3,9 @@ package io.nozdormu.inject.test.beans;
 import jakarta.enterprise.context.ApplicationScoped;
 
 @ApplicationScoped
-public class Class1 {
+public class Engine {
 
-    public Class1() {
+    public String getEngineName(){
+        return "V8 Engine";
     }
 }

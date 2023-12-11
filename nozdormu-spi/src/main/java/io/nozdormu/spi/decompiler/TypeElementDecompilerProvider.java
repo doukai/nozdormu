@@ -23,7 +23,7 @@ public interface TypeElementDecompilerProvider {
                     return provider.create(classLoader);
                 }
             }
-        } else if (services.size() > 0) {
+        } else if (!services.isEmpty()) {
             return services.get(0).create(classLoader);
         }
         throw new RuntimeException("default TypeElementDecompilerProvider not found");
