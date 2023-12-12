@@ -3,7 +3,12 @@ package io.nozdormu.inject.test;
 import io.nozdormu.inject.test.beans.Car;
 import io.nozdormu.spi.context.BeanContext;
 import org.junit.jupiter.api.Test;
+import reactor.test.StepVerifier;
+import reactor.util.context.Context;
 
+import java.util.UUID;
+
+import static io.nozdormu.inject.test.RequestScopeInstanceFactory.REQUEST_ID;
 import static org.junit.jupiter.api.Assertions.*;
 
 public class InjectTest {
@@ -17,7 +22,14 @@ public class InjectTest {
         assertEquals(car1.getOwner().getName(), car2.getOwner().getName());
         assertNotEquals(car1.getDriver().getName(), car2.getDriver().getName());
         assertEquals(car1.getWheel().getSize(), 48);
-        assertEquals(car1.getBroadcast().get().block().getName(), "BBC");
-        assertEquals(car1.getNavigation().get().block().getName(), "Google");
+
+        StepVerifier.create(car1.getBroadcast().get().contextWrite(Context.of(REQUEST_ID, UUID.randomUUID().toString())))
+                .assertNext(broadcast -> assertEquals(broadcast.getName(), "BBC"))
+                .expectComplete()
+                .verify();
+        StepVerifier.create(car1.getNavigation().get().contextWrite(Context.of(REQUEST_ID, UUID.randomUUID().toString())))
+                .assertNext(navigation -> assertEquals(navigation.getName(), "Google"))
+                .expectComplete()
+                .verify();
     }
 }

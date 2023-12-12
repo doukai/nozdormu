@@ -5,9 +5,6 @@ import reactor.core.publisher.Mono;
 
 public abstract class ScopeInstanceFactory {
 
-    private ScopeInstanceFactory() {
-    }
-
     public abstract Mono<ScopeInstances> getScopeInstances();
 
     public abstract <T, E extends T> Mono<T> computeIfAbsent(String id, Class<T> beanClass, String name, E instance);
@@ -34,22 +31,6 @@ public abstract class ScopeInstanceFactory {
                 .switchIfEmpty(
                         getScopeInstances()
                                 .mapNotNull(scopeInstances -> (T) scopeInstances.get(beanClass).computeIfAbsent(name, key -> instanceProvider.get()))
-                );
-    }
-
-    public <T> Mono<T> getByMonoProvider(Class<T> beanClass, Provider<Mono<T>> instanceMonoProvider) {
-        return getByMonoProvider(beanClass, beanClass.getName(), instanceMonoProvider);
-    }
-
-    @SuppressWarnings({"unchecked"})
-    public <T> Mono<T> getByMonoProvider(Class<T> beanClass, String name, Provider<Mono<T>> instanceMonoProvider) {
-        return get(beanClass, name)
-                .switchIfEmpty(
-                        getScopeInstances()
-                                .flatMap(scopeInstances ->
-                                        instanceMonoProvider.get()
-                                                .mapNotNull(instance -> (T) scopeInstances.get(beanClass).computeIfAbsent(name, key -> instance))
-                                )
                 );
     }
 

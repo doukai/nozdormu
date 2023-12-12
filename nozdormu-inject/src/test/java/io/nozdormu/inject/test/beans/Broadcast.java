@@ -1,8 +1,8 @@
 package io.nozdormu.inject.test.beans;
 
-import jakarta.enterprise.context.SessionScoped;
+import jakarta.enterprise.context.RequestScoped;
 
-@SessionScoped
+@RequestScoped
 public class Broadcast {
 
     public String getName(){

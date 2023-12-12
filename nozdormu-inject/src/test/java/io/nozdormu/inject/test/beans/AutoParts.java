@@ -25,6 +25,6 @@ public class AutoParts {
     @RequestScoped
     @Produces
     public Mono<Navigation> navigation() {
-        return BeanContext.get(ScopeInstanceFactory.class, RequestScoped.class.getName()).get(Navigation.class);
+        return BeanContext.get(ScopeInstanceFactory.class, RequestScoped.class.getName()).get(Navigation.class, Navigation::new);
     }
 }
