@@ -5,7 +5,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 @ApplicationScoped
 public class Gearbox {
 
-    public String getGearboxName() {
+    public String getName() {
         return "automatic";
     }
 }

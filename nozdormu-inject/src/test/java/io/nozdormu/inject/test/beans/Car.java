@@ -2,36 +2,76 @@ package io.nozdormu.inject.test.beans;
 
 import jakarta.enterprise.context.Dependent;
 import jakarta.inject.Inject;
+import jakarta.inject.Provider;
+import reactor.core.publisher.Mono;
 
 @Dependent
 public class Car {
 
-    public final Engine engine;
-    public final Gearbox gearbox;
-    public final Owner owner;
-    public final Driver driver;
+    private final Engine engine;
+    private Gearbox gearbox;
+    @Inject
+    private Owner owner;
+    private final Driver driver;
+    @Inject
+    private Wheel wheel;
+    @Inject
+    private Provider<Mono<Navigation>> navigation;
+    @Inject
+    private Provider<Mono<Broadcast>> broadcast;
 
     @Inject
-    public Car(Engine engine, Gearbox gearbox, Owner owner, Driver driver) {
-        this.engine = engine;
+    public void setGearbox(Gearbox gearbox) {
         this.gearbox = gearbox;
+    }
+
+    public void setOwner(Owner owner) {
         this.owner = owner;
+    }
+
+    public void setWheel(Wheel wheel) {
+        this.wheel = wheel;
+    }
+
+    public void setNavigation(Provider<Mono<Navigation>> navigation) {
+        this.navigation = navigation;
+    }
+
+    public void setBroadcast(Provider<Mono<Broadcast>> broadcast) {
+        this.broadcast = broadcast;
+    }
+
+    @Inject
+    public Car(Engine engine, Driver driver) {
+        this.engine = engine;
         this.driver = driver;
     }
 
-    public String getEngineName() {
-        return engine.getEngineName();
+    public Engine getEngine() {
+        return engine;
     }
 
-    public String getGearboxName() {
-        return gearbox.getGearboxName();
+    public Gearbox getGearbox() {
+        return gearbox;
     }
 
-    public String getOwnerName() {
-        return owner.getOwnerName();
+    public Owner getOwner() {
+        return owner;
     }
 
-    public String getDriverName() {
-        return driver.getDriverName();
+    public Driver getDriver() {
+        return driver;
+    }
+
+    public Wheel getWheel() {
+        return wheel;
+    }
+
+    public Provider<Mono<Navigation>> getNavigation() {
+        return navigation;
+    }
+
+    public Provider<Mono<Broadcast>> getBroadcast() {
+        return broadcast;
     }
 }

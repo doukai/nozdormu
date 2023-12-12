@@ -13,7 +13,7 @@ public class Owner {
         name = "Mr." + UUID.randomUUID();
     }
 
-    public String getOwnerName() {
+    public String getName() {
         return name;
     }
 }

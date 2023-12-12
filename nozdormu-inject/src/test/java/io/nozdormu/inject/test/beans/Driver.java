@@ -13,7 +13,7 @@ public class Driver {
         name = "Mr." + UUID.randomUUID();
     }
 
-    public String getDriverName() {
+    public String getName() {
         return name;
     }
 }

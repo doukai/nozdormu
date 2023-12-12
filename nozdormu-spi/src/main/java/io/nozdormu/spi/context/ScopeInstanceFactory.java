@@ -20,7 +20,8 @@ public abstract class ScopeInstanceFactory {
 
     @SuppressWarnings("unchecked")
     public <T> Mono<T> get(Class<T> beanClass, String name) {
-        return getScopeInstances().mapNotNull(scopeInstances -> (T) scopeInstances.get(beanClass).get(name));
+        return getScopeInstances()
+                .mapNotNull(scopeInstances -> (T) scopeInstances.get(beanClass).get(name));
     }
 
     public <T> Mono<T> get(Class<T> beanClass, Provider<T> instanceProvider) {
@@ -29,7 +30,11 @@ public abstract class ScopeInstanceFactory {
 
     @SuppressWarnings({"unchecked"})
     public <T> Mono<T> get(Class<T> beanClass, String name, Provider<T> instanceProvider) {
-        return get(beanClass, name).switchIfEmpty(getScopeInstances().mapNotNull(scopeInstances -> (T) scopeInstances.get(beanClass).computeIfAbsent(name, key -> instanceProvider.get())));
+        return get(beanClass, name)
+                .switchIfEmpty(
+                        getScopeInstances()
+                                .mapNotNull(scopeInstances -> (T) scopeInstances.get(beanClass).computeIfAbsent(name, key -> instanceProvider.get()))
+                );
     }
 
     public <T> Mono<T> getByMonoProvider(Class<T> beanClass, Provider<Mono<T>> instanceMonoProvider) {
@@ -38,7 +43,14 @@ public abstract class ScopeInstanceFactory {
 
     @SuppressWarnings({"unchecked"})
     public <T> Mono<T> getByMonoProvider(Class<T> beanClass, String name, Provider<Mono<T>> instanceMonoProvider) {
-        return get(beanClass, name).switchIfEmpty(getScopeInstances().flatMap(scopeInstances -> instanceMonoProvider.get().mapNotNull(instance -> (T) scopeInstances.get(beanClass).computeIfAbsent(name, key -> instance))));
+        return get(beanClass, name)
+                .switchIfEmpty(
+                        getScopeInstances()
+                                .flatMap(scopeInstances ->
+                                        instanceMonoProvider.get()
+                                                .mapNotNull(instance -> (T) scopeInstances.get(beanClass).computeIfAbsent(name, key -> instance))
+                                )
+                );
     }
 
     @SuppressWarnings("unchecked")
@@ -52,7 +64,8 @@ public abstract class ScopeInstanceFactory {
 
     @SuppressWarnings("unchecked")
     public <T, E extends T> Mono<T> computeIfAbsent(Class<T> beanClass, String name, E instance) {
-        return getScopeInstances().mapNotNull(scopeInstances -> (T) scopeInstances.get(beanClass).computeIfAbsent(name, (key) -> instance));
+        return getScopeInstances()
+                .mapNotNull(scopeInstances -> (T) scopeInstances.get(beanClass).computeIfAbsent(name, (key) -> instance));
     }
 
     @SuppressWarnings("unchecked")

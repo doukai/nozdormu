@@ -27,6 +27,7 @@ import jakarta.enterprise.context.RequestScoped;
 import jakarta.enterprise.context.SessionScoped;
 import jakarta.enterprise.inject.Default;
 import jakarta.enterprise.inject.Produces;
+import jakarta.inject.Inject;
 import jakarta.inject.Named;
 import jakarta.inject.Provider;
 import jakarta.inject.Singleton;
@@ -163,7 +164,7 @@ public class InjectProcessor extends AbstractProcessor {
                 .map(ConstructorDeclaration::clone)
                 .forEach(constructorDeclaration -> {
                             constructorDeclaration.setParentNode(proxyClassDeclaration);
-                            proxyClassDeclaration
+                            BlockStmt blockStmt = proxyClassDeclaration
                                     .addConstructor(Modifier.Keyword.PUBLIC)
                                     .setAnnotations(constructorDeclaration.getAnnotations())
                                     .setParameters(constructorDeclaration.getParameters())
@@ -176,6 +177,26 @@ public class InjectProcessor extends AbstractProcessor {
                                                                     .map(NodeWithSimpleName::getNameAsExpression)
                                                                     .collect(Collectors.toCollection(NodeList::new))
                                                     )
+                                    );
+
+                            componentClassDeclaration.getMethods().stream()
+                                    .filter(methodDeclaration ->
+                                            methodDeclaration.isAnnotationPresent(Inject.class) ||
+                                                    processorManager.isInjectFieldSetter(methodDeclaration)
+                                    )
+                                    .forEach(methodDeclaration -> {
+                                                methodDeclaration.getParameters().forEach(constructorDeclaration::addParameter);
+                                                blockStmt
+                                                        .addStatement(
+                                                                new MethodCallExpr()
+                                                                        .setName(methodDeclaration.getName())
+                                                                        .setArguments(
+                                                                                methodDeclaration.getParameters().stream()
+                                                                                        .map(NodeWithSimpleName::getNameAsExpression)
+                                                                                        .collect(Collectors.toCollection(NodeList::new))
+                                                                        )
+                                                        );
+                                            }
                                     );
                         }
                 );
@@ -259,9 +280,22 @@ public class InjectProcessor extends AbstractProcessor {
                                                                 .setType(qualifiedName + "_Proxy")
                                                                 .setArguments(
                                                                         classOrInterfaceDeclaration.getConstructors().stream()
+                                                                                .filter(constructorDeclaration -> constructorDeclaration.isAnnotationPresent(Inject.class))
                                                                                 .findFirst()
+                                                                                .or(() ->
+                                                                                        classOrInterfaceDeclaration.getConstructors().stream()
+                                                                                                .findFirst()
+                                                                                )
                                                                                 .map(constructorDeclaration ->
-                                                                                        constructorDeclaration.getParameters().stream()
+                                                                                        Stream.concat(
+                                                                                                        constructorDeclaration.getParameters().stream(),
+                                                                                                        classOrInterfaceDeclaration.getMethods().stream()
+                                                                                                                .filter(methodDeclaration ->
+                                                                                                                        methodDeclaration.isAnnotationPresent(Inject.class) ||
+                                                                                                                                processorManager.isInjectFieldSetter(methodDeclaration)
+                                                                                                                )
+                                                                                                                .flatMap(methodDeclaration -> methodDeclaration.getParameters().stream())
+                                                                                                )
                                                                                                 .map(parameter -> getBeanGetMethodCallExpr(parameter, contextCompilationUnit, parameter.getType().asClassOrInterfaceType()))
                                                                                                 .map(methodCallExpr -> (Expression) methodCallExpr)
                                                                                                 .collect(Collectors.toCollection(NodeList::new))
@@ -349,11 +383,11 @@ public class InjectProcessor extends AbstractProcessor {
     private void addPutTypeStatement(BlockStmt staticInitializer, String putClassQualifiedName, CompilationUnit contextCompilationUnit, ClassOrInterfaceDeclaration classOrInterfaceDeclaration, StringLiteralExpr nameStringExpr, boolean isSingleton) {
         String annotationName = null;
         if (classOrInterfaceDeclaration.isAnnotationPresent(RequestScoped.class)) {
-            annotationName = RequestScoped.class.getCanonicalName();
+            annotationName = RequestScoped.class.getName();
         } else if (classOrInterfaceDeclaration.isAnnotationPresent(SessionScoped.class)) {
-            annotationName = SessionScoped.class.getCanonicalName();
+            annotationName = SessionScoped.class.getName();
         } else if (classOrInterfaceDeclaration.isAnnotationPresent(TransactionScoped.class)) {
-            annotationName = TransactionScoped.class.getCanonicalName();
+            annotationName = TransactionScoped.class.getName();
         }
         String qualifiedName = processorManager.getQualifiedName(classOrInterfaceDeclaration);
         Expression supplierExpression;
@@ -380,9 +414,22 @@ public class InjectProcessor extends AbstractProcessor {
                                                             .setType(qualifiedName + "_Proxy")
                                                             .setArguments(
                                                                     classOrInterfaceDeclaration.getConstructors().stream()
+                                                                            .filter(constructorDeclaration -> constructorDeclaration.isAnnotationPresent(Inject.class))
                                                                             .findFirst()
+                                                                            .or(() ->
+                                                                                    classOrInterfaceDeclaration.getConstructors().stream()
+                                                                                            .findFirst()
+                                                                            )
                                                                             .map(constructorDeclaration ->
-                                                                                    constructorDeclaration.getParameters().stream()
+                                                                                    Stream.concat(
+                                                                                                    constructorDeclaration.getParameters().stream(),
+                                                                                                    classOrInterfaceDeclaration.getMethods().stream()
+                                                                                                            .filter(methodDeclaration ->
+                                                                                                                    methodDeclaration.isAnnotationPresent(Inject.class) ||
+                                                                                                                            processorManager.isInjectFieldSetter(methodDeclaration)
+                                                                                                            )
+                                                                                                            .flatMap(methodDeclaration -> methodDeclaration.getParameters().stream())
+                                                                                            )
                                                                                             .map(parameter -> getBeanGetMethodCallExpr(parameter, contextCompilationUnit, parameter.getType().asClassOrInterfaceType()))
                                                                                             .map(methodCallExpr -> (Expression) methodCallExpr)
                                                                                             .collect(Collectors.toCollection(NodeList::new))
@@ -419,8 +466,8 @@ public class InjectProcessor extends AbstractProcessor {
         MethodCallExpr getScopeInstanceFactory = new MethodCallExpr()
                 .setName("get")
                 .setScope(new NameExpr("BeanContext"))
-                .addArgument(new StringLiteralExpr(annotationName))
-                .addArgument(new ClassExpr().setType(ScopeInstanceFactory.class));
+                .addArgument(new ClassExpr().setType(ScopeInstanceFactory.class))
+                .addArgument(new MethodCallExpr("getName").setScope(new ClassExpr().setType(annotationName)));
 
         return componentClassDeclaration.getMembers().stream()
                 .filter(bodyDeclaration -> bodyDeclaration.isAnnotationPresent(Produces.class))
@@ -489,9 +536,22 @@ public class InjectProcessor extends AbstractProcessor {
                                                                                 .setType(qualifiedName + "_Proxy")
                                                                                 .setArguments(
                                                                                         componentClassDeclaration.getConstructors().stream()
+                                                                                                .filter(constructorDeclaration -> constructorDeclaration.isAnnotationPresent(Inject.class))
                                                                                                 .findFirst()
+                                                                                                .or(() ->
+                                                                                                        componentClassDeclaration.getConstructors().stream()
+                                                                                                                .findFirst()
+                                                                                                )
                                                                                                 .map(constructorDeclaration ->
-                                                                                                        constructorDeclaration.getParameters().stream()
+                                                                                                        Stream.concat(
+                                                                                                                        constructorDeclaration.getParameters().stream(),
+                                                                                                                        componentClassDeclaration.getMethods().stream()
+                                                                                                                                .filter(methodDeclaration ->
+                                                                                                                                        methodDeclaration.isAnnotationPresent(Inject.class) ||
+                                                                                                                                                processorManager.isInjectFieldSetter(methodDeclaration)
+                                                                                                                                )
+                                                                                                                                .flatMap(methodDeclaration -> methodDeclaration.getParameters().stream())
+                                                                                                                )
                                                                                                                 .map(parameter -> getBeanGetMethodCallExpr(parameter, moduleCompilationUnit, parameter.getType().asClassOrInterfaceType()))
                                                                                                                 .map(methodCallExpr -> (Expression) methodCallExpr)
                                                                                                                 .collect(Collectors.toCollection(NodeList::new))
@@ -630,6 +690,7 @@ public class InjectProcessor extends AbstractProcessor {
                                                     addPutTypeProducerStatement(staticInitializer, qualifiedName, moduleContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, null, true);
 
                                                     processorManager.getMethodReturnResolvedReferenceType(producesMethodDeclaration)
+                                                            .filter(resolvedReferenceType -> !resolvedReferenceType.getQualifiedName().equals(processorManager.getQualifiedName(producesMethodDeclaration.getType())))
                                                             .forEach(resolvedReferenceType ->
                                                                     addPutTypeProducerStatement(staticInitializer, resolvedReferenceType.getQualifiedName(), moduleContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, null, true)
                                                             );

@@ -5,8 +5,10 @@ import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.Modifier;
 import com.github.javaparser.ast.body.BodyDeclaration;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
+import com.github.javaparser.ast.body.FieldDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.expr.AnnotationExpr;
+import com.github.javaparser.ast.expr.AssignExpr;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MemberValuePair;
 import com.github.javaparser.ast.stmt.ReturnStmt;
@@ -15,6 +17,7 @@ import com.github.javaparser.ast.type.Type;
 import com.github.javaparser.resolution.Context;
 import com.github.javaparser.resolution.UnsolvedSymbolException;
 import com.github.javaparser.resolution.declarations.ResolvedAnnotationDeclaration;
+import com.github.javaparser.resolution.declarations.ResolvedDeclaration;
 import com.github.javaparser.resolution.declarations.ResolvedReferenceTypeDeclaration;
 import com.github.javaparser.resolution.declarations.ResolvedTypeDeclaration;
 import com.github.javaparser.resolution.model.SymbolReference;
@@ -34,6 +37,7 @@ import io.nozdormu.inject.error.InjectionProcessErrorType;
 import io.nozdormu.inject.error.InjectionProcessException;
 import io.nozdormu.spi.decompiler.TypeElementDecompiler;
 import io.nozdormu.spi.decompiler.TypeElementDecompilerProvider;
+import jakarta.inject.Inject;
 import org.tinylog.Logger;
 
 import javax.annotation.processing.Filer;
@@ -339,6 +343,17 @@ public class ProcessorManager {
                     .map(MemberValuePair::getValue);
         }
         return Optional.empty();
+    }
+
+    public boolean isInjectFieldSetter(MethodDeclaration methodDeclaration) {
+        return methodDeclaration.getBody().stream()
+                .flatMap(blockStmt -> blockStmt.findAll(AssignExpr.class).stream())
+                .filter(assignExpr -> assignExpr.getTarget().isFieldAccessExpr())
+                .map(assignExpr -> assignExpr.getTarget().asFieldAccessExpr().resolve())
+                .filter(ResolvedDeclaration::isField)
+                .flatMap(resolvedValueDeclaration -> resolvedValueDeclaration.asField().toAst().stream())
+                .map(node -> (FieldDeclaration) node)
+                .anyMatch(fieldDeclaration -> fieldDeclaration.isAnnotationPresent(Inject.class));
     }
 
     public void importAllClassOrInterfaceType(ClassOrInterfaceDeclaration classOrInterfaceDeclaration, ClassOrInterfaceDeclaration sourceClassOrInterfaceDeclaration) {
