@@ -1,23 +1,22 @@
 package io.nozdormu.config;
 
 import com.google.auto.service.AutoService;
+import com.typesafe.config.ConfigFactory;
 import org.eclipse.microprofile.config.Config;
 import org.eclipse.microprofile.config.spi.ConfigBuilder;
 import org.eclipse.microprofile.config.spi.ConfigProviderResolver;
-
-import static io.nozdormu.config.ConfigUtil.CONFIG_UTIL;
 
 @AutoService(ConfigProviderResolver.class)
 public class TypesafeConfigProviderResolver extends ConfigProviderResolver {
 
     @Override
     public Config getConfig() {
-        return CONFIG_UTIL.load();
+        return new TypesafeConfig(ConfigFactory.load());
     }
 
     @Override
     public Config getConfig(ClassLoader loader) {
-        return CONFIG_UTIL.load(loader);
+        return new TypesafeConfig(ConfigFactory.load(loader));
     }
 
     @Override

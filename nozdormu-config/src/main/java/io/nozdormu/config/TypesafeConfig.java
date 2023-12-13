@@ -1,14 +1,25 @@
 package io.nozdormu.config;
 
 import com.typesafe.config.ConfigBeanFactory;
+import com.typesafe.config.ConfigException;
+import com.typesafe.config.ConfigFactory;
 import org.eclipse.microprofile.config.Config;
 import org.eclipse.microprofile.config.ConfigValue;
 import org.eclipse.microprofile.config.spi.ConfigSource;
 import org.eclipse.microprofile.config.spi.Converter;
+import org.tinylog.Logger;
 
-import java.util.Map;
-import java.util.Optional;
+import javax.annotation.processing.Filer;
+import javax.tools.FileObject;
+import javax.tools.StandardLocation;
+import java.io.IOException;
+import java.io.Writer;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.*;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public class TypesafeConfig implements Config {
 
@@ -16,20 +27,6 @@ public class TypesafeConfig implements Config {
 
     public TypesafeConfig(com.typesafe.config.Config config) {
         this.config = config;
-    }
-
-    public com.typesafe.config.Config getConfig() {
-        return config;
-    }
-
-    public TypesafeConfig setConfig(com.typesafe.config.Config config) {
-        this.config = config;
-        return this;
-    }
-
-    public TypesafeConfig mergeConfig(com.typesafe.config.Config config) {
-        this.config = this.config.withFallback(config);
-        return this;
     }
 
     @Override
@@ -68,5 +65,80 @@ public class TypesafeConfig implements Config {
     @Override
     public <T> T unwrap(Class<T> type) {
         return null;
+    }
+
+    public TypesafeConfig merge(com.typesafe.config.Config config) {
+        this.config = this.config.withFallback(config);
+        return this;
+    }
+
+    public TypesafeConfig load(ClassLoader classLoader) {
+        this.config = ConfigFactory.load(classLoader);
+        return this;
+    }
+
+    public TypesafeConfig merge(ClassLoader classLoader) {
+        merge(ConfigFactory.load(classLoader));
+        return this;
+    }
+
+    public TypesafeConfig load(String path) {
+        this.config = ConfigFactory.empty();
+        return merge(path);
+    }
+
+    public TypesafeConfig merge(String path) {
+        Path configPath = Paths.get(path);
+        if (Files.exists(configPath)) {
+            try (Stream<Path> fileList = Files.list(configPath)) {
+                List<Path> configFileList = fileList
+                        .filter(filePath -> filePath.toString().endsWith(".conf") || filePath.toString().endsWith(".json") || filePath.toString().endsWith(".properties"))
+                        .collect(Collectors.toList());
+                for (Path configFile : configFileList) {
+                    merge(ConfigFactory.parseFile(configFile.toFile()));
+                }
+            } catch (ConfigException ignored) {
+            } catch (IOException e) {
+                Logger.error(e);
+            }
+        }
+        return this;
+    }
+
+    public TypesafeConfig load(Filer filer) {
+        this.config = ConfigFactory.empty();
+        Path generatedSourcePath = getGeneratedSourcePath(filer);
+        merge(getResourcesPath(generatedSourcePath).toString());
+        merge(getTestResourcesPath(generatedSourcePath).toString());
+        return this;
+    }
+
+    private Path getGeneratedSourcePath(Filer filer) {
+        try {
+            FileObject tmp = filer.createResource(StandardLocation.SOURCE_OUTPUT, "", UUID.randomUUID().toString());
+            Writer writer = tmp.openWriter();
+            writer.write("");
+            writer.close();
+            Path path = Paths.get(tmp.toUri());
+            Files.deleteIfExists(path);
+            Path generatedSourcePath = path.getParent();
+            Logger.info("generated source path: {}", generatedSourcePath.toString());
+            return generatedSourcePath;
+        } catch (IOException e) {
+            Logger.error(e);
+            throw new RuntimeException(e);
+        }
+    }
+
+    private Path getResourcesPath(Path generatedSourcePath) {
+        Path sourcePath = generatedSourcePath.getParent().getParent().getParent().getParent().getParent().getParent().resolve("src/main/resources");
+        Logger.info("resources path: {}", sourcePath.toString());
+        return sourcePath;
+    }
+
+    private Path getTestResourcesPath(Path generatedSourcePath) {
+        Path sourcePath = generatedSourcePath.getParent().getParent().getParent().getParent().getParent().getParent().resolve("src/test/resources");
+        Logger.info("test resources path: {}", sourcePath.toString());
+        return sourcePath;
     }
 }
