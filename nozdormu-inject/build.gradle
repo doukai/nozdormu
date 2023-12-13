@@ -13,9 +13,8 @@ repositories {
 dependencies {
     implementation project(':nozdormu-spi')
     implementation project(':nozdormu-decompiler')
+    implementation 'com.github.javaparser:javaparser-symbol-solver-core:3.25.3'
     implementation "com.google.auto.service:auto-service:1.0.1"
-
-    compile 'com.github.javaparser:javaparser-symbol-solver-core:3.25.3'
 
     annotationProcessor project(':nozdormu-spi')
     annotationProcessor 'com.google.auto.service:auto-service:1.0.1'
