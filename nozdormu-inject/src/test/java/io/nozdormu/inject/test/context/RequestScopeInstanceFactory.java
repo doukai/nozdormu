@@ -1,4 +1,4 @@
-package io.nozdormu.inject.test;
+package io.nozdormu.inject.test.context;
 
 import io.nozdormu.spi.context.ScopeInstanceFactory;
 import io.nozdormu.spi.context.ScopeInstances;

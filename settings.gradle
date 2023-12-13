@@ -2,4 +2,4 @@ rootProject.name = 'nozdormu'
 include 'nozdormu-inject'
 include 'nozdormu-spi'
 include 'nozdormu-decompiler'
-
+include 'nozdormu-interceptor'

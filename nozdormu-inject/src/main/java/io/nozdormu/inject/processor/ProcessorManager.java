@@ -3,10 +3,7 @@ package io.nozdormu.inject.processor;
 import com.github.javaparser.JavaParser;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.Modifier;
-import com.github.javaparser.ast.body.BodyDeclaration;
-import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
-import com.github.javaparser.ast.body.FieldDeclaration;
-import com.github.javaparser.ast.body.MethodDeclaration;
+import com.github.javaparser.ast.body.*;
 import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.github.javaparser.ast.expr.AssignExpr;
 import com.github.javaparser.ast.expr.Expression;
@@ -50,6 +47,7 @@ import javax.lang.model.util.Elements;
 import javax.tools.Diagnostic;
 import javax.tools.FileObject;
 import javax.tools.StandardLocation;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.Writer;
 import java.lang.annotation.Annotation;
@@ -63,8 +61,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static io.nozdormu.inject.error.InjectionProcessErrorType.CANNOT_PARSER_SOURCE_CODE;
-import static io.nozdormu.inject.error.InjectionProcessErrorType.PUBLIC_CLASS_NOT_EXIST;
+import static io.nozdormu.inject.error.InjectionProcessErrorType.*;
 import static javax.lang.model.element.ElementKind.CLASS;
 
 public class ProcessorManager {
@@ -192,6 +189,8 @@ public class ProcessorManager {
         try {
             FileObject resource = processingEnv.getFiler().getResource(StandardLocation.SOURCE_PATH, "", fileName);
             return Optional.ofNullable(resource);
+        } catch (FileNotFoundException e) {
+            return Optional.empty();
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
@@ -211,9 +210,18 @@ public class ProcessorManager {
         }
     }
 
+    public Optional<CompilationUnit> getCompilationUnit(AnnotationExpr annotationExpr) {
+        TypeElement typeElement = elements.getTypeElement(getQualifiedName(annotationExpr));
+        return getCompilationUnit(typeElement);
+    }
+
     public Optional<CompilationUnit> getCompilationUnit(String qualifiedName) {
         TypeElement typeElement = elements.getTypeElement(qualifiedName);
         return getCompilationUnit(typeElement);
+    }
+
+    public CompilationUnit getCompilationUnitOrError(AnnotationExpr annotationExpr) {
+        return getCompilationUnit(annotationExpr).orElseThrow(() -> new InjectionProcessException(CANNOT_PARSER_SOURCE_CODE.bind(getQualifiedName(annotationExpr))));
     }
 
     public CompilationUnit getCompilationUnitOrError(TypeElement typeElement) {
@@ -264,6 +272,19 @@ public class ProcessorManager {
     public ClassOrInterfaceDeclaration getPublicClassOrInterfaceDeclarationOrError(CompilationUnit compilationUnit) {
         return getPublicClassOrInterfaceDeclaration(compilationUnit)
                 .orElseThrow(() -> new InjectionProcessException(PUBLIC_CLASS_NOT_EXIST.bind(compilationUnit.toString())));
+    }
+
+    private Optional<AnnotationDeclaration> getPublicAnnotationDeclaration(CompilationUnit compilationUnit) {
+        return compilationUnit.getTypes().stream()
+                .filter(typeDeclaration -> typeDeclaration.hasModifier(Modifier.Keyword.PUBLIC))
+                .filter(BodyDeclaration::isAnnotationDeclaration)
+                .map(BodyDeclaration::asAnnotationDeclaration)
+                .findFirst();
+    }
+
+    public AnnotationDeclaration getPublicAnnotationDeclarationOrError(CompilationUnit compilationUnit) {
+        return getPublicAnnotationDeclaration(compilationUnit)
+                .orElseThrow(() -> new InjectionProcessException(PUBLIC_ANNOTATION_NOT_EXIST.bind(compilationUnit.toString())));
     }
 
     public String getQualifiedName(ClassOrInterfaceDeclaration classOrInterfaceDeclaration) {

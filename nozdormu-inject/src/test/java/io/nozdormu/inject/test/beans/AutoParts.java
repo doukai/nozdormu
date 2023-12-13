@@ -1,11 +1,8 @@
 package io.nozdormu.inject.test.beans;
 
-import io.nozdormu.spi.context.BeanContext;
-import io.nozdormu.spi.context.ScopeInstanceFactory;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.context.RequestScoped;
 import jakarta.enterprise.inject.Produces;
-import reactor.core.publisher.Mono;
 
 @ApplicationScoped
 public class AutoParts {
@@ -24,7 +21,7 @@ public class AutoParts {
 
     @RequestScoped
     @Produces
-    public Mono<Navigation> navigation() {
-        return BeanContext.get(ScopeInstanceFactory.class, RequestScoped.class.getName()).get(Navigation.class, Navigation::new);
+    public Navigation navigation() {
+        return new Navigation();
     }
 }
