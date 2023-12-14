@@ -22,6 +22,9 @@ import org.tinylog.Logger;
 import javax.annotation.processing.*;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.TypeElement;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -59,14 +62,30 @@ public class ConfigProcessor extends AbstractProcessor {
         }
 
         processorManager.setRoundEnv(roundEnv);
-
-        CompilationUnit moduleContextCompilationUnit = buildModuleContext(typeElements.stream().flatMap(typeElement -> processorManager.parse(typeElement).stream()).collect(Collectors.toList()));
-
-        buildDefaultConfig(typeElements.stream().flatMap(typeElement -> processorManager.parse(typeElement).stream()).collect(Collectors.toList()))
-                .forEach(s -> System.out.println(s));
+        List<CompilationUnit> compilationUnitList = typeElements.stream().flatMap(typeElement -> processorManager.parse(typeElement).stream()).collect(Collectors.toList());
+        CompilationUnit moduleContextCompilationUnit = buildModuleContext(compilationUnitList);
         processorManager.writeToFiler(moduleContextCompilationUnit);
-        Logger.debug("module context class build success");
+        Logger.debug("config module context class build success");
 
+        String defaultConfig = buildDefaultConfig(compilationUnitList);
+        if (!defaultConfig.equals("")) {
+            StringBuilder referenceConfig = new StringBuilder();
+            processorManager.getResource("reference.conf")
+                    .ifPresent(fileObject -> {
+                                try (BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(fileObject.openInputStream()))) {
+                                    String line;
+                                    while ((line = bufferedReader.readLine()) != null) {
+                                        referenceConfig.append(line).append("\r\n");
+                                    }
+                                } catch (IOException e) {
+                                    Logger.warn(e);
+                                }
+                            }
+                    );
+            referenceConfig.append(defaultConfig);
+            processorManager.createResource("reference.conf", referenceConfig.toString());
+            Logger.info("default config resource build success");
+        }
         return false;
     }
 
@@ -164,7 +183,7 @@ public class ConfigProcessor extends AbstractProcessor {
                 );
     }
 
-    public List<String> buildDefaultConfig(List<CompilationUnit> componentCompilationUnits) {
+    public String buildDefaultConfig(List<CompilationUnit> componentCompilationUnits) {
         return componentCompilationUnits.stream()
                 .map(compilationUnit -> {
                             ClassOrInterfaceDeclaration configClassDeclaration = processorManager.getPublicClassOrInterfaceDeclarationOrError(compilationUnit);
@@ -197,7 +216,7 @@ public class ConfigProcessor extends AbstractProcessor {
                             return configBuilder.toString();
                         }
                 )
-                .collect(Collectors.toList());
+                .collect(Collectors.joining("\r\n"));
     }
 
     private String expressionToConfig(Expression expression) {
