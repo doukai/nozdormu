@@ -25,6 +25,10 @@ public class TypesafeConfig implements Config {
 
     private com.typesafe.config.Config config;
 
+    public TypesafeConfig() {
+        this.config = ConfigFactory.load();
+    }
+
     public TypesafeConfig(com.typesafe.config.Config config) {
         this.config = config;
     }

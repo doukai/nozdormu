@@ -3,10 +3,12 @@ package io.nozdormu.inject.processor;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.stmt.BlockStmt;
+import io.nozdormu.common.ProcessorManager;
 
 public interface ComponentProxyProcessor {
 
-    void init(ProcessorManager processorManager);
+    default void init(ProcessorManager processorManager) {
+    }
 
     default void inProcess() {
     }

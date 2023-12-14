@@ -11,7 +11,7 @@ public class TypesafeConfigProviderResolver extends ConfigProviderResolver {
 
     @Override
     public Config getConfig() {
-        return new TypesafeConfig(ConfigFactory.load());
+        return new TypesafeConfig();
     }
 
     @Override

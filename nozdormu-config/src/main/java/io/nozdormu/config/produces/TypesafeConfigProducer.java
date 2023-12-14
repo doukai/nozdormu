@@ -1,4 +1,4 @@
-package io.nozdormu.config;
+package io.nozdormu.config.produces;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Produces;

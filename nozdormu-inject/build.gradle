@@ -11,20 +11,16 @@ repositories {
 }
 
 dependencies {
-    implementation project(':nozdormu-spi')
-    implementation project(':nozdormu-decompiler')
-    implementation 'com.github.javaparser:javaparser-symbol-solver-core:3.25.3'
+    compile project(':nozdormu-spi')
+
+    implementation project(':nozdormu-common')
     implementation "com.google.auto.service:auto-service:1.0.1"
 
-    annotationProcessor project(':nozdormu-spi')
     annotationProcessor 'com.google.auto.service:auto-service:1.0.1'
 
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.8.1'
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.8.1'
-    testImplementation 'io.projectreactor:reactor-test:3.5.4'
-    testRuntimeOnly 'io.projectreactor:reactor-test:3.5.4'
 
-    testAnnotationProcessor project(':nozdormu-spi')
     testAnnotationProcessor project(':nozdormu-inject')
     testAnnotationProcessor 'com.google.auto.service:auto-service:1.0.1'
 }

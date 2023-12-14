@@ -1,4 +1,4 @@
-package io.nozdormu.inject.processor;
+package io.nozdormu.common;
 
 import com.github.javaparser.JavaParser;
 import com.github.javaparser.ast.CompilationUnit;
@@ -30,10 +30,10 @@ import com.github.javaparser.symbolsolver.resolution.typesolvers.JavaParserTypeS
 import com.github.javaparser.symbolsolver.resolution.typesolvers.ReflectionTypeSolver;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.Trees;
-import io.nozdormu.inject.error.InjectionProcessErrorType;
-import io.nozdormu.inject.error.InjectionProcessException;
 import io.nozdormu.spi.decompiler.TypeElementDecompiler;
 import io.nozdormu.spi.decompiler.TypeElementDecompilerProvider;
+import io.nozdormu.spi.error.InjectionProcessErrorType;
+import io.nozdormu.spi.error.InjectionProcessException;
 import jakarta.inject.Inject;
 import org.tinylog.Logger;
 
@@ -61,7 +61,6 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static io.nozdormu.inject.error.InjectionProcessErrorType.*;
 import static javax.lang.model.element.ElementKind.CLASS;
 
 public class ProcessorManager {
@@ -221,15 +220,15 @@ public class ProcessorManager {
     }
 
     public CompilationUnit getCompilationUnitOrError(AnnotationExpr annotationExpr) {
-        return getCompilationUnit(annotationExpr).orElseThrow(() -> new InjectionProcessException(CANNOT_PARSER_SOURCE_CODE.bind(getQualifiedName(annotationExpr))));
+        return getCompilationUnit(annotationExpr).orElseThrow(() -> new InjectionProcessException(InjectionProcessErrorType.CANNOT_PARSER_SOURCE_CODE.bind(getQualifiedName(annotationExpr))));
     }
 
     public CompilationUnit getCompilationUnitOrError(TypeElement typeElement) {
-        return getCompilationUnit(typeElement).orElseThrow(() -> new InjectionProcessException(CANNOT_PARSER_SOURCE_CODE.bind((typeElement).getQualifiedName())));
+        return getCompilationUnit(typeElement).orElseThrow(() -> new InjectionProcessException(InjectionProcessErrorType.CANNOT_PARSER_SOURCE_CODE.bind((typeElement).getQualifiedName())));
     }
 
     public CompilationUnit getCompilationUnitOrError(String qualifiedName) {
-        return getCompilationUnit(qualifiedName).orElseThrow(() -> new InjectionProcessException(CANNOT_PARSER_SOURCE_CODE.bind(qualifiedName)));
+        return getCompilationUnit(qualifiedName).orElseThrow(() -> new InjectionProcessException(InjectionProcessErrorType.CANNOT_PARSER_SOURCE_CODE.bind(qualifiedName)));
     }
 
     public Stream<ResolvedType> getMethodReturnResolvedType(MethodDeclaration methodDeclaration) {
@@ -257,7 +256,7 @@ public class ProcessorManager {
     public List<CompilationUnit> getCompilationUnitListWithAnnotationClass(Class<? extends Annotation> annotationClass) {
         return roundEnv.getElementsAnnotatedWith(annotationClass).stream()
                 .filter(element -> element.getKind().equals(CLASS))
-                .map(element -> parse((TypeElement) element).orElseThrow(() -> new InjectionProcessException(CANNOT_PARSER_SOURCE_CODE.bind(((TypeElement) element).getQualifiedName()))))
+                .map(element -> parse((TypeElement) element).orElseThrow(() -> new InjectionProcessException(InjectionProcessErrorType.CANNOT_PARSER_SOURCE_CODE.bind(((TypeElement) element).getQualifiedName()))))
                 .collect(Collectors.toList());
     }
 
@@ -271,7 +270,7 @@ public class ProcessorManager {
 
     public ClassOrInterfaceDeclaration getPublicClassOrInterfaceDeclarationOrError(CompilationUnit compilationUnit) {
         return getPublicClassOrInterfaceDeclaration(compilationUnit)
-                .orElseThrow(() -> new InjectionProcessException(PUBLIC_CLASS_NOT_EXIST.bind(compilationUnit.toString())));
+                .orElseThrow(() -> new InjectionProcessException(InjectionProcessErrorType.PUBLIC_CLASS_NOT_EXIST.bind(compilationUnit.toString())));
     }
 
     private Optional<AnnotationDeclaration> getPublicAnnotationDeclaration(CompilationUnit compilationUnit) {
@@ -284,7 +283,7 @@ public class ProcessorManager {
 
     public AnnotationDeclaration getPublicAnnotationDeclarationOrError(CompilationUnit compilationUnit) {
         return getPublicAnnotationDeclaration(compilationUnit)
-                .orElseThrow(() -> new InjectionProcessException(PUBLIC_ANNOTATION_NOT_EXIST.bind(compilationUnit.toString())));
+                .orElseThrow(() -> new InjectionProcessException(InjectionProcessErrorType.PUBLIC_ANNOTATION_NOT_EXIST.bind(compilationUnit.toString())));
     }
 
     public String getQualifiedName(ClassOrInterfaceDeclaration classOrInterfaceDeclaration) {

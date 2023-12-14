@@ -1,4 +1,4 @@
-package io.nozdormu.inject.error;
+package io.nozdormu.spi.error;
 
 public enum InjectionProcessErrorType {
 
