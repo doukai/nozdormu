@@ -3,8 +3,8 @@ plugins {
 }
 apply plugin: 'maven'
 
-group = 'io.nozdormu'
-version = '0.0.1-SNAPSHOT'
+group 'io.nozdormu'
+version '0.0.1-SNAPSHOT'
 
 repositories {
     mavenCentral()
