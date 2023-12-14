@@ -198,7 +198,7 @@ public class ConfigProcessor extends AbstractProcessor {
                                     .orElseThrow(() -> new InjectionProcessException(CONFIG_PROPERTIES_PREFIX_NOT_EXIST.bind(qualifiedName)));
 
                             StringBuilder configBuilder = new StringBuilder();
-                            configBuilder.append(propertyName.getValue()).append(" {\n");
+                            configBuilder.append(propertyName.getValue()).append(" {\r\n");
                             configClassDeclaration.getFields().stream()
                                     .filter(FieldDeclaration::isFieldDeclaration)
                                     .map(FieldDeclaration::asFieldDeclaration)
@@ -208,7 +208,7 @@ public class ConfigProcessor extends AbstractProcessor {
                                                             variableDeclarator.getInitializer()
                                                                     .filter(item -> item.isLiteralExpr() || item.isArrayInitializerExpr())
                                                                     .ifPresent(expression ->
-                                                                            configBuilder.append("  ").append(variableDeclarator.getNameAsString()).append(" = ").append(expressionToConfig(expression)).append("\n")
+                                                                            configBuilder.append("  ").append(variableDeclarator.getNameAsString()).append(" = ").append(expressionToConfig(expression)).append("\r\n")
                                                                     )
                                                     )
                                     );
