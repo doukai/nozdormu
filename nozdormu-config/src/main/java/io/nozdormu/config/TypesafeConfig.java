@@ -1,8 +1,6 @@
 package io.nozdormu.config;
 
-import com.typesafe.config.ConfigBeanFactory;
-import com.typesafe.config.ConfigException;
-import com.typesafe.config.ConfigFactory;
+import com.typesafe.config.*;
 import org.eclipse.microprofile.config.Config;
 import org.eclipse.microprofile.config.ConfigValue;
 import org.eclipse.microprofile.config.spi.ConfigSource;
@@ -18,6 +16,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
+import java.util.Optional;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -26,7 +25,7 @@ public class TypesafeConfig implements Config {
     private com.typesafe.config.Config config;
 
     public TypesafeConfig() {
-        this.config = ConfigFactory.load();
+        this.config = ConfigFactory.load(ConfigParseOptions.defaults());
     }
 
     public TypesafeConfig(com.typesafe.config.Config config) {
@@ -77,12 +76,12 @@ public class TypesafeConfig implements Config {
     }
 
     public TypesafeConfig load(ClassLoader classLoader) {
-        this.config = ConfigFactory.load(classLoader);
+        this.config = ConfigFactory.load(classLoader, ConfigParseOptions.defaults());
         return this;
     }
 
     public TypesafeConfig merge(ClassLoader classLoader) {
-        merge(ConfigFactory.load(classLoader));
+        merge(ConfigFactory.load(classLoader, ConfigParseOptions.defaults()));
         return this;
     }
 

@@ -12,10 +12,11 @@ repositories {
 }
 
 dependencies {
+    compile 'com.typesafe:config:1.4.2'
+
     implementation project(':nozdormu-common')
     implementation project(':nozdormu-inject')
     implementation "com.google.auto.service:auto-service:1.0.1"
-    implementation 'com.typesafe:config:1.4.2'
 
     annotationProcessor project(':nozdormu-inject')
     annotationProcessor 'com.google.auto.service:auto-service:1.0.1'

@@ -3,10 +3,10 @@ package io.nozdormu.config.processor;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.Modifier;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
-import com.github.javaparser.ast.body.FieldDeclaration;
 import com.github.javaparser.ast.expr.*;
 import com.github.javaparser.ast.stmt.BlockStmt;
 import com.github.javaparser.ast.stmt.ExpressionStmt;
+import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import com.google.auto.service.AutoService;
 import io.nozdormu.common.ProcessorManager;
 import io.nozdormu.spi.context.BaseModuleContext;
@@ -17,14 +17,12 @@ import jakarta.annotation.Generated;
 import org.eclipse.microprofile.config.Config;
 import org.eclipse.microprofile.config.ConfigProvider;
 import org.eclipse.microprofile.config.inject.ConfigProperties;
+import org.eclipse.microprofile.config.spi.Converter;
 import org.tinylog.Logger;
 
 import javax.annotation.processing.*;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.TypeElement;
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -66,26 +64,6 @@ public class ConfigProcessor extends AbstractProcessor {
         CompilationUnit moduleContextCompilationUnit = buildModuleContext(compilationUnitList);
         processorManager.writeToFiler(moduleContextCompilationUnit);
         Logger.debug("config module context class build success");
-
-        String defaultConfig = buildDefaultConfig(compilationUnitList);
-        if (!defaultConfig.equals("")) {
-            StringBuilder referenceConfig = new StringBuilder();
-            processorManager.getResource("reference.conf")
-                    .ifPresent(fileObject -> {
-                                try (BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(fileObject.openInputStream()))) {
-                                    String line;
-                                    while ((line = bufferedReader.readLine()) != null) {
-                                        referenceConfig.append(line).append("\r\n");
-                                    }
-                                } catch (IOException e) {
-                                    Logger.warn(e);
-                                }
-                            }
-                    );
-            referenceConfig.append(defaultConfig);
-            processorManager.createResource("reference.conf", referenceConfig.toString());
-            Logger.info("default config resource build success");
-        }
         return false;
     }
 
@@ -172,68 +150,27 @@ public class ConfigProcessor extends AbstractProcessor {
 
     private MethodCallExpr getConfigMethodCall(String qualifiedName, StringLiteralExpr propertyName) {
         return new MethodCallExpr()
-                .setName("getValue")
-                .addArgument(propertyName)
-                .addArgument(new ClassExpr().setType(qualifiedName))
+                .setName("orElseGet")
+                .addArgument(
+                        new LambdaExpr()
+                                .setEnclosingParameters(true)
+                                .setBody(
+                                        new ExpressionStmt(
+                                                new ObjectCreationExpr().setType(qualifiedName)
+                                        )
+                                )
+                )
                 .setScope(
                         new MethodCallExpr()
-                                .setName("get")
-                                .addArgument(new ClassExpr().setType(Config.class))
-                                .setScope(new NameExpr().setName("BeanContext"))
+                                .setName("getOptionalValue")
+                                .addArgument(propertyName)
+                                .addArgument(new ClassExpr().setType(qualifiedName))
+                                .setScope(
+                                        new MethodCallExpr()
+                                                .setName("get")
+                                                .addArgument(new ClassExpr().setType(Config.class))
+                                                .setScope(new NameExpr().setName("BeanContext"))
+                                )
                 );
-    }
-
-    public String buildDefaultConfig(List<CompilationUnit> componentCompilationUnits) {
-        return componentCompilationUnits.stream()
-                .map(compilationUnit -> {
-                            ClassOrInterfaceDeclaration configClassDeclaration = processorManager.getPublicClassOrInterfaceDeclarationOrError(compilationUnit);
-                            String qualifiedName = processorManager.getQualifiedName(configClassDeclaration);
-                            StringLiteralExpr propertyName = configClassDeclaration.getAnnotationByClass(ConfigProperties.class)
-                                    .flatMap(annotationExpr ->
-                                            annotationExpr.asNormalAnnotationExpr().getPairs().stream()
-                                                    .filter(memberValuePair -> memberValuePair.getNameAsString().equals("prefix"))
-                                                    .findFirst()
-                                                    .map(memberValuePair -> memberValuePair.getValue().asStringLiteralExpr())
-                                    )
-                                    .orElseThrow(() -> new InjectionProcessException(CONFIG_PROPERTIES_PREFIX_NOT_EXIST.bind(qualifiedName)));
-
-                            StringBuilder configBuilder = new StringBuilder();
-                            configBuilder.append(propertyName.getValue()).append(" {\r\n");
-                            configClassDeclaration.getFields().stream()
-                                    .filter(FieldDeclaration::isFieldDeclaration)
-                                    .map(FieldDeclaration::asFieldDeclaration)
-                                    .forEach(fieldDeclaration ->
-                                            fieldDeclaration.getVariables()
-                                                    .forEach(variableDeclarator ->
-                                                            variableDeclarator.getInitializer()
-                                                                    .filter(item -> item.isLiteralExpr() || item.isArrayInitializerExpr())
-                                                                    .ifPresent(expression ->
-                                                                            configBuilder.append("  ").append(variableDeclarator.getNameAsString()).append(" = ").append(expressionToConfig(expression)).append("\r\n")
-                                                                    )
-                                                    )
-                                    );
-                            configBuilder.append("}");
-                            return configBuilder.toString();
-                        }
-                )
-                .collect(Collectors.joining("\r\n"));
-    }
-
-    private String expressionToConfig(Expression expression) {
-        StringBuilder configBuilder = new StringBuilder();
-        if (expression.isLiteralExpr()) {
-            configBuilder.append(expression);
-        } else if (expression.isArrayInitializerExpr()) {
-            configBuilder
-                    .append("[")
-                    .append(
-                            expression.asArrayInitializerExpr().getValues().stream()
-                                    .filter(item -> item.isLiteralExpr() || item.isArrayInitializerExpr())
-                                    .map(this::expressionToConfig)
-                                    .collect(Collectors.joining(", "))
-                    )
-                    .append("]");
-        }
-        return configBuilder.toString();
     }
 }

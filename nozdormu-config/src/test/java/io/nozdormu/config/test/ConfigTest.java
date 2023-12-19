@@ -5,6 +5,7 @@ import io.nozdormu.spi.context.BeanContext;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 public class ConfigTest {
 
@@ -15,5 +16,6 @@ public class ConfigTest {
         assertEquals(dbConfig.getPort(), 3306);
         assertEquals(dbConfig.getUser(), "root");
         assertEquals(dbConfig.getPassword(), "pass");
+        assertNull(dbConfig.getDb());
     }
 }
