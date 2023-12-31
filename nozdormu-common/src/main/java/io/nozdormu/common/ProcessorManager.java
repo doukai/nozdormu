@@ -82,13 +82,19 @@ public class ProcessorManager {
         this.trees = Trees.instance(processingEnv);
         this.combinedTypeSolver = new CombinedTypeSolver();
         Path generatedSourcePath = getGeneratedSourcePath();
-        JavaParserTypeSolver javaParserTypeSolver = new JavaParserTypeSolver(getSourcePath(generatedSourcePath));
-        JavaParserTypeSolver testJavaParserTypeSolver = new JavaParserTypeSolver(getTestSourcePath(generatedSourcePath));
+        Path sourcePath = getSourcePath(generatedSourcePath);
+        if (Files.exists(sourcePath)) {
+            JavaParserTypeSolver javaParserTypeSolver = new JavaParserTypeSolver(sourcePath);
+            combinedTypeSolver.add(javaParserTypeSolver);
+        }
+        Path testSourcePath = getTestSourcePath(generatedSourcePath);
+        if (Files.exists(testSourcePath)) {
+            JavaParserTypeSolver testJavaParserTypeSolver = new JavaParserTypeSolver(testSourcePath);
+            combinedTypeSolver.add(testJavaParserTypeSolver);
+        }
         JavaParserTypeSolver generatedJavaParserTypeSolver = new JavaParserTypeSolver(generatedSourcePath);
         ClassLoaderTypeSolver classLoaderTypeSolver = new ClassLoaderTypeSolver(classLoader);
         ReflectionTypeSolver reflectionTypeSolver = new ReflectionTypeSolver();
-        combinedTypeSolver.add(javaParserTypeSolver);
-        combinedTypeSolver.add(testJavaParserTypeSolver);
         combinedTypeSolver.add(generatedJavaParserTypeSolver);
         combinedTypeSolver.add(classLoaderTypeSolver);
         combinedTypeSolver.add(reflectionTypeSolver);

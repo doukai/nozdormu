@@ -22,8 +22,8 @@ public class RequestScopeInstanceFactory extends ScopeInstanceFactory {
 
     @SuppressWarnings("unchecked")
     @Override
-    public <T, E extends T> Mono<T> computeIfAbsent(String id, Class<T> beanClass, String name, E instance) {
-        return Mono.just((T) REQUEST_CACHE.get(id).get(beanClass).computeIfAbsent(name, (key) -> instance));
+    public <T, E extends T> Mono<T> compute(String id, Class<T> beanClass, String name, E instance) {
+        return Mono.just((T) REQUEST_CACHE.get(id).get(beanClass).compute(name, (k, v) -> instance));
     }
 
     @Override

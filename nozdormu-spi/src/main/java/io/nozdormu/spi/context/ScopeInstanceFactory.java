@@ -7,7 +7,7 @@ public abstract class ScopeInstanceFactory {
 
     public abstract Mono<ScopeInstances> getScopeInstances();
 
-    public abstract <T, E extends T> Mono<T> computeIfAbsent(String id, Class<T> beanClass, String name, E instance);
+    public abstract <T, E extends T> Mono<T> compute(String id, Class<T> beanClass, String name, E instance);
 
     public abstract void invalidate(String id);
 
@@ -35,26 +35,26 @@ public abstract class ScopeInstanceFactory {
     }
 
     @SuppressWarnings("unchecked")
-    public <T> Mono<T> computeIfAbsent(T instance) {
-        return computeIfAbsent((Class<T>) instance.getClass(), instance);
+    public <T> Mono<T> compute(T instance) {
+        return compute((Class<T>) instance.getClass(), instance);
     }
 
-    public <T, E extends T> Mono<T> computeIfAbsent(Class<T> beanClass, E instance) {
-        return computeIfAbsent(beanClass, beanClass.getName(), instance);
+    public <T, E extends T> Mono<T> compute(Class<T> beanClass, E instance) {
+        return compute(beanClass, beanClass.getName(), instance);
     }
 
     @SuppressWarnings("unchecked")
-    public <T, E extends T> Mono<T> computeIfAbsent(Class<T> beanClass, String name, E instance) {
+    public <T, E extends T> Mono<T> compute(Class<T> beanClass, String name, E instance) {
         return getScopeInstances()
                 .mapNotNull(scopeInstances -> (T) scopeInstances.get(beanClass).computeIfAbsent(name, (key) -> instance));
     }
 
     @SuppressWarnings("unchecked")
-    public <T> Mono<T> computeIfAbsent(String id, T instance) {
-        return computeIfAbsent(id, (Class<T>) instance.getClass(), instance);
+    public <T> Mono<T> compute(String id, T instance) {
+        return compute(id, (Class<T>) instance.getClass(), instance);
     }
 
-    public <T, E extends T> Mono<T> computeIfAbsent(String id, Class<T> beanClass, E instance) {
-        return computeIfAbsent(id, beanClass, beanClass.getName(), instance);
+    public <T, E extends T> Mono<T> compute(String id, Class<T> beanClass, E instance) {
+        return compute(id, beanClass, beanClass.getName(), instance);
     }
 }

@@ -197,11 +197,12 @@ public class BeanContext {
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
     }
 
-    public static <T> void set(Class<T> beanClass, Object object) {
-        set(beanClass, beanClass.getName(), object);
+    public static <T> Supplier<T> compute(Class<T> beanClass, Object object) {
+        return compute(beanClass, beanClass.getName(), object);
     }
 
-    public static <T> void set(Class<T> beanClass, String name, Object object) {
-        CONTEXT_CACHE.get(beanClass).put(name, () -> object);
+    @SuppressWarnings("unchecked")
+    public static <T> Supplier<T> compute(Class<T> beanClass, String name, Object object) {
+        return (Supplier<T>) CONTEXT_CACHE.get(beanClass).compute(name, (k, v) -> () -> object);
     }
 }
