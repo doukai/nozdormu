@@ -262,7 +262,6 @@ public class InjectProcessor extends AbstractProcessor {
                 processorManager.getPublicClassOrInterfaceDeclaration(compilationUnit)
                         .ifPresent(classOrInterfaceDeclaration -> {
                                     String qualifiedName = processorManager.getQualifiedName(classOrInterfaceDeclaration);
-                                    contextCompilationUnit.addImport(qualifiedName);
                                     ClassOrInterfaceDeclaration proxyClassOrInterfaceDeclaration = componentProxyCompilationUnits.stream()
                                             .map(processorManager::getPublicClassOrInterfaceDeclarationOrError)
                                             .filter(proxyClassDeclaration ->
