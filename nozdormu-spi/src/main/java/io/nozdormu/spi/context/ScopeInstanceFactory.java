@@ -21,16 +21,19 @@ public abstract class ScopeInstanceFactory {
                 .mapNotNull(scopeInstances -> (T) scopeInstances.get(beanClass).get(name));
     }
 
-    public <T> Mono<T> get(Class<T> beanClass, Provider<T> instanceProvider) {
+    public <T> Mono<T> get(Class<T> beanClass, Provider<Mono<T>> instanceProvider) {
         return get(beanClass, beanClass.getName(), instanceProvider);
     }
 
     @SuppressWarnings({"unchecked"})
-    public <T> Mono<T> get(Class<T> beanClass, String name, Provider<T> instanceProvider) {
+    public <T> Mono<T> get(Class<T> beanClass, String name, Provider<Mono<T>> instanceProvider) {
         return get(beanClass, name)
                 .switchIfEmpty(
-                        getScopeInstances()
-                                .mapNotNull(scopeInstances -> (T) scopeInstances.get(beanClass).computeIfAbsent(name, key -> instanceProvider.get()))
+                        instanceProvider.get()
+                                .flatMap(instance ->
+                                        getScopeInstances()
+                                                .mapNotNull(scopeInstances -> (T) scopeInstances.get(beanClass).computeIfAbsent(name, key -> instance))
+                                )
                 );
     }
 
