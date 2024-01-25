@@ -3,6 +3,7 @@ package io.nozdormu.common;
 import com.github.javaparser.JavaParser;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.Modifier;
+import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.*;
 import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.github.javaparser.ast.expr.AssignExpr;
@@ -366,7 +367,22 @@ public class ProcessorManager {
             return annotationExpr.asNormalAnnotationExpr().getPairs().stream()
                     .filter(memberValuePair -> memberValuePair.getNameAsString().equals("value"))
                     .findFirst()
-                    .map(MemberValuePair::getValue);
+                    .map(MemberValuePair::getValue)
+                    .map(expression -> {
+                                if (expression.isFieldAccessExpr()) {
+                                    return expression.asFieldAccessExpr().resolve().toAst()
+                                            .flatMap(Node::findCompilationUnit).stream()
+                                            .flatMap(compilationUnit -> getPublicClassOrInterfaceDeclarationOrError(compilationUnit).getFields().stream())
+                                            .flatMap(fieldDeclaration -> fieldDeclaration.getVariables().stream())
+                                            .filter(variableDeclarator -> variableDeclarator.getNameAsString().equals(expression.asFieldAccessExpr().getNameAsString()))
+                                            .findFirst()
+                                            .flatMap(VariableDeclarator::getInitializer)
+                                            .orElseThrow(() -> new RuntimeException("field " + expression.asFieldAccessExpr().getNameAsString() + " not found"));
+                                } else {
+                                    return expression;
+                                }
+                            }
+                    );
         }
         return Optional.empty();
     }
