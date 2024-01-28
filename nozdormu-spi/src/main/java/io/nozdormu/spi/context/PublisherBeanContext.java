@@ -16,36 +16,17 @@ public class PublisherBeanContext {
 
     @SuppressWarnings("unchecked")
     public static <T> Mono<T> get(Class<T> beanClass, String name) {
-        return Mono.deferContextual(contextView ->
-                Mono.justOrEmpty(
-                        contextView.getOrEmpty(SCOPE_INSTANCES_KEY)
-                                .map(scopeInstances -> (ScopeInstances) scopeInstances)
-                                .flatMap(scopeInstances -> Optional.ofNullable(scopeInstances.get(beanClass)))
-                                .flatMap(map -> Optional.ofNullable(map.get(name)))
-                                .map(bean -> (T) bean)
-                )
-        );
-    }
-
-    public static <T> Mono<T> compute(Class<T> beanClass, Object object) {
-        return compute(beanClass, beanClass.getName(), object);
-    }
-
-    @SuppressWarnings("unchecked")
-    public static <T> Mono<T> compute(Class<T> beanClass, String name, Object object) {
         return Mono
                 .deferContextual(contextView ->
-                        Mono.justOrEmpty(contextView.getOrEmpty(SCOPE_INSTANCES_KEY))
-                )
-                .switchIfEmpty(
                         Mono
-                                .deferContextual(contextView ->
-                                        Mono.just(contextView.get(SCOPE_INSTANCES_KEY))
+                                .justOrEmpty(
+                                        contextView.getOrEmpty(SCOPE_INSTANCES_KEY)
+                                                .map(scopeInstances -> (ScopeInstances) scopeInstances)
+                                                .flatMap(scopeInstances -> Optional.ofNullable(scopeInstances.get(beanClass)))
+                                                .flatMap(map -> Optional.ofNullable(map.get(name)))
+                                                .map(bean -> (T) bean)
                                 )
-                                .contextWrite(Context.of(SCOPE_INSTANCES_KEY, new ScopeInstances()))
-                )
-                .map(scopeInstances -> (ScopeInstances) scopeInstances)
-                .map(scopeInstances -> (T) scopeInstances.get(beanClass).compute(name, (k, v) -> object));
+                );
     }
 
     public static Context of(Class<?> class1, Object bean1) {
