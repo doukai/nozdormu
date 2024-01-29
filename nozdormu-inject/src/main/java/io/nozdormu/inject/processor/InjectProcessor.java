@@ -310,10 +310,10 @@ public class InjectProcessor extends AbstractProcessor {
                                                 );
 
                                         holderClassDeclaration.addFieldWithInitializer(
-                                                        qualifiedName,
-                                                        "INSTANCE",
-                                                        objectCreateExpression
-                                                )
+                                                qualifiedName,
+                                                "INSTANCE",
+                                                objectCreateExpression
+                                        )
                                                 .setModifiers(Modifier.Keyword.PRIVATE, Modifier.Keyword.STATIC, Modifier.Keyword.FINAL);
 
                                         contextClassDeclaration.addMember(holderClassDeclaration);
@@ -330,7 +330,7 @@ public class InjectProcessor extends AbstractProcessor {
 
                                         defaultStringExpr.ifPresent(stringLiteralExpr -> addPutTypeStatement(staticInitializer, qualifiedName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, stringLiteralExpr, true));
 
-                                        classOrInterfaceDeclaration.getExtendedTypes()
+                                        processorManager.getExtendedTypes(classOrInterfaceDeclaration)
                                                 .forEach(extendedType -> {
                                                             String putClassQualifiedName = processorManager.getQualifiedName(extendedType);
                                                             addPutTypeStatement(staticInitializer, putClassQualifiedName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, null, true);
@@ -339,7 +339,7 @@ public class InjectProcessor extends AbstractProcessor {
                                                         }
                                                 );
 
-                                        classOrInterfaceDeclaration.getImplementedTypes()
+                                        processorManager.getImplementedTypes(classOrInterfaceDeclaration)
                                                 .forEach(implementedType -> {
                                                             String putClassQualifiedName = processorManager.getQualifiedName(implementedType);
                                                             addPutTypeStatement(staticInitializer, putClassQualifiedName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, null, true);
@@ -361,7 +361,7 @@ public class InjectProcessor extends AbstractProcessor {
 
                                         defaultStringExpr.ifPresent(stringLiteralExpr -> addPutTypeStatement(staticInitializer, qualifiedName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, stringLiteralExpr, false));
 
-                                        classOrInterfaceDeclaration.getExtendedTypes()
+                                        processorManager.getExtendedTypes(classOrInterfaceDeclaration)
                                                 .forEach(extendedType -> {
                                                             String putClassQualifiedName = processorManager.getQualifiedName(extendedType);
                                                             addPutTypeStatement(staticInitializer, putClassQualifiedName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, null, false);
@@ -370,7 +370,7 @@ public class InjectProcessor extends AbstractProcessor {
                                                         }
                                                 );
 
-                                        classOrInterfaceDeclaration.getImplementedTypes()
+                                        processorManager.getImplementedTypes(classOrInterfaceDeclaration)
                                                 .forEach(implementedType -> {
                                                             String putClassQualifiedName = processorManager.getQualifiedName(implementedType);
                                                             addPutTypeStatement(staticInitializer, putClassQualifiedName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, null, false);
@@ -639,7 +639,7 @@ public class InjectProcessor extends AbstractProcessor {
                                                     processorManager.getCompilationUnit(qualifiedName)
                                                             .map(returnTypeCompilationUnit -> processorManager.getPublicClassOrInterfaceDeclarationOrError(returnTypeCompilationUnit))
                                                             .ifPresent(returnTypeClassOrInterfaceDeclaration -> {
-                                                                        returnTypeClassOrInterfaceDeclaration.getExtendedTypes()
+                                                                        processorManager.getExtendedTypes(returnTypeClassOrInterfaceDeclaration)
                                                                                 .forEach(extendedType -> {
                                                                                             addPutTypeProducerStatement(staticInitializer, moduleContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, null, true);
                                                                                             nameStringExpr.ifPresent(stringLiteralExpr -> addPutTypeProducerStatement(staticInitializer, moduleContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, stringLiteralExpr, true));
@@ -647,7 +647,7 @@ public class InjectProcessor extends AbstractProcessor {
                                                                                         }
                                                                                 );
 
-                                                                        returnTypeClassOrInterfaceDeclaration.getImplementedTypes()
+                                                                        processorManager.getImplementedTypes(returnTypeClassOrInterfaceDeclaration)
                                                                                 .forEach(implementedType -> {
                                                                                             addPutTypeProducerStatement(staticInitializer, moduleContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, null, true);
                                                                                             nameStringExpr.ifPresent(stringLiteralExpr -> addPutTypeProducerStatement(staticInitializer, moduleContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, stringLiteralExpr, true));
@@ -671,7 +671,7 @@ public class InjectProcessor extends AbstractProcessor {
                                                     processorManager.getCompilationUnit(qualifiedName)
                                                             .map(returnTypeCompilationUnit -> processorManager.getPublicClassOrInterfaceDeclarationOrError(returnTypeCompilationUnit))
                                                             .ifPresent(returnTypeClassOrInterfaceDeclaration -> {
-                                                                        returnTypeClassOrInterfaceDeclaration.getExtendedTypes()
+                                                                        processorManager.getExtendedTypes(returnTypeClassOrInterfaceDeclaration)
                                                                                 .forEach(extendedType -> {
                                                                                             addPutTypeProducerStatement(staticInitializer, moduleContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, null, false);
                                                                                             nameStringExpr.ifPresent(stringLiteralExpr -> addPutTypeProducerStatement(staticInitializer, moduleContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, stringLiteralExpr, false));
@@ -679,7 +679,7 @@ public class InjectProcessor extends AbstractProcessor {
                                                                                         }
                                                                                 );
 
-                                                                        returnTypeClassOrInterfaceDeclaration.getImplementedTypes()
+                                                                        processorManager.getImplementedTypes(returnTypeClassOrInterfaceDeclaration)
                                                                                 .forEach(implementedType -> {
                                                                                             addPutTypeProducerStatement(staticInitializer, moduleContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, null, false);
                                                                                             nameStringExpr.ifPresent(stringLiteralExpr -> addPutTypeProducerStatement(staticInitializer, moduleContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, stringLiteralExpr, false));

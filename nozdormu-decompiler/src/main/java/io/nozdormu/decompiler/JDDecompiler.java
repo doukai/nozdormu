@@ -4,6 +4,7 @@ import io.nozdormu.spi.decompiler.TypeElementDecompiler;
 import org.jd.core.v1.ClassFileToJavaSourceDecompiler;
 
 import javax.lang.model.element.TypeElement;
+import java.util.Optional;
 
 public class JDDecompiler implements TypeElementDecompiler {
 
@@ -15,6 +16,10 @@ public class JDDecompiler implements TypeElementDecompiler {
         this.decompilerLoader = new DecompilerLoader(classLoader);
     }
 
+    public boolean canLoad(TypeElement typeElement) {
+        return decompilerLoader.canLoad(typeElement.getQualifiedName().toString());
+    }
+
     @Override
     public String decompile(TypeElement typeElement) {
         try {
@@ -24,5 +29,13 @@ public class JDDecompiler implements TypeElementDecompiler {
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
+    }
+
+    @Override
+    public Optional<String> decompileOrEmpty(TypeElement typeElement) {
+        if (canLoad(typeElement)) {
+            return Optional.of(decompile(typeElement));
+        }
+        return Optional.empty();
     }
 }

@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URISyntaxException;
 import java.nio.file.Paths;
+import java.security.CodeSource;
 import java.util.HashMap;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
@@ -77,30 +78,31 @@ public class DecompilerLoader implements Loader {
     }
 
     private boolean loadAndCache(String compileClassName) throws LoaderException {
-
         byte[] buffer = new byte[1024 * 2];
-
         try {
-            InputStream inputStream = new FileInputStream(Paths.get(Class.forName(compileClassName, false, classLoader).getProtectionDomain().getCodeSource().getLocation().toURI()).toFile());
-            ZipInputStream zipInputStream = new ZipInputStream(inputStream);
-            ZipEntry zipEntry = zipInputStream.getNextEntry();
+            Class<?> compileClass = Class.forName(compileClassName, false, classLoader);
+            CodeSource codeSource = compileClass.getProtectionDomain().getCodeSource();
+            if (codeSource != null) {
+                InputStream inputStream = new FileInputStream(Paths.get(codeSource.getLocation().toURI()).toFile());
+                ZipInputStream zipInputStream = new ZipInputStream(inputStream);
+                ZipEntry zipEntry = zipInputStream.getNextEntry();
+                while (zipEntry != null) {
+                    if (!zipEntry.isDirectory()) {
+                        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+                        int read = zipInputStream.read(buffer);
 
-            while (zipEntry != null) {
-                if (!zipEntry.isDirectory()) {
-                    ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
-                    int read = zipInputStream.read(buffer);
-
-                    while (read > 0) {
-                        byteArrayOutputStream.write(buffer, 0, read);
-                        read = zipInputStream.read(buffer);
+                        while (read > 0) {
+                            byteArrayOutputStream.write(buffer, 0, read);
+                            read = zipInputStream.read(buffer);
+                        }
+                        classBytesCache.put(zipEntry.getName().replace("/", "."), byteArrayOutputStream.toByteArray());
                     }
-                    classBytesCache.put(zipEntry.getName().replace("/", "."), byteArrayOutputStream.toByteArray());
+                    zipEntry = zipInputStream.getNextEntry();
                 }
-                zipEntry = zipInputStream.getNextEntry();
-            }
-            zipInputStream.closeEntry();
-            if (classBytesCache.containsKey(compileClassName + ".class")) {
-                return true;
+                zipInputStream.closeEntry();
+                if (classBytesCache.containsKey(compileClassName + ".class")) {
+                    return true;
+                }
             }
         } catch (IOException | URISyntaxException | ClassNotFoundException e) {
             Logger.warn(e);

@@ -14,10 +14,7 @@ import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import com.github.javaparser.ast.type.Type;
 import com.github.javaparser.resolution.Context;
 import com.github.javaparser.resolution.UnsolvedSymbolException;
-import com.github.javaparser.resolution.declarations.ResolvedAnnotationDeclaration;
-import com.github.javaparser.resolution.declarations.ResolvedDeclaration;
-import com.github.javaparser.resolution.declarations.ResolvedReferenceTypeDeclaration;
-import com.github.javaparser.resolution.declarations.ResolvedTypeDeclaration;
+import com.github.javaparser.resolution.declarations.*;
 import com.github.javaparser.resolution.model.SymbolReference;
 import com.github.javaparser.resolution.model.typesystem.ReferenceTypeImpl;
 import com.github.javaparser.resolution.types.ResolvedReferenceType;
@@ -208,7 +205,7 @@ public class ProcessorManager {
             return parse(treePath.getCompilationUnit().toString());
         } else {
             try {
-                return javaParser.parse(typeElementDecompiler.decompile(typeElement)).getResult();
+                return typeElementDecompiler.decompileOrEmpty(typeElement).flatMap(source -> javaParser.parse(source).getResult());
             } catch (Exception e) {
                 Logger.warn(e);
                 throw new RuntimeException(e);
@@ -405,5 +402,39 @@ public class ProcessorManager {
                         classOrInterfaceDeclaration.findCompilationUnit()
                                 .ifPresent(compilationUnit -> compilationUnit.addImport(importDeclaration))
                 );
+    }
+
+    public Stream<ClassOrInterfaceType> getExtendedTypes(ClassOrInterfaceDeclaration classOrInterfaceDeclaration) {
+        return Stream
+                .concat(
+                        classOrInterfaceDeclaration.getExtendedTypes().stream(),
+                        classOrInterfaceDeclaration.getExtendedTypes().stream()
+                                .flatMap(this::getExtendedTypes)
+                );
+    }
+
+    public Stream<ClassOrInterfaceType> getExtendedTypes(ClassOrInterfaceType classOrInterfaceType) {
+        return classOrInterfaceType.resolve().asReferenceType().getTypeDeclaration()
+                .flatMap(resolvedReferenceTypeDeclaration -> getCompilationUnit(resolvedReferenceTypeDeclaration.getQualifiedName()))
+                .flatMap(this::getPublicClassOrInterfaceDeclaration)
+                .stream()
+                .flatMap(this::getExtendedTypes);
+    }
+
+    public Stream<ClassOrInterfaceType> getImplementedTypes(ClassOrInterfaceDeclaration classOrInterfaceDeclaration) {
+        return Stream
+                .concat(
+                        classOrInterfaceDeclaration.getImplementedTypes().stream(),
+                        classOrInterfaceDeclaration.getImplementedTypes().stream()
+                                .flatMap(this::getImplementedTypes)
+                );
+    }
+
+    public Stream<ClassOrInterfaceType> getImplementedTypes(ClassOrInterfaceType classOrInterfaceType) {
+        return classOrInterfaceType.resolve().asReferenceType().getTypeDeclaration()
+                .flatMap(resolvedReferenceTypeDeclaration -> getCompilationUnit(resolvedReferenceTypeDeclaration.getQualifiedName()))
+                .flatMap(this::getPublicClassOrInterfaceDeclaration)
+                .stream()
+                .flatMap(this::getImplementedTypes);
     }
 }

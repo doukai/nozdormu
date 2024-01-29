@@ -32,7 +32,7 @@ public abstract class ScopeInstanceFactory {
                         instanceProvider.get()
                                 .flatMap(instance ->
                                         getScopeInstances()
-                                                .mapNotNull(scopeInstances -> (T) scopeInstances.get(beanClass).computeIfAbsent(name, key -> instance))
+                                                .mapNotNull(scopeInstances -> (T) scopeInstances.get(beanClass).compute(name, (k, v) -> instance))
                                 )
                 );
     }
@@ -49,7 +49,7 @@ public abstract class ScopeInstanceFactory {
     @SuppressWarnings("unchecked")
     public <T, E extends T> Mono<T> compute(Class<T> beanClass, String name, E instance) {
         return getScopeInstances()
-                .mapNotNull(scopeInstances -> (T) scopeInstances.get(beanClass).computeIfAbsent(name, (key) -> instance));
+                .mapNotNull(scopeInstances -> (T) scopeInstances.get(beanClass).compute(name, (k, v) -> instance));
     }
 
     @SuppressWarnings("unchecked")
