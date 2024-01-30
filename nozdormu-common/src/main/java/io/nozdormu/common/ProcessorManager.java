@@ -4,7 +4,6 @@ import com.github.javaparser.JavaParser;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.Modifier;
 import com.github.javaparser.ast.Node;
-import com.github.javaparser.ast.NodeList;
 import com.github.javaparser.ast.body.*;
 import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.github.javaparser.ast.expr.AssignExpr;
@@ -16,7 +15,10 @@ import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import com.github.javaparser.ast.type.Type;
 import com.github.javaparser.resolution.Context;
 import com.github.javaparser.resolution.UnsolvedSymbolException;
-import com.github.javaparser.resolution.declarations.*;
+import com.github.javaparser.resolution.declarations.ResolvedAnnotationDeclaration;
+import com.github.javaparser.resolution.declarations.ResolvedDeclaration;
+import com.github.javaparser.resolution.declarations.ResolvedReferenceTypeDeclaration;
+import com.github.javaparser.resolution.declarations.ResolvedTypeDeclaration;
 import com.github.javaparser.resolution.model.SymbolReference;
 import com.github.javaparser.resolution.model.typesystem.ReferenceTypeImpl;
 import com.github.javaparser.resolution.types.ResolvedReferenceType;
@@ -34,8 +36,10 @@ import io.nozdormu.spi.decompiler.TypeElementDecompiler;
 import io.nozdormu.spi.decompiler.TypeElementDecompilerProvider;
 import io.nozdormu.spi.error.InjectionProcessErrorType;
 import io.nozdormu.spi.error.InjectionProcessException;
-import jakarta.enterprise.context.NormalScope;
+import jakarta.enterprise.context.RequestScoped;
+import jakarta.enterprise.context.SessionScoped;
 import jakarta.inject.Inject;
+import jakarta.transaction.TransactionScoped;
 import org.tinylog.Logger;
 import reactor.core.publisher.Mono;
 
@@ -424,19 +428,14 @@ public class ProcessorManager {
     }
 
     public Optional<String> getScopedAnnotationName(NodeWithAnnotations<?> nodeWithAnnotations) {
-        return Stream.ofNullable(nodeWithAnnotations.getAnnotations())
-                .flatMap(NodeList::stream)
-                .flatMap(annotationExpr ->
-                        getCompilationUnit(annotationExpr)
-                                .flatMap(this::getPublicAnnotationDeclaration)
-                                .filter(annotationDeclaration -> annotationDeclaration.isAnnotationPresent(NormalScope.class))
-                                .map(annotationDeclaration ->
-                                        annotationDeclaration.getFullyQualifiedName()
-                                                .orElseGet(() -> getQualifiedName(annotationExpr))
-                                )
-                                .stream()
-                )
-                .findFirst();
+        if (nodeWithAnnotations.isAnnotationPresent(RequestScoped.class)) {
+            return Optional.of(RequestScoped.class.getName());
+        } else if (nodeWithAnnotations.isAnnotationPresent(SessionScoped.class)) {
+            return Optional.of(SessionScoped.class.getName());
+        } else if (nodeWithAnnotations.isAnnotationPresent(TransactionScoped.class)) {
+            return Optional.of(TransactionScoped.class.getName());
+        }
+        return Optional.empty();
     }
 
     public Stream<String> getExtendedTypes(ClassOrInterfaceDeclaration classOrInterfaceDeclaration) {
