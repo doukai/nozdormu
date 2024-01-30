@@ -4,11 +4,13 @@ import com.github.javaparser.JavaParser;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.Modifier;
 import com.github.javaparser.ast.Node;
+import com.github.javaparser.ast.NodeList;
 import com.github.javaparser.ast.body.*;
 import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.github.javaparser.ast.expr.AssignExpr;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MemberValuePair;
+import com.github.javaparser.ast.nodeTypes.NodeWithAnnotations;
 import com.github.javaparser.ast.stmt.ReturnStmt;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import com.github.javaparser.ast.type.Type;
@@ -32,8 +34,10 @@ import io.nozdormu.spi.decompiler.TypeElementDecompiler;
 import io.nozdormu.spi.decompiler.TypeElementDecompilerProvider;
 import io.nozdormu.spi.error.InjectionProcessErrorType;
 import io.nozdormu.spi.error.InjectionProcessException;
+import jakarta.enterprise.context.NormalScope;
 import jakarta.inject.Inject;
 import org.tinylog.Logger;
+import reactor.core.publisher.Mono;
 
 import javax.annotation.processing.Filer;
 import javax.annotation.processing.ProcessingEnvironment;
@@ -52,10 +56,7 @@ import java.lang.annotation.Annotation;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.Collections;
-import java.util.List;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -72,6 +73,7 @@ public class ProcessorManager {
     private final JavaSymbolSolver javaSymbolSolver;
     private final CombinedTypeSolver combinedTypeSolver;
     private final TypeElementDecompiler typeElementDecompiler;
+    private final ClassLoader classLoader;
 
     public ProcessorManager(ProcessingEnvironment processingEnv, ClassLoader classLoader) {
         this.processingEnv = processingEnv;
@@ -100,6 +102,7 @@ public class ProcessorManager {
         this.javaParser = new JavaParser();
         this.javaParser.getParserConfiguration().setSymbolResolver(javaSymbolSolver);
         this.typeElementDecompiler = TypeElementDecompilerProvider.load(classLoader);
+        this.classLoader = classLoader;
     }
 
     public void setRoundEnv(RoundEnvironment roundEnv) {
@@ -223,6 +226,14 @@ public class ProcessorManager {
         return getCompilationUnit(typeElement);
     }
 
+    public Optional<Class<?>> getClass(String qualifiedName) {
+        try {
+            return Optional.of(Class.forName(qualifiedName, false, classLoader));
+        } catch (ClassNotFoundException e) {
+            return Optional.empty();
+        }
+    }
+
     public CompilationUnit getCompilationUnitOrError(AnnotationExpr annotationExpr) {
         return getCompilationUnit(annotationExpr).orElseThrow(() -> new InjectionProcessException(InjectionProcessErrorType.CANNOT_PARSER_SOURCE_CODE.bind(getQualifiedName(annotationExpr))));
     }
@@ -316,6 +327,14 @@ public class ProcessorManager {
         return resolvedReferenceType.getQualifiedName();
     }
 
+    public String getQualifiedName(MethodDeclaration methodDeclaration) {
+        String qualifiedName = getQualifiedName(methodDeclaration.getType());
+        if (qualifiedName.equals(Mono.class.getName())) {
+            return methodDeclaration.getType().resolve().asReferenceType().getTypeParametersMap().get(0).b.asReferenceType().getQualifiedName();
+        }
+        return qualifiedName;
+    }
+
     public ResolvedType getResolvedType(Type type) {
         try {
             return javaSymbolSolver.toResolvedType(type, ResolvedReferenceType.class);
@@ -404,37 +423,78 @@ public class ProcessorManager {
                 );
     }
 
-    public Stream<ClassOrInterfaceType> getExtendedTypes(ClassOrInterfaceDeclaration classOrInterfaceDeclaration) {
+    public Optional<String> getScopedAnnotationName(NodeWithAnnotations<?> nodeWithAnnotations) {
+        return Stream.ofNullable(nodeWithAnnotations.getAnnotations())
+                .flatMap(NodeList::stream)
+                .flatMap(annotationExpr ->
+                        getCompilationUnit(annotationExpr)
+                                .flatMap(this::getPublicAnnotationDeclaration)
+                                .filter(annotationDeclaration -> annotationDeclaration.isAnnotationPresent(NormalScope.class))
+                                .map(annotationDeclaration ->
+                                        annotationDeclaration.getFullyQualifiedName()
+                                                .orElseGet(() -> getQualifiedName(annotationExpr))
+                                )
+                                .stream()
+                )
+                .findFirst();
+    }
+
+    public Stream<String> getExtendedTypes(ClassOrInterfaceDeclaration classOrInterfaceDeclaration) {
         return Stream
                 .concat(
-                        classOrInterfaceDeclaration.getExtendedTypes().stream(),
+                        classOrInterfaceDeclaration.getExtendedTypes().stream().map(this::getQualifiedName),
                         classOrInterfaceDeclaration.getExtendedTypes().stream()
                                 .flatMap(this::getExtendedTypes)
+                )
+                .distinct()
+                .filter(name -> !name.equals(Object.class.getName()));
+    }
+
+    public Stream<String> getExtendedTypes(ClassOrInterfaceType classOrInterfaceType) {
+        return classOrInterfaceType.resolve().asReferenceType().getTypeDeclaration()
+                .flatMap(resolvedReferenceTypeDeclaration -> getClass(resolvedReferenceTypeDeclaration.getQualifiedName()))
+                .stream()
+                .flatMap(this::getExtendedTypeNames);
+    }
+
+    public Stream<String> getExtendedTypeNames(Class<?> clazz) {
+        return Stream.ofNullable(clazz.getSuperclass())
+                .flatMap(superClazz ->
+                        Stream
+                                .concat(
+                                        Stream.of(superClazz.getName()),
+                                        getExtendedTypeNames(superClazz)
+                                )
                 );
     }
 
-    public Stream<ClassOrInterfaceType> getExtendedTypes(ClassOrInterfaceType classOrInterfaceType) {
-        return classOrInterfaceType.resolve().asReferenceType().getTypeDeclaration()
-                .flatMap(resolvedReferenceTypeDeclaration -> getCompilationUnit(resolvedReferenceTypeDeclaration.getQualifiedName()))
-                .flatMap(this::getPublicClassOrInterfaceDeclaration)
-                .stream()
-                .flatMap(this::getExtendedTypes);
-    }
-
-    public Stream<ClassOrInterfaceType> getImplementedTypes(ClassOrInterfaceDeclaration classOrInterfaceDeclaration) {
+    public Stream<String> getImplementedTypes(ClassOrInterfaceDeclaration classOrInterfaceDeclaration) {
         return Stream
                 .concat(
-                        classOrInterfaceDeclaration.getImplementedTypes().stream(),
+                        classOrInterfaceDeclaration.getImplementedTypes().stream().map(this::getQualifiedName),
                         classOrInterfaceDeclaration.getImplementedTypes().stream()
                                 .flatMap(this::getImplementedTypes)
-                );
+                )
+                .distinct()
+                .filter(name -> !name.equals(Object.class.getName()));
     }
 
-    public Stream<ClassOrInterfaceType> getImplementedTypes(ClassOrInterfaceType classOrInterfaceType) {
+    public Stream<String> getImplementedTypes(ClassOrInterfaceType classOrInterfaceType) {
         return classOrInterfaceType.resolve().asReferenceType().getTypeDeclaration()
-                .flatMap(resolvedReferenceTypeDeclaration -> getCompilationUnit(resolvedReferenceTypeDeclaration.getQualifiedName()))
-                .flatMap(this::getPublicClassOrInterfaceDeclaration)
+                .flatMap(resolvedReferenceTypeDeclaration -> getClass(resolvedReferenceTypeDeclaration.getQualifiedName()))
                 .stream()
                 .flatMap(this::getImplementedTypes);
+    }
+
+    public Stream<String> getImplementedTypes(Class<?> clazz) {
+        return Stream.ofNullable(clazz.getInterfaces())
+                .flatMap(Arrays::stream)
+                .flatMap(interfaceClazz ->
+                        Stream
+                                .concat(
+                                        Stream.of(interfaceClazz.getName()),
+                                        getImplementedTypes(interfaceClazz)
+                                )
+                );
     }
 }
