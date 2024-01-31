@@ -4,12 +4,7 @@ import jakarta.inject.Provider;
 import org.tinylog.Logger;
 import reactor.core.publisher.Mono;
 
-import java.util.AbstractMap;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Optional;
-import java.util.ServiceLoader;
-import java.util.Set;
+import java.util.*;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -146,15 +141,19 @@ public class BeanContext {
         Logger.debug("search bean map for class {}", beanClass.getName());
         return moduleContexts.stream()
                 .flatMap(moduleContext -> Stream.ofNullable(moduleContext.getSupplierMap(beanClass)))
-                .reduce(
-                        new HashMap<>(),
-                        (pre, current) -> {
-                            current.forEach((key, value) -> pre.merge(key, value, (v1, v2) -> v2));
-                            return pre;
-                        }
+                .flatMap(map -> map.entrySet().stream())
+                .filter(entry -> entry.getKey().contains("."))
+                .filter(entry -> !entry.getKey().equals(beanClass.getName()))
+                .collect(
+                        Collectors.toMap(
+                                Map.Entry::getKey,
+                                Map.Entry::getValue,
+                                (v1, v2) -> v1
+                        )
                 )
-                .entrySet().stream()
-                .filter(entry -> !entry.getKey().equals(beanClass.getName()));
+                .entrySet()
+                .stream()
+                .map(entry -> new AbstractMap.SimpleEntry<>(entry.getKey(), entry.getValue()));
     }
 
     @SuppressWarnings("unchecked")

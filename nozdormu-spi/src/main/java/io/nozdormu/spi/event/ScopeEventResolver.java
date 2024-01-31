@@ -23,11 +23,10 @@ public class ScopeEventResolver {
     }
 
     public static Mono<Void> initialized(Map<String, Object> context, Class<? extends Annotation> scope) {
-        return Flux.fromIterable(
+        return Flux.fromStream(
                         scopeEventList.stream()
                                 .filter(scopeEvent -> scopeEvent.getClass().isAnnotationPresent(Initialized.class))
                                 .filter(scopeEvent -> scopeEvent.getClass().getAnnotation(Initialized.class).value().equals(scope))
-                                .collect(Collectors.toList())
                 )
                 .concatMap(scopeEvent -> scopeEvent.fireAsync(context))
                 .then();
@@ -38,11 +37,10 @@ public class ScopeEventResolver {
     }
 
     public static Mono<Void> beforeDestroyed(Map<String, Object> context, Class<? extends Annotation> scope) {
-        return Flux.fromIterable(
+        return Flux.fromStream(
                         scopeEventList.stream()
                                 .filter(scopeEvent -> scopeEvent.getClass().isAnnotationPresent(BeforeDestroyed.class))
                                 .filter(scopeEvent -> scopeEvent.getClass().getAnnotation(BeforeDestroyed.class).value().equals(scope))
-                                .collect(Collectors.toList())
                 )
                 .concatMap(scopeEvent -> scopeEvent.fireAsync(context))
                 .then();
@@ -53,11 +51,10 @@ public class ScopeEventResolver {
     }
 
     public static Mono<Void> destroyed(Map<String, Object> context, Class<? extends Annotation> scope) {
-        return Flux.fromIterable(
+        return Flux.fromStream(
                         scopeEventList.stream()
                                 .filter(scopeEvent -> scopeEvent.getClass().isAnnotationPresent(Destroyed.class))
                                 .filter(scopeEvent -> scopeEvent.getClass().getAnnotation(Destroyed.class).value().equals(scope))
-                                .collect(Collectors.toList())
                 )
                 .concatMap(scopeEvent -> scopeEvent.fireAsync(context))
                 .then();
