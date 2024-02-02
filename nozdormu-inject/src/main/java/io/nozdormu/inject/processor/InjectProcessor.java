@@ -3,6 +3,7 @@ package io.nozdormu.inject.processor;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.Modifier;
 import com.github.javaparser.ast.NodeList;
+import com.github.javaparser.ast.PackageDeclaration;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.ConstructorDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
@@ -223,14 +224,15 @@ public class InjectProcessor extends AbstractProcessor {
                                 .noneMatch(exist -> exist.getNameAsString().equals(annotationExpr.getNameAsString()))
                 )
                 .filter(annotationExpr -> {
-                    String qualifiedName = processorManager.getQualifiedName(annotationExpr);
-                    return !qualifiedName.equals(Singleton.class.getName()) &&
-                            !qualifiedName.equals(Dependent.class.getName()) &&
-                            !qualifiedName.equals(ApplicationScoped.class.getName()) &&
-                            !qualifiedName.equals(SessionScoped.class.getName()) &&
-                            !qualifiedName.equals(RequestScoped.class.getName()) &&
-                            !qualifiedName.equals(TransactionScoped.class.getName());
-                })
+                            String qualifiedName = processorManager.getQualifiedName(annotationExpr);
+                            return !qualifiedName.equals(Singleton.class.getName()) &&
+                                    !qualifiedName.equals(Dependent.class.getName()) &&
+                                    !qualifiedName.equals(ApplicationScoped.class.getName()) &&
+                                    !qualifiedName.equals(SessionScoped.class.getName()) &&
+                                    !qualifiedName.equals(RequestScoped.class.getName()) &&
+                                    !qualifiedName.equals(TransactionScoped.class.getName());
+                        }
+                )
                 .map(AnnotationExpr::clone)
                 .forEach(annotationExpr -> {
                             annotationExpr.setParentNode(proxyClassDeclaration);
@@ -239,7 +241,8 @@ public class InjectProcessor extends AbstractProcessor {
                 );
 
         componentCompilationUnit.getPackageDeclaration()
-                .ifPresent(packageDeclaration -> proxyCompilationUnit.setPackageDeclaration(packageDeclaration.getNameAsString()));
+                .map(PackageDeclaration::clone)
+                .ifPresent(proxyCompilationUnit::setPackageDeclaration);
 
         processorManager.importAllClassOrInterfaceType(proxyClassDeclaration, componentClassDeclaration);
 
