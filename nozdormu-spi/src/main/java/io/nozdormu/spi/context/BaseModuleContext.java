@@ -1,58 +1,61 @@
 package io.nozdormu.spi.context;
 
-import java.util.AbstractMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Supplier;
-import java.util.stream.Collectors;
 
 public abstract class BaseModuleContext implements ModuleContext {
 
     private static final ClassValue<Map<String, Supplier<?>>> CONTEXT = new BeanProviders();
 
     protected static void put(Class<?> beanClass, Supplier<?> supplier) {
-        put(beanClass, beanClass.getName(), supplier);
+        put(beanClass, CLASS_PREFIX + beanClass.getName(), supplier);
     }
 
-    protected static void put(Class<?> beanClass, String name, Supplier<?> supplier) {
-        CONTEXT.get(beanClass).put(name, supplier);
+    protected static void putDefault(Class<?> beanClass, Supplier<?> supplier) {
+        put(beanClass, DEFAULT_KEY, supplier);
+    }
+
+    protected static void putName(Class<?> beanClass, Supplier<?> supplier, String name) {
+        put(beanClass, NAME_PREFIX + name, supplier);
+    }
+
+    protected static void putPriority(Class<?> beanClass, Integer priority, Supplier<?> supplier) {
+        put(beanClass, PRIORITY_PREFIX + Optional.ofNullable(priority).orElse(Integer.MAX_VALUE), supplier);
+    }
+
+    protected static void put(Class<?> beanClass, String key, Supplier<?> supplier) {
+        CONTEXT.get(beanClass).put(key, supplier);
     }
 
     @Override
     public <T> Supplier<T> get(Class<T> beanClass) {
-        return get(beanClass, beanClass.getName());
+        return get(beanClass, CLASS_PREFIX + beanClass.getName());
     }
 
+    @SuppressWarnings("unchecked")
     @Override
-    public <T> Supplier<T> get(Class<T> beanClass, String name) {
-        return getOptional(beanClass, name).orElseThrow(() -> new RuntimeException(beanClass.getName() + " not found"));
+    public <T> Supplier<T> get(Class<T> beanClass, String key) {
+        return (Supplier<T>) CONTEXT.get(beanClass).get(key);
     }
 
     @Override
     public <T> Optional<Supplier<T>> getOptional(Class<T> beanClass) {
-        return getOptional(beanClass, beanClass.getName());
-    }
-
-    @SuppressWarnings("unchecked")
-    @Override
-    public <T> Optional<Supplier<T>> getOptional(Class<T> beanClass, String name) {
-        return Optional.ofNullable((Supplier<T>) CONTEXT.get(beanClass).get(name));
-    }
-
-    @SuppressWarnings("unchecked")
-    @Override
-    public <T> Map<String, T> getMap(Class<T> beanClass) {
-        return Optional.ofNullable(getSupplierMap(beanClass))
-                .map(map ->
-                        map.entrySet().stream()
-                                .map(entry -> new AbstractMap.SimpleEntry<>(entry.getKey(), (T) entry.getValue().get()))
-                                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue))
-                )
-                .orElseGet(Map::of);
+        return getOptional(beanClass, CLASS_PREFIX + beanClass.getName());
     }
 
     @Override
-    public <T> Map<String, Supplier<?>> getSupplierMap(Class<T> beanClass) {
+    public <T> Optional<Supplier<T>> getOptional(Class<T> beanClass, String key) {
+        return Optional.ofNullable(get(beanClass, key));
+    }
+
+    @Override
+    public <T> Map<String, Supplier<?>> getMap(Class<T> beanClass) {
         return CONTEXT.get(beanClass);
+    }
+
+    @Override
+    public <T> Optional<Map<String, Supplier<?>>> getMapOptional(Class<T> beanClass) {
+        return Optional.ofNullable(getMap(beanClass));
     }
 }
