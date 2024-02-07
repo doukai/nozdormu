@@ -4,7 +4,6 @@ import io.nozdormu.spi.context.BeanContext;
 import jakarta.enterprise.context.BeforeDestroyed;
 import jakarta.enterprise.context.Destroyed;
 import jakarta.enterprise.context.Initialized;
-import jakarta.inject.Provider;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -15,19 +14,20 @@ import java.util.Map;
 
 public class ScopeEventResolver {
 
-    private static final List<Provider<ScopeEvent>> scopeEventProviderList = BeanContext.getPriorityProviderList(ScopeEvent.class);
+    private static final List<ScopeEvent> scopeEventList = BeanContext.getPriorityList(ScopeEvent.class);
 
     public static Mono<Void> initialized(Class<? extends Annotation> scope) {
         return initialized(new HashMap<>(), scope);
     }
 
     public static Mono<Void> initialized(Map<String, Object> context, Class<? extends Annotation> scope) {
-        return Flux.fromStream(
-                        scopeEventProviderList.stream()
+        return Flux
+                .fromStream(
+                        scopeEventList.stream()
                                 .filter(scopeEvent -> scopeEvent.getClass().isAnnotationPresent(Initialized.class))
                                 .filter(scopeEvent -> scopeEvent.getClass().getAnnotation(Initialized.class).value().equals(scope))
                 )
-                .concatMap(scopeEventProvider -> scopeEventProvider.get().fireAsync(context))
+                .concatMap(scopeEvent -> scopeEvent.fireAsync(context))
                 .then();
     }
 
@@ -36,12 +36,13 @@ public class ScopeEventResolver {
     }
 
     public static Mono<Void> beforeDestroyed(Map<String, Object> context, Class<? extends Annotation> scope) {
-        return Flux.fromStream(
-                        scopeEventProviderList.stream()
+        return Flux
+                .fromStream(
+                        scopeEventList.stream()
                                 .filter(scopeEvent -> scopeEvent.getClass().isAnnotationPresent(BeforeDestroyed.class))
                                 .filter(scopeEvent -> scopeEvent.getClass().getAnnotation(BeforeDestroyed.class).value().equals(scope))
                 )
-                .concatMap(scopeEventProvider -> scopeEventProvider.get().fireAsync(context))
+                .concatMap(scopeEvent -> scopeEvent.fireAsync(context))
                 .then();
     }
 
@@ -50,12 +51,13 @@ public class ScopeEventResolver {
     }
 
     public static Mono<Void> destroyed(Map<String, Object> context, Class<? extends Annotation> scope) {
-        return Flux.fromStream(
-                        scopeEventProviderList.stream()
+        return Flux
+                .fromStream(
+                        scopeEventList.stream()
                                 .filter(scopeEvent -> scopeEvent.getClass().isAnnotationPresent(Destroyed.class))
                                 .filter(scopeEvent -> scopeEvent.getClass().getAnnotation(Destroyed.class).value().equals(scope))
                 )
-                .concatMap(scopeEventProvider -> scopeEventProvider.get().fireAsync(context))
+                .concatMap(scopeEvent -> scopeEvent.fireAsync(context))
                 .then();
     }
 }
