@@ -304,6 +304,72 @@ public class BeanContext {
     }
 
     @SuppressWarnings("unchecked")
+    public static <T> Map<Class<? extends T>, T> getClassMap(Class<T> beanClass) {
+        Logger.debug("search bean map for class {}", beanClass.getName());
+        return getImplEntryStream(beanClass)
+                .map(entry -> {
+                            try {
+                                Class<? extends T> implClass = (Class<? extends T>) Class.forName(entry.getKey().replaceFirst(IMPL_PREFIX, ""), false, Thread.currentThread().getContextClassLoader());
+                                return new AbstractMap.SimpleEntry<>(implClass, (T) entry.getValue().get());
+                            } catch (ClassNotFoundException e) {
+                                throw new RuntimeException(e);
+                            }
+                        }
+                )
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+    }
+
+    @SuppressWarnings("unchecked")
+    public static <T> Map<Class<? extends T>, Mono<T>> getClassMonoMap(Class<T> beanClass) {
+        Logger.debug("search bean map for class {}", beanClass.getName());
+        return getImplEntryStream(beanClass)
+                .map(entry -> {
+                            try {
+                                Class<? extends T> implClass = (Class<? extends T>) Class.forName(entry.getKey().replaceFirst(IMPL_PREFIX, ""), false, Thread.currentThread().getContextClassLoader());
+                                return new AbstractMap.SimpleEntry<>(implClass, (Mono<T>) entry.getValue().get());
+                            } catch (ClassNotFoundException e) {
+                                throw new RuntimeException(e);
+                            }
+                        }
+                )
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+    }
+
+    @SuppressWarnings("unchecked")
+    public static <T> Map<Class<? extends T>, Provider<T>> getClassProviderMap(Class<T> beanClass) {
+        Logger.debug("search bean map for class {}", beanClass.getName());
+        return getImplEntryStream(beanClass)
+                .map(entry -> {
+                            try {
+                                Class<? extends T> implClass = (Class<? extends T>) Class.forName(entry.getKey().replaceFirst(IMPL_PREFIX, ""), false, Thread.currentThread().getContextClassLoader());
+                                Provider<T> provider = ((Supplier<T>) entry.getValue())::get;
+                                return new AbstractMap.SimpleEntry<>(implClass, provider);
+                            } catch (ClassNotFoundException e) {
+                                throw new RuntimeException(e);
+                            }
+                        }
+                )
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+    }
+
+    @SuppressWarnings("unchecked")
+    public static <T> Map<Class<? extends T>, Provider<Mono<T>>> getClassMonoProviderMap(Class<T> beanClass) {
+        Logger.debug("search bean map for class {}", beanClass.getName());
+        return getImplEntryStream(beanClass)
+                .map(entry -> {
+                            try {
+                                Class<? extends T> implClass = (Class<? extends T>) Class.forName(entry.getKey().replaceFirst(IMPL_PREFIX, ""), false, Thread.currentThread().getContextClassLoader());
+                                Provider<Mono<T>> provider = ((Supplier<Mono<T>>) entry.getValue())::get;
+                                return new AbstractMap.SimpleEntry<>(implClass, provider);
+                            } catch (ClassNotFoundException e) {
+                                throw new RuntimeException(e);
+                            }
+                        }
+                )
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+    }
+
+    @SuppressWarnings("unchecked")
     public static <T> List<T> getList(Class<T> beanClass) {
         Logger.debug("search bean map for class {}", beanClass.getName());
         return getImplEntryStream(beanClass)

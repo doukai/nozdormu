@@ -287,160 +287,160 @@ public class InjectProcessor extends AbstractProcessor {
         BlockStmt staticInitializer = contextClassDeclaration.addStaticInitializer();
 
         componentCompilationUnits.forEach(compilationUnit ->
-                processorManager.getPublicClassOrInterfaceDeclaration(compilationUnit)
-                        .ifPresent(classOrInterfaceDeclaration -> {
-                                    String qualifiedName = processorManager.getQualifiedName(classOrInterfaceDeclaration);
-                                    ClassOrInterfaceDeclaration proxyClassOrInterfaceDeclaration = componentProxyCompilationUnits.stream()
-                                            .map(processorManager::getPublicClassOrInterfaceDeclarationOrError)
-                                            .filter(proxyClassDeclaration ->
-                                                    proxyClassDeclaration.getExtendedTypes().stream()
-                                                            .anyMatch(classOrInterfaceType ->
-                                                                    processorManager.getQualifiedName(classOrInterfaceType).equals(qualifiedName)
-                                                            )
-                                            )
-                                            .findFirst()
-                                            .orElseThrow(() -> new RuntimeException(qualifiedName + "_Proxy not found"));
+                        processorManager.getPublicClassOrInterfaceDeclaration(compilationUnit)
+                                .ifPresent(classOrInterfaceDeclaration -> {
+                                            String qualifiedName = processorManager.getQualifiedName(classOrInterfaceDeclaration);
+                                            ClassOrInterfaceDeclaration proxyClassOrInterfaceDeclaration = componentProxyCompilationUnits.stream()
+                                                    .map(processorManager::getPublicClassOrInterfaceDeclarationOrError)
+                                                    .filter(proxyClassDeclaration ->
+                                                            proxyClassDeclaration.getExtendedTypes().stream()
+                                                                    .anyMatch(classOrInterfaceType ->
+                                                                            processorManager.getQualifiedName(classOrInterfaceType).equals(qualifiedName)
+                                                                    )
+                                                    )
+                                                    .findFirst()
+                                                    .orElseThrow(() -> new RuntimeException(qualifiedName + "_Proxy not found"));
 
-                                    Optional<Expression> nameExpr = classOrInterfaceDeclaration.getAnnotationByClass(Named.class)
-                                            .flatMap(processorManager::findAnnotationValue)
-                                            .map(expression -> {
-                                                        if (expression.isStringLiteralExpr()) {
-                                                            return new StringLiteralExpr(NAME_PREFIX + expression.asStringLiteralExpr().getValue());
-                                                        } else {
-                                                            expression.findAll(NameExpr.class).stream()
-                                                                    .map(Expression::calculateResolvedType)
-                                                                    .filter(ResolvedType::isReferenceType)
-                                                                    .map(ResolvedType::asReferenceType)
-                                                                    .map(ResolvedReferenceType::getQualifiedName)
-                                                                    .forEach(contextCompilationUnit::addImport);
-                                                            return new BinaryExpr()
-                                                                    .setLeft(new StringLiteralExpr(NAME_PREFIX))
-                                                                    .setOperator(BinaryExpr.Operator.PLUS)
-                                                                    .setRight(new EnclosedExpr(expression));
-                                                        }
-                                                    }
-                                            );
+                                            Optional<Expression> nameExpr = classOrInterfaceDeclaration.getAnnotationByClass(Named.class)
+                                                    .flatMap(processorManager::findAnnotationValue)
+                                                    .map(expression -> {
+                                                                if (expression.isStringLiteralExpr()) {
+                                                                    return new StringLiteralExpr(NAME_PREFIX + expression.asStringLiteralExpr().getValue());
+                                                                } else {
+                                                                    expression.findAll(NameExpr.class).stream()
+                                                                            .map(Expression::calculateResolvedType)
+                                                                            .filter(ResolvedType::isReferenceType)
+                                                                            .map(ResolvedType::asReferenceType)
+                                                                            .map(ResolvedReferenceType::getQualifiedName)
+                                                                            .forEach(contextCompilationUnit::addImport);
+                                                                    return new BinaryExpr()
+                                                                            .setLeft(new StringLiteralExpr(NAME_PREFIX))
+                                                                            .setOperator(BinaryExpr.Operator.PLUS)
+                                                                            .setRight(new EnclosedExpr(expression));
+                                                                }
+                                                            }
+                                                    );
 
-                                    Optional<StringLiteralExpr> defaultStringExpr = classOrInterfaceDeclaration.getAnnotationByClass(Default.class)
-                                            .map(annotationExpr -> new StringLiteralExpr(DEFAULT_KEY));
+                                            Optional<StringLiteralExpr> defaultStringExpr = classOrInterfaceDeclaration.getAnnotationByClass(Default.class)
+                                                    .map(annotationExpr -> new StringLiteralExpr(DEFAULT_KEY));
 
-                                    Expression priorityIntegerExpr = classOrInterfaceDeclaration.getAnnotationByClass(Priority.class)
-                                            .flatMap(processorManager::findAnnotationValue)
-                                            .map(expression -> {
-                                                        if (expression.isIntegerLiteralExpr()) {
-                                                            return new StringLiteralExpr(PRIORITY_PREFIX + expression.asIntegerLiteralExpr().getValue());
-                                                        } else {
-                                                            expression.findAll(NameExpr.class).stream()
-                                                                    .map(Expression::calculateResolvedType)
-                                                                    .filter(ResolvedType::isReferenceType)
-                                                                    .map(ResolvedType::asReferenceType)
-                                                                    .map(ResolvedReferenceType::getQualifiedName)
-                                                                    .forEach(contextCompilationUnit::addImport);
-                                                            return new BinaryExpr()
-                                                                    .setLeft(new StringLiteralExpr(PRIORITY_PREFIX))
-                                                                    .setOperator(BinaryExpr.Operator.PLUS)
-                                                                    .setRight(new EnclosedExpr(expression));
-                                                        }
-                                                    }
-                                            )
-                                            .orElseGet(() -> new StringLiteralExpr(PRIORITY_PREFIX + Integer.MAX_VALUE));
+                                            Expression priorityIntegerExpr = classOrInterfaceDeclaration.getAnnotationByClass(Priority.class)
+                                                    .flatMap(processorManager::findAnnotationValue)
+                                                    .map(expression -> {
+                                                                if (expression.isIntegerLiteralExpr()) {
+                                                                    return new StringLiteralExpr(PRIORITY_PREFIX + expression.asIntegerLiteralExpr().getValue());
+                                                                } else {
+                                                                    expression.findAll(NameExpr.class).stream()
+                                                                            .map(Expression::calculateResolvedType)
+                                                                            .filter(ResolvedType::isReferenceType)
+                                                                            .map(ResolvedType::asReferenceType)
+                                                                            .map(ResolvedReferenceType::getQualifiedName)
+                                                                            .forEach(contextCompilationUnit::addImport);
+                                                                    return new BinaryExpr()
+                                                                            .setLeft(new StringLiteralExpr(PRIORITY_PREFIX))
+                                                                            .setOperator(BinaryExpr.Operator.PLUS)
+                                                                            .setRight(new EnclosedExpr(expression));
+                                                                }
+                                                            }
+                                                    )
+                                                    .orElseGet(() -> new StringLiteralExpr(PRIORITY_PREFIX + Integer.MAX_VALUE));
 
-                                    if (classOrInterfaceDeclaration.isAnnotationPresent(Singleton.class) || classOrInterfaceDeclaration.isAnnotationPresent(ApplicationScoped.class)) {
-                                        ClassOrInterfaceDeclaration holderClassDeclaration = new ClassOrInterfaceDeclaration()
-                                                .setName(qualifiedName.replaceAll("\\.", "_") + "Holder")
-                                                .setModifiers(Modifier.Keyword.PRIVATE, Modifier.Keyword.STATIC);
+                                            if (classOrInterfaceDeclaration.isAnnotationPresent(Singleton.class) || classOrInterfaceDeclaration.isAnnotationPresent(ApplicationScoped.class)) {
+                                                ClassOrInterfaceDeclaration holderClassDeclaration = new ClassOrInterfaceDeclaration()
+                                                        .setName(qualifiedName.replaceAll("\\.", "_") + "Holder")
+                                                        .setModifiers(Modifier.Keyword.PRIVATE, Modifier.Keyword.STATIC);
 
-                                        Expression objectCreateExpression = proxyClassOrInterfaceDeclaration.getMethods().stream()
-                                                .filter(methodDeclaration -> methodDeclaration.isAnnotationPresent(Produces.class))
-                                                .filter(methodDeclaration -> processorManager.getQualifiedName(methodDeclaration.getType()).equals(qualifiedName + "_Proxy"))
-                                                .findFirst()
-                                                .map(methodDeclaration ->
-                                                        (Expression) new MethodCallExpr()
-                                                                .setName(methodDeclaration.getName())
-                                                                .setArguments(
-                                                                        methodDeclaration.getParameters().stream()
-                                                                                .map(parameter -> getBeanGetMethodCallExpr(parameter, contextCompilationUnit, parameter.getType().asClassOrInterfaceType()))
-                                                                                .map(methodCallExpr -> (Expression) methodCallExpr)
-                                                                                .collect(Collectors.toCollection(NodeList::new))
-                                                                )
-                                                                .setScope(new NameExpr(qualifiedName + "_Proxy"))
-                                                )
-                                                .orElseGet(() ->
-                                                        new ObjectCreationExpr()
-                                                                .setType(qualifiedName + "_Proxy")
-                                                                .setArguments(
-                                                                        proxyClassOrInterfaceDeclaration.getConstructors().stream()
-                                                                                .findFirst()
-                                                                                .map(constructorDeclaration ->
-                                                                                        constructorDeclaration.getParameters().stream()
-                                                                                                .map(parameter -> getBeanGetMethodCallExpr(parameter, contextCompilationUnit, parameter.getType().asClassOrInterfaceType()))
-                                                                                                .map(methodCallExpr -> (Expression) methodCallExpr)
-                                                                                                .collect(Collectors.toCollection(NodeList::new))
-                                                                                )
-                                                                                .orElseThrow(() -> new InjectionProcessException(CONSTRUCTOR_NOT_EXIST.bind(classOrInterfaceDeclaration.getNameAsString())))
-                                                                )
-                                                );
+                                                Expression objectCreateExpression = proxyClassOrInterfaceDeclaration.getMethods().stream()
+                                                        .filter(methodDeclaration -> methodDeclaration.isAnnotationPresent(Produces.class))
+                                                        .filter(methodDeclaration -> processorManager.getQualifiedName(methodDeclaration.getType()).equals(qualifiedName + "_Proxy"))
+                                                        .findFirst()
+                                                        .map(methodDeclaration ->
+                                                                (Expression) new MethodCallExpr()
+                                                                        .setName(methodDeclaration.getName())
+                                                                        .setArguments(
+                                                                                methodDeclaration.getParameters().stream()
+                                                                                        .map(parameter -> getBeanGetMethodCallExpr(parameter, contextCompilationUnit, parameter.getType().asClassOrInterfaceType()))
+                                                                                        .map(methodCallExpr -> (Expression) methodCallExpr)
+                                                                                        .collect(Collectors.toCollection(NodeList::new))
+                                                                        )
+                                                                        .setScope(new NameExpr(qualifiedName + "_Proxy"))
+                                                        )
+                                                        .orElseGet(() ->
+                                                                new ObjectCreationExpr()
+                                                                        .setType(qualifiedName + "_Proxy")
+                                                                        .setArguments(
+                                                                                proxyClassOrInterfaceDeclaration.getConstructors().stream()
+                                                                                        .findFirst()
+                                                                                        .map(constructorDeclaration ->
+                                                                                                constructorDeclaration.getParameters().stream()
+                                                                                                        .map(parameter -> getBeanGetMethodCallExpr(parameter, contextCompilationUnit, parameter.getType().asClassOrInterfaceType()))
+                                                                                                        .map(methodCallExpr -> (Expression) methodCallExpr)
+                                                                                                        .collect(Collectors.toCollection(NodeList::new))
+                                                                                        )
+                                                                                        .orElseThrow(() -> new InjectionProcessException(CONSTRUCTOR_NOT_EXIST.bind(classOrInterfaceDeclaration.getNameAsString())))
+                                                                        )
+                                                        );
 
-                                        holderClassDeclaration.addFieldWithInitializer(
-                                                qualifiedName,
-                                                "INSTANCE",
-                                                objectCreateExpression
-                                        )
-                                                .setModifiers(Modifier.Keyword.PRIVATE, Modifier.Keyword.STATIC, Modifier.Keyword.FINAL);
+                                                holderClassDeclaration.addFieldWithInitializer(
+                                                                qualifiedName,
+                                                                "INSTANCE",
+                                                                objectCreateExpression
+                                                        )
+                                                        .setModifiers(Modifier.Keyword.PRIVATE, Modifier.Keyword.STATIC, Modifier.Keyword.FINAL);
 
-                                        contextClassDeclaration.addMember(holderClassDeclaration);
-                                        addPutTypeStatement(staticInitializer, qualifiedName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, null, true);
-                                        nameExpr.ifPresent(stringLiteralExpr -> addPutTypeStatement(staticInitializer, qualifiedName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, stringLiteralExpr, true));
-                                        defaultStringExpr.ifPresent(stringLiteralExpr -> addPutTypeStatement(staticInitializer, qualifiedName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, stringLiteralExpr, true));
+                                                contextClassDeclaration.addMember(holderClassDeclaration);
+                                                addPutTypeStatement(staticInitializer, qualifiedName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, null, true);
+                                                nameExpr.ifPresent(stringLiteralExpr -> addPutTypeStatement(staticInitializer, qualifiedName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, stringLiteralExpr, true));
+                                                defaultStringExpr.ifPresent(stringLiteralExpr -> addPutTypeStatement(staticInitializer, qualifiedName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, stringLiteralExpr, true));
 //                                        addPutTypeStatement(staticInitializer, qualifiedName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, priorityIntegerExpr, true);
 
-                                        processorManager.getExtendedTypes(classOrInterfaceDeclaration)
-                                                .forEach(extendedTypeName -> {
-                                                            addPutTypeStatement(staticInitializer, extendedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, null, true);
-                                                            addPutTypeStatement(staticInitializer, extendedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, new StringLiteralExpr(IMPL_PREFIX + qualifiedName), true);
-                                                            nameExpr.ifPresent(stringLiteralExpr -> addPutTypeStatement(staticInitializer, extendedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, stringLiteralExpr, true));
-                                                            defaultStringExpr.ifPresent(stringLiteralExpr -> addPutTypeStatement(staticInitializer, extendedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, stringLiteralExpr, true));
-                                                            addPutTypeStatement(staticInitializer, extendedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, priorityIntegerExpr, true);
-                                                        }
-                                                );
+                                                processorManager.getExtendedTypes(classOrInterfaceDeclaration)
+                                                        .forEach(extendedTypeName -> {
+                                                                    addPutTypeStatement(staticInitializer, extendedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, null, true);
+                                                                    addPutTypeStatement(staticInitializer, extendedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, new StringLiteralExpr(IMPL_PREFIX + qualifiedName), true);
+                                                                    nameExpr.ifPresent(stringLiteralExpr -> addPutTypeStatement(staticInitializer, extendedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, stringLiteralExpr, true));
+                                                                    defaultStringExpr.ifPresent(stringLiteralExpr -> addPutTypeStatement(staticInitializer, extendedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, stringLiteralExpr, true));
+                                                                    addPutTypeStatement(staticInitializer, extendedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, priorityIntegerExpr, true);
+                                                                }
+                                                        );
 
-                                        processorManager.getImplementedTypes(classOrInterfaceDeclaration)
-                                                .forEach(implementedTypeName -> {
-                                                            addPutTypeStatement(staticInitializer, implementedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, null, true);
-                                                            addPutTypeStatement(staticInitializer, implementedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, new StringLiteralExpr(IMPL_PREFIX + qualifiedName), true);
-                                                            nameExpr.ifPresent(stringLiteralExpr -> addPutTypeStatement(staticInitializer, implementedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, stringLiteralExpr, true));
-                                                            defaultStringExpr.ifPresent(stringLiteralExpr -> addPutTypeStatement(staticInitializer, implementedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, stringLiteralExpr, true));
-                                                            addPutTypeStatement(staticInitializer, implementedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, priorityIntegerExpr, true);
-                                                        }
-                                                );
-                                    } else {
-                                        addPutTypeStatement(staticInitializer, qualifiedName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, null, false);
-                                        nameExpr.ifPresent(stringLiteralExpr -> addPutTypeStatement(staticInitializer, qualifiedName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, stringLiteralExpr, false));
-                                        defaultStringExpr.ifPresent(stringLiteralExpr -> addPutTypeStatement(staticInitializer, qualifiedName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, stringLiteralExpr, false));
+                                                processorManager.getImplementedTypes(classOrInterfaceDeclaration)
+                                                        .forEach(implementedTypeName -> {
+                                                                    addPutTypeStatement(staticInitializer, implementedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, null, true);
+                                                                    addPutTypeStatement(staticInitializer, implementedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, new StringLiteralExpr(IMPL_PREFIX + qualifiedName), true);
+                                                                    nameExpr.ifPresent(stringLiteralExpr -> addPutTypeStatement(staticInitializer, implementedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, stringLiteralExpr, true));
+                                                                    defaultStringExpr.ifPresent(stringLiteralExpr -> addPutTypeStatement(staticInitializer, implementedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, stringLiteralExpr, true));
+                                                                    addPutTypeStatement(staticInitializer, implementedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, priorityIntegerExpr, true);
+                                                                }
+                                                        );
+                                            } else {
+                                                addPutTypeStatement(staticInitializer, qualifiedName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, null, false);
+                                                nameExpr.ifPresent(stringLiteralExpr -> addPutTypeStatement(staticInitializer, qualifiedName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, stringLiteralExpr, false));
+                                                defaultStringExpr.ifPresent(stringLiteralExpr -> addPutTypeStatement(staticInitializer, qualifiedName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, stringLiteralExpr, false));
 //                                        addPutTypeStatement(staticInitializer, qualifiedName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, priorityIntegerExpr, false);
 
-                                        processorManager.getExtendedTypes(classOrInterfaceDeclaration)
-                                                .forEach(extendedTypeName -> {
-                                                            addPutTypeStatement(staticInitializer, extendedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, null, false);
-                                                            addPutTypeStatement(staticInitializer, extendedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, new StringLiteralExpr(IMPL_PREFIX + qualifiedName), false);
-                                                            nameExpr.ifPresent(stringLiteralExpr -> addPutTypeStatement(staticInitializer, extendedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, stringLiteralExpr, false));
-                                                            defaultStringExpr.ifPresent(stringLiteralExpr -> addPutTypeStatement(staticInitializer, extendedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, stringLiteralExpr, false));
-                                                            addPutTypeStatement(staticInitializer, extendedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, priorityIntegerExpr, false);
-                                                        }
-                                                );
+                                                processorManager.getExtendedTypes(classOrInterfaceDeclaration)
+                                                        .forEach(extendedTypeName -> {
+                                                                    addPutTypeStatement(staticInitializer, extendedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, null, false);
+                                                                    addPutTypeStatement(staticInitializer, extendedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, new StringLiteralExpr(IMPL_PREFIX + qualifiedName), false);
+                                                                    nameExpr.ifPresent(stringLiteralExpr -> addPutTypeStatement(staticInitializer, extendedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, stringLiteralExpr, false));
+                                                                    defaultStringExpr.ifPresent(stringLiteralExpr -> addPutTypeStatement(staticInitializer, extendedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, stringLiteralExpr, false));
+                                                                    addPutTypeStatement(staticInitializer, extendedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, priorityIntegerExpr, false);
+                                                                }
+                                                        );
 
-                                        processorManager.getImplementedTypes(classOrInterfaceDeclaration)
-                                                .forEach(implementedTypeName -> {
-                                                            addPutTypeStatement(staticInitializer, implementedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, null, false);
-                                                            addPutTypeStatement(staticInitializer, implementedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, new StringLiteralExpr(IMPL_PREFIX + qualifiedName), false);
-                                                            nameExpr.ifPresent(stringLiteralExpr -> addPutTypeStatement(staticInitializer, implementedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, stringLiteralExpr, false));
-                                                            defaultStringExpr.ifPresent(stringLiteralExpr -> addPutTypeStatement(staticInitializer, implementedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, stringLiteralExpr, false));
-                                                            addPutTypeStatement(staticInitializer, implementedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, priorityIntegerExpr, false);
-                                                        }
-                                                );
-                                    }
-                                }
-                        )
+                                                processorManager.getImplementedTypes(classOrInterfaceDeclaration)
+                                                        .forEach(implementedTypeName -> {
+                                                                    addPutTypeStatement(staticInitializer, implementedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, null, false);
+                                                                    addPutTypeStatement(staticInitializer, implementedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, new StringLiteralExpr(IMPL_PREFIX + qualifiedName), false);
+                                                                    nameExpr.ifPresent(stringLiteralExpr -> addPutTypeStatement(staticInitializer, implementedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, stringLiteralExpr, false));
+                                                                    defaultStringExpr.ifPresent(stringLiteralExpr -> addPutTypeStatement(staticInitializer, implementedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, stringLiteralExpr, false));
+                                                                    addPutTypeStatement(staticInitializer, implementedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, priorityIntegerExpr, false);
+                                                                }
+                                                        );
+                                            }
+                                        }
+                                )
         );
         componentProxyProcessors.forEach(componentProxyProcessor -> {
                     Logger.debug("processModuleContext {}", componentProxyProcessor.getClass().getName());
@@ -571,7 +571,8 @@ public class InjectProcessor extends AbstractProcessor {
                 );
 
         MethodCallExpr methodCallExpr;
-        if (processorManager.getQualifiedName(classOrInterfaceType).equals(Provider.class.getName())) {
+        String qualifiedName = processorManager.getQualifiedName(classOrInterfaceType);
+        if (qualifiedName.equals(Provider.class.getName())) {
             Type type = classOrInterfaceType.getTypeArguments().orElseThrow(() -> new InjectionProcessException(PROVIDER_TYPE_NOT_EXIST)).get(0);
             if (type.isClassOrInterfaceType() && processorManager.getQualifiedName(type).equals(Mono.class.getName())) {
                 methodCallExpr = new MethodCallExpr()
@@ -587,7 +588,7 @@ public class InjectProcessor extends AbstractProcessor {
             }
             compilationUnit.addImport(Provider.class);
         } else {
-            if (processorManager.getQualifiedName(classOrInterfaceType).equals(Mono.class.getName())) {
+            if (qualifiedName.equals(Mono.class.getName())) {
                 methodCallExpr = new MethodCallExpr()
                         .setName("getMono")
                         .setScope(new NameExpr().setName("BeanContext"))
@@ -596,7 +597,7 @@ public class InjectProcessor extends AbstractProcessor {
                 methodCallExpr = new MethodCallExpr()
                         .setName("get")
                         .setScope(new NameExpr().setName("BeanContext"))
-                        .addArgument(new ClassExpr().setType(processorManager.getQualifiedName(classOrInterfaceType)));
+                        .addArgument(new ClassExpr().setType(qualifiedName));
             }
         }
         nameStringExpr.ifPresent(methodCallExpr::addArgument);
