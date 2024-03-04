@@ -8,7 +8,6 @@ import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.Parameter;
 import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.expr.*;
-import com.github.javaparser.ast.nodeTypes.NodeWithType;
 import com.github.javaparser.ast.stmt.*;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import com.github.javaparser.ast.type.UnknownType;
@@ -25,6 +24,8 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
+
+import static io.nozdormu.spi.async.Asyncable.ASYNC_METHOD_NAME_SUFFIX;
 
 @AutoService(ComponentProxyProcessor.class)
 public class AsyncProcessor implements ComponentProxyProcessor {
@@ -47,8 +48,16 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                 BlockStmt blockStmt = blockStmtOptional.get();
                                 String asyncMethodName = Stream
                                         .concat(
-                                                Stream.of(methodDeclaration.getNameAsString() + "Async"),
-                                                methodDeclaration.getParameters().stream().map(NodeWithType::getTypeAsString)
+                                                Stream.of(methodDeclaration.getNameAsString() + ASYNC_METHOD_NAME_SUFFIX),
+                                                methodDeclaration.getParameters().stream()
+                                                        .map(parameter -> {
+                                                                    if (parameter.getType().isPrimitiveType()) {
+                                                                        return parameter.getType().asPrimitiveType().toBoxedType().getNameAsString();
+                                                                    } else {
+                                                                        return parameter.getTypeAsString();
+                                                                    }
+                                                                }
+                                                        )
                                         )
                                         .collect(Collectors.joining("_"));
                                 MethodDeclaration asyncMethodDeclaration = new MethodDeclaration()
@@ -110,8 +119,16 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                 } else {
                     String asyncMethodName = Stream
                             .concat(
-                                    Stream.of(methodCallExpr.getNameAsString() + "Async"),
-                                    processorManager.resolveMethodDeclaration(componentClassDeclaration, methodCallExpr).getParameters().stream().map(NodeWithType::getTypeAsString)
+                                    Stream.of(methodCallExpr.getNameAsString() + ASYNC_METHOD_NAME_SUFFIX),
+                                    processorManager.resolveMethodDeclaration(componentClassDeclaration, methodCallExpr).getParameters().stream()
+                                            .map(parameter -> {
+                                                        if (parameter.getType().isPrimitiveType()) {
+                                                            return parameter.getType().asPrimitiveType().toBoxedType().getNameAsString();
+                                                        } else {
+                                                            return parameter.getTypeAsString();
+                                                        }
+                                                    }
+                                            )
                             )
                             .collect(Collectors.joining("_"));
 
@@ -168,8 +185,16 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                                 .map(methodDeclaration -> {
                                                             String asyncMethodName = Stream
                                                                     .concat(
-                                                                            Stream.of(methodDeclaration.getNameAsString() + "Async"),
-                                                                            methodDeclaration.getParameters().stream().map(NodeWithType::getTypeAsString)
+                                                                            Stream.of(methodDeclaration.getNameAsString() + ASYNC_METHOD_NAME_SUFFIX),
+                                                                            methodDeclaration.getParameters().stream()
+                                                                                    .map(parameter -> {
+                                                                                                if (parameter.getType().isPrimitiveType()) {
+                                                                                                    return parameter.getType().asPrimitiveType().toBoxedType().getNameAsString();
+                                                                                                } else {
+                                                                                                    return parameter.getTypeAsString();
+                                                                                                }
+                                                                                            }
+                                                                                    )
                                                                     )
                                                                     .collect(Collectors.joining("_"));
                                                             return new SwitchEntry()

@@ -6,6 +6,7 @@ import com.github.javaparser.ast.NodeList;
 import com.github.javaparser.ast.PackageDeclaration;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.ConstructorDeclaration;
+import com.github.javaparser.ast.body.FieldDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.expr.*;
 import com.github.javaparser.ast.nodeTypes.NodeWithAnnotations;
@@ -159,6 +160,13 @@ public class InjectProcessor extends AbstractProcessor {
                 .setName(componentClassDeclaration.getNameAsString() + "_Proxy")
                 .addAnnotation(new NormalAnnotationExpr().addPair("value", new StringLiteralExpr(getClass().getName())).setName(Generated.class.getSimpleName()));
 
+        List<FieldDeclaration> privateFieldDeclarationList = componentClassDeclaration.getFields().stream()
+                .filter(fieldDeclaration -> fieldDeclaration.hasModifier(Modifier.Keyword.PRIVATE))
+                .map(fieldDeclaration -> (FieldDeclaration) fieldDeclaration.clone().setParentNode(componentClassDeclaration))
+                .collect(Collectors.toList());
+
+        privateFieldDeclarationList.forEach(proxyClassDeclaration::addMember);
+
         componentClassDeclaration.getConstructors().stream()
                 .map(ConstructorDeclaration::clone)
                 .forEach(constructorDeclaration -> {
@@ -177,6 +185,15 @@ public class InjectProcessor extends AbstractProcessor {
                                                                     .collect(Collectors.toCollection(NodeList::new))
                                                     )
                                     );
+
+                            privateFieldDeclarationList.forEach(fieldDeclaration ->
+                                    blockStmt.addStatement(
+                                            new AssignExpr()
+                                                    .setTarget(new FieldAccessExpr().setName(fieldDeclaration.getVariable(0).getNameAsString()).setScope(new ThisExpr()))
+                                                    .setValue(fieldDeclaration.getVariable(0).getNameAsExpression())
+                                                    .setOperator(AssignExpr.Operator.ASSIGN)
+                                    )
+                            );
 
                             componentClassDeclaration.getMethods().stream()
                                     .filter(methodDeclaration ->
@@ -382,10 +399,10 @@ public class InjectProcessor extends AbstractProcessor {
                                                         );
 
                                                 holderClassDeclaration.addFieldWithInitializer(
-                                                                qualifiedName,
-                                                                "INSTANCE",
-                                                                objectCreateExpression
-                                                        )
+                                                        qualifiedName,
+                                                        "INSTANCE",
+                                                        objectCreateExpression
+                                                )
                                                         .setModifiers(Modifier.Keyword.PRIVATE, Modifier.Keyword.STATIC, Modifier.Keyword.FINAL);
 
                                                 contextClassDeclaration.addMember(holderClassDeclaration);

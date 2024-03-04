@@ -365,13 +365,13 @@ public class ProcessorManager {
                                                     return resolvedType.asReferenceType().getQualifiedName().equals(getQualifiedName(methodDeclaration.getParameter(index).getType()));
                                                 }
                                             } catch (UnsolvedSymbolException e) {
-                                                return methodDeclaration.getParameter(index).getType().asString().equals(e.getName());
+                                                return true;
                                             }
                                         }
                                 )
                 )
                 .findFirst()
-                .orElseThrow();
+                .orElseThrow(() -> new RuntimeException(methodCallExpr.getNameAsString() + " method not found"));
     }
 
     public ResolvedType getResolvedInnerType(ClassOrInterfaceType classOrInterfaceType) {
