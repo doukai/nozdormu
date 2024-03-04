@@ -5,20 +5,14 @@ import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.Modifier;
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.*;
-import com.github.javaparser.ast.expr.AnnotationExpr;
-import com.github.javaparser.ast.expr.AssignExpr;
-import com.github.javaparser.ast.expr.Expression;
-import com.github.javaparser.ast.expr.MemberValuePair;
+import com.github.javaparser.ast.expr.*;
 import com.github.javaparser.ast.nodeTypes.NodeWithAnnotations;
 import com.github.javaparser.ast.stmt.ReturnStmt;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import com.github.javaparser.ast.type.Type;
 import com.github.javaparser.resolution.Context;
 import com.github.javaparser.resolution.UnsolvedSymbolException;
-import com.github.javaparser.resolution.declarations.ResolvedAnnotationDeclaration;
-import com.github.javaparser.resolution.declarations.ResolvedDeclaration;
-import com.github.javaparser.resolution.declarations.ResolvedReferenceTypeDeclaration;
-import com.github.javaparser.resolution.declarations.ResolvedTypeDeclaration;
+import com.github.javaparser.resolution.declarations.*;
 import com.github.javaparser.resolution.model.SymbolReference;
 import com.github.javaparser.resolution.model.typesystem.ReferenceTypeImpl;
 import com.github.javaparser.resolution.types.ResolvedReferenceType;
@@ -62,6 +56,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 import static javax.lang.model.element.ElementKind.CLASS;
@@ -348,6 +343,35 @@ public class ProcessorManager {
             }
             throw e;
         }
+    }
+
+    public MethodDeclaration resolveMethodDeclaration(ClassOrInterfaceDeclaration classOrInterfaceDeclaration, MethodCallExpr methodCallExpr) {
+        ClassOrInterfaceDeclaration scopeClassOrInterfaceDeclaration = methodCallExpr.getScope()
+                .map(expression -> getCompilationUnitOrError(expression.calculateResolvedType().asReferenceType().getQualifiedName()))
+                .map(this::getPublicClassOrInterfaceDeclarationOrError)
+                .orElse(classOrInterfaceDeclaration);
+
+        return scopeClassOrInterfaceDeclaration.getMethods().stream()
+                .filter(methodDeclaration -> methodDeclaration.getNameAsString().equals(methodCallExpr.getNameAsString()))
+                .filter(methodDeclaration -> methodDeclaration.getParameters().size() == methodCallExpr.getArguments().size())
+                .filter(methodDeclaration ->
+                        IntStream.range(0, methodCallExpr.getArguments().size())
+                                .allMatch(index -> {
+                                            try {
+                                                ResolvedType resolvedType = methodCallExpr.getArgument(index).calculateResolvedType();
+                                                if (resolvedType.isPrimitive()) {
+                                                    return methodDeclaration.getParameter(index).getType().isPrimitiveType() && resolvedType.asPrimitive().name().toLowerCase().equals(methodDeclaration.getParameter(index).getType().asString());
+                                                } else {
+                                                    return resolvedType.asReferenceType().getQualifiedName().equals(getQualifiedName(methodDeclaration.getParameter(index).getType()));
+                                                }
+                                            } catch (UnsolvedSymbolException e) {
+                                                return methodDeclaration.getParameter(index).getType().asString().equals(e.getName());
+                                            }
+                                        }
+                                )
+                )
+                .findFirst()
+                .orElseThrow();
     }
 
     public ResolvedType getResolvedInnerType(ClassOrInterfaceType classOrInterfaceType) {

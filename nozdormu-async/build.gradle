@@ -1,0 +1,31 @@
+plugins {
+    id 'java'
+}
+
+group = 'io.nozdormu'
+version = '0.0.1-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+    jcenter()
+}
+
+dependencies {
+    implementation project(':nozdormu-common')
+    implementation project(':nozdormu-inject')
+    implementation 'com.github.javaparser:javaparser-symbol-solver-core:3.25.3'
+    implementation 'com.google.auto.service:auto-service:1.0.1'
+
+    annotationProcessor 'com.google.auto.service:auto-service:1.0.1'
+
+    testImplementation platform('org.junit:junit-bom:5.9.1')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+
+    testAnnotationProcessor project(':nozdormu-inject')
+    testAnnotationProcessor project(':nozdormu-async')
+    testAnnotationProcessor 'com.google.auto.service:auto-service:1.0.1'
+}
+
+test {
+    useJUnitPlatform()
+}

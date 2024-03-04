@@ -5,3 +5,5 @@ include 'nozdormu-decompiler'
 include 'nozdormu-inject'
 include 'nozdormu-interceptor'
 include 'nozdormu-config'
+include 'nozdormu-async'
+
