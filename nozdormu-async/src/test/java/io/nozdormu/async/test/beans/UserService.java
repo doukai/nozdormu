@@ -27,7 +27,8 @@ public class UserService implements Asyncable {
 
     @Async
     public String genPassword(User user) {
-        List<Integer> passwords = await(userInfo.buildPassword(user.getEmail(), user.getName().length()));
+        User registedUser = await(userInfo.getUser(user.getName()));
+        List<Integer> passwords = await(userInfo.buildPassword(registedUser.getEmail(), registedUser.getName().length()));
         return passwords.stream().map(Object::toString).collect(Collectors.joining(""));
     }
 }

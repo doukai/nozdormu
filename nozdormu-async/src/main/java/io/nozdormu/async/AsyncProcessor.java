@@ -3,10 +3,7 @@ package io.nozdormu.async;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.Modifier;
 import com.github.javaparser.ast.NodeList;
-import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
-import com.github.javaparser.ast.body.MethodDeclaration;
-import com.github.javaparser.ast.body.Parameter;
-import com.github.javaparser.ast.body.VariableDeclarator;
+import com.github.javaparser.ast.body.*;
 import com.github.javaparser.ast.expr.*;
 import com.github.javaparser.ast.stmt.*;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
@@ -133,7 +130,6 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                             .collect(Collectors.joining("_"));
 
                     MethodCallExpr asyncMethodCallExpr = new MethodCallExpr("async")
-                            .addArgument(asyncMethodName)
                             .setArguments(
                                     Stream
                                             .concat(
@@ -144,7 +140,29 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                             );
 
                     methodCallExpr.getScope().ifPresent(asyncMethodCallExpr::setScope);
-                    statements.add(new ReturnStmt(asyncMethodCallExpr));
+                    statements
+                            .addAll(
+                                    new NodeList<>(
+                                            new ExpressionStmt(
+                                                    new VariableDeclarationExpr()
+                                                            .addVariable(
+                                                                    new VariableDeclarator()
+                                                                            .setName(variableDeclarator.getNameAsString() + "Mono")
+                                                                            .setType(new ClassOrInterfaceType().setName(Mono.class.getSimpleName()).setTypeArguments(variableDeclarator.getType()))
+                                                                            .setInitializer(asyncMethodCallExpr)
+                                                            )
+                                            ),
+                                            new ReturnStmt(
+                                                    new MethodCallExpr("flatMap")
+                                                            .addArgument(
+                                                                    new LambdaExpr()
+                                                                            .addParameter(new Parameter(new UnknownType(), variableDeclarator.getName()))
+                                                                            .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementNodeList.subList(i + 1, statementNodeList.size()))))
+                                                            )
+                                                            .setScope(new NameExpr(variableDeclarator.getNameAsString() + "Mono"))
+                                            )
+                                    )
+                            );
                     break;
                 }
             }

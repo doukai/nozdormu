@@ -23,14 +23,13 @@ public class AsyncTest {
                 .expectComplete()
                 .verify();
 
-        String email = "nozdormu@nozdormu.com";
         String name = "kai";
+        String email = "kai@nozdormu.com";
         String target = IntStream.range(0, name.length())
                 .mapToObj(index -> "" + (index + 1) * email.length())
                 .collect(Collectors.joining(""));
         User user = new User();
         user.setName(name);
-        user.setEmail(email);
 
         Mono<String> genPassword = userService.asyncInvoke("genPassword", user);
         StepVerifier.create(genPassword)

@@ -162,6 +162,7 @@ public class InjectProcessor extends AbstractProcessor {
 
         List<FieldDeclaration> privateFieldDeclarationList = componentClassDeclaration.getFields().stream()
                 .filter(fieldDeclaration -> fieldDeclaration.hasModifier(Modifier.Keyword.PRIVATE))
+                .filter(fieldDeclaration -> !fieldDeclaration.hasModifier(Modifier.Keyword.STATIC))
                 .map(fieldDeclaration -> (FieldDeclaration) fieldDeclaration.clone().setParentNode(componentClassDeclaration))
                 .collect(Collectors.toList());
 
