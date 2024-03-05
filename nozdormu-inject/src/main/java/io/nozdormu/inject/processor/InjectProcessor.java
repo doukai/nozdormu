@@ -163,6 +163,12 @@ public class InjectProcessor extends AbstractProcessor {
         List<FieldDeclaration> privateFieldDeclarationList = componentClassDeclaration.getFields().stream()
                 .filter(fieldDeclaration -> fieldDeclaration.hasModifier(Modifier.Keyword.PRIVATE))
                 .filter(fieldDeclaration -> !fieldDeclaration.hasModifier(Modifier.Keyword.STATIC))
+                .filter(fieldDeclaration ->
+                        componentClassDeclaration.getConstructors().stream()
+                                .flatMap(constructorDeclaration -> constructorDeclaration.getParameters().stream())
+                                .map(NodeWithSimpleName::getNameAsString)
+                                .anyMatch(name -> fieldDeclaration.getVariable(0).getNameAsString().equals(name))
+                )
                 .map(fieldDeclaration -> (FieldDeclaration) fieldDeclaration.clone().setParentNode(componentClassDeclaration))
                 .collect(Collectors.toList());
 
@@ -187,14 +193,20 @@ public class InjectProcessor extends AbstractProcessor {
                                                     )
                                     );
 
-                            privateFieldDeclarationList.forEach(fieldDeclaration ->
-                                    blockStmt.addStatement(
-                                            new AssignExpr()
-                                                    .setTarget(new FieldAccessExpr().setName(fieldDeclaration.getVariable(0).getNameAsString()).setScope(new ThisExpr()))
-                                                    .setValue(fieldDeclaration.getVariable(0).getNameAsExpression())
-                                                    .setOperator(AssignExpr.Operator.ASSIGN)
+                            privateFieldDeclarationList.stream()
+                                    .filter(fieldDeclaration ->
+                                            constructorDeclaration.getParameters().stream()
+                                                    .map(NodeWithSimpleName::getNameAsString)
+                                                    .anyMatch(name -> fieldDeclaration.getVariable(0).getNameAsString().equals(name))
                                     )
-                            );
+                                    .forEach(fieldDeclaration ->
+                                            blockStmt.addStatement(
+                                                    new AssignExpr()
+                                                            .setTarget(new FieldAccessExpr().setName(fieldDeclaration.getVariable(0).getNameAsString()).setScope(new ThisExpr()))
+                                                            .setValue(fieldDeclaration.getVariable(0).getNameAsExpression())
+                                                            .setOperator(AssignExpr.Operator.ASSIGN)
+                                            )
+                                    );
 
                             componentClassDeclaration.getMethods().stream()
                                     .filter(methodDeclaration ->
@@ -400,10 +412,10 @@ public class InjectProcessor extends AbstractProcessor {
                                                         );
 
                                                 holderClassDeclaration.addFieldWithInitializer(
-                                                        qualifiedName,
-                                                        "INSTANCE",
-                                                        objectCreateExpression
-                                                )
+                                                                qualifiedName,
+                                                                "INSTANCE",
+                                                                objectCreateExpression
+                                                        )
                                                         .setModifiers(Modifier.Keyword.PRIVATE, Modifier.Keyword.STATIC, Modifier.Keyword.FINAL);
 
                                                 contextClassDeclaration.addMember(holderClassDeclaration);
