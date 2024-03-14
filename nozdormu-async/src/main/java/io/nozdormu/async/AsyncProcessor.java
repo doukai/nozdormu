@@ -167,13 +167,22 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                 }
             }
             if (statement.isReturnStmt() && statement.asReturnStmt().getExpression().isPresent()) {
-                statements.add(
-                        new ReturnStmt(
-                                new MethodCallExpr("just")
-                                        .addArgument(statement.asReturnStmt().getExpression().get())
-                                        .setScope(new NameExpr(Mono.class.getSimpleName()))
-                        )
-                );
+                Expression expression = statement.asReturnStmt().getExpression().get();
+                if (expression.isMethodCallExpr() && expression.asMethodCallExpr().getNameAsString().equals("await")) {
+                    statements.add(
+                            new ReturnStmt(
+                                    expression.asMethodCallExpr().getArgument(0).asMethodCallExpr()
+                            )
+                    );
+                } else {
+                    statements.add(
+                            new ReturnStmt(
+                                    new MethodCallExpr("just")
+                                            .addArgument(statement.asReturnStmt().getExpression().get())
+                                            .setScope(new NameExpr(Mono.class.getSimpleName()))
+                            )
+                    );
+                }
             } else {
                 statements.add(statement);
             }
