@@ -343,6 +343,16 @@ public class InjectProcessor extends AbstractProcessor {
                                                                             .map(ResolvedType::asReferenceType)
                                                                             .map(ResolvedReferenceType::getQualifiedName)
                                                                             .forEach(contextCompilationUnit::addImport);
+                                                                    if (expression.isNameExpr() && expression.asNameExpr().resolve().isField()) {
+                                                                        return new BinaryExpr()
+                                                                                .setLeft(new StringLiteralExpr(NAME_PREFIX))
+                                                                                .setOperator(BinaryExpr.Operator.PLUS)
+                                                                                .setRight(
+                                                                                        new FieldAccessExpr()
+                                                                                                .setName(expression.asNameExpr().getName())
+                                                                                                .setScope(new NameExpr(expression.asNameExpr().resolve().asField().declaringType().getQualifiedName()))
+                                                                                );
+                                                                    }
                                                                     return new BinaryExpr()
                                                                             .setLeft(new StringLiteralExpr(NAME_PREFIX))
                                                                             .setOperator(BinaryExpr.Operator.PLUS)
@@ -366,6 +376,16 @@ public class InjectProcessor extends AbstractProcessor {
                                                                             .map(ResolvedType::asReferenceType)
                                                                             .map(ResolvedReferenceType::getQualifiedName)
                                                                             .forEach(contextCompilationUnit::addImport);
+                                                                    if (expression.isNameExpr() && expression.asNameExpr().resolve().isField()) {
+                                                                        return new BinaryExpr()
+                                                                                .setLeft(new StringLiteralExpr(NAME_PREFIX))
+                                                                                .setOperator(BinaryExpr.Operator.PLUS)
+                                                                                .setRight(
+                                                                                        new FieldAccessExpr()
+                                                                                                .setName(expression.asNameExpr().getName())
+                                                                                                .setScope(new NameExpr(expression.asNameExpr().resolve().asField().declaringType().getQualifiedName()))
+                                                                                );
+                                                                    }
                                                                     return new BinaryExpr()
                                                                             .setLeft(new StringLiteralExpr(PRIORITY_PREFIX))
                                                                             .setOperator(BinaryExpr.Operator.PLUS)
@@ -412,10 +432,10 @@ public class InjectProcessor extends AbstractProcessor {
                                                         );
 
                                                 holderClassDeclaration.addFieldWithInitializer(
-                                                                qualifiedName,
-                                                                "INSTANCE",
-                                                                objectCreateExpression
-                                                        )
+                                                        qualifiedName,
+                                                        "INSTANCE",
+                                                        objectCreateExpression
+                                                )
                                                         .setModifiers(Modifier.Keyword.PRIVATE, Modifier.Keyword.STATIC, Modifier.Keyword.FINAL);
 
                                                 contextClassDeclaration.addMember(holderClassDeclaration);
@@ -576,7 +596,7 @@ public class InjectProcessor extends AbstractProcessor {
             staticInitializer.addStatement(
                     new MethodCallExpr()
                             .setName("put")
-                            .addArgument(new ClassExpr().setType(putClassQualifiedName.replaceAll("\\$",".")))
+                            .addArgument(new ClassExpr().setType(putClassQualifiedName.replaceAll("\\$", ".")))
                             .addArgument(keyExpr)
                             .addArgument(supplierExpression)
             );
@@ -584,21 +604,47 @@ public class InjectProcessor extends AbstractProcessor {
             staticInitializer.addStatement(
                     new MethodCallExpr()
                             .setName("put")
-                            .addArgument(new ClassExpr().setType(putClassQualifiedName.replaceAll("\\$",".")))
+                            .addArgument(new ClassExpr().setType(putClassQualifiedName.replaceAll("\\$", ".")))
                             .addArgument(supplierExpression)
             );
         }
     }
 
     private MethodCallExpr getBeanGetMethodCallExpr(NodeWithAnnotations<?> nodeWithAnnotations, CompilationUnit compilationUnit, ClassOrInterfaceType classOrInterfaceType) {
-        Optional<StringLiteralExpr> nameStringExpr = nodeWithAnnotations.getAnnotationByClass(Default.class)
-                .map(annotationExpr -> new StringLiteralExpr(DEFAULT_KEY))
+        Optional<Expression> nameStringExpr = nodeWithAnnotations.getAnnotationByClass(Default.class)
+                .map(annotationExpr -> (Expression) new StringLiteralExpr(DEFAULT_KEY))
                 .or(() ->
                         nodeWithAnnotations.getAnnotationByClass(Named.class)
                                 .flatMap(processorManager::findAnnotationValue)
-                                .map(Expression::asStringLiteralExpr)
-                                .map(stringLiteralExpr -> new StringLiteralExpr(NAME_PREFIX + stringLiteralExpr.getValue()))
+                                .map(expression -> {
+                                            if (expression.isStringLiteralExpr()) {
+                                                return new StringLiteralExpr(NAME_PREFIX + expression.asStringLiteralExpr().getValue());
+                                            } else {
+                                                expression.findAll(NameExpr.class).stream()
+                                                        .map(Expression::calculateResolvedType)
+                                                        .filter(ResolvedType::isReferenceType)
+                                                        .map(ResolvedType::asReferenceType)
+                                                        .map(ResolvedReferenceType::getQualifiedName)
+                                                        .forEach(compilationUnit::addImport);
+                                                if (expression.isNameExpr() && expression.asNameExpr().resolve().isField()) {
+                                                    return new BinaryExpr()
+                                                            .setLeft(new StringLiteralExpr(NAME_PREFIX))
+                                                            .setOperator(BinaryExpr.Operator.PLUS)
+                                                            .setRight(
+                                                                    new FieldAccessExpr()
+                                                                            .setName(expression.asNameExpr().getName())
+                                                                            .setScope(new NameExpr(expression.asNameExpr().resolve().asField().declaringType().getQualifiedName()))
+                                                            );
+                                                }
+                                                return new BinaryExpr()
+                                                        .setLeft(new StringLiteralExpr(NAME_PREFIX))
+                                                        .setOperator(BinaryExpr.Operator.PLUS)
+                                                        .setRight(new EnclosedExpr(expression));
+                                            }
+                                        }
+                                )
                 );
+
 
         MethodCallExpr methodCallExpr;
         String qualifiedName = processorManager.getQualifiedName(classOrInterfaceType);
@@ -699,6 +745,16 @@ public class InjectProcessor extends AbstractProcessor {
                                                                                 .map(ResolvedType::asReferenceType)
                                                                                 .map(ResolvedReferenceType::getQualifiedName)
                                                                                 .forEach(moduleContextCompilationUnit::addImport);
+                                                                        if (expression.isNameExpr() && expression.asNameExpr().resolve().isField()) {
+                                                                            return new BinaryExpr()
+                                                                                    .setLeft(new StringLiteralExpr(NAME_PREFIX))
+                                                                                    .setOperator(BinaryExpr.Operator.PLUS)
+                                                                                    .setRight(
+                                                                                            new FieldAccessExpr()
+                                                                                                    .setName(expression.asNameExpr().getName())
+                                                                                                    .setScope(new NameExpr(expression.asNameExpr().resolve().asField().declaringType().getQualifiedName()))
+                                                                                    );
+                                                                        }
                                                                         return new BinaryExpr()
                                                                                 .setLeft(new StringLiteralExpr(NAME_PREFIX))
                                                                                 .setOperator(BinaryExpr.Operator.PLUS)
@@ -722,6 +778,16 @@ public class InjectProcessor extends AbstractProcessor {
                                                                                 .map(ResolvedType::asReferenceType)
                                                                                 .map(ResolvedReferenceType::getQualifiedName)
                                                                                 .forEach(moduleContextCompilationUnit::addImport);
+                                                                        if (expression.isNameExpr() && expression.asNameExpr().resolve().isField()) {
+                                                                            return new BinaryExpr()
+                                                                                    .setLeft(new StringLiteralExpr(NAME_PREFIX))
+                                                                                    .setOperator(BinaryExpr.Operator.PLUS)
+                                                                                    .setRight(
+                                                                                            new FieldAccessExpr()
+                                                                                                    .setName(expression.asNameExpr().getName())
+                                                                                                    .setScope(new NameExpr(expression.asNameExpr().resolve().asField().declaringType().getQualifiedName()))
+                                                                                    );
+                                                                        }
                                                                         return new BinaryExpr()
                                                                                 .setLeft(new StringLiteralExpr(PRIORITY_PREFIX))
                                                                                 .setOperator(BinaryExpr.Operator.PLUS)
@@ -908,7 +974,7 @@ public class InjectProcessor extends AbstractProcessor {
             staticInitializer.addStatement(
                     new MethodCallExpr()
                             .setName("put")
-                            .addArgument(new ClassExpr().setType(putClassQualifiedName.replaceAll("\\$",".")))
+                            .addArgument(new ClassExpr().setType(putClassQualifiedName.replaceAll("\\$", ".")))
                             .addArgument(keyExpr)
                             .addArgument(supplierExpression)
             );
@@ -916,7 +982,7 @@ public class InjectProcessor extends AbstractProcessor {
             staticInitializer.addStatement(
                     new MethodCallExpr()
                             .setName("put")
-                            .addArgument(new ClassExpr().setType(putClassQualifiedName.replaceAll("\\$",".")))
+                            .addArgument(new ClassExpr().setType(putClassQualifiedName.replaceAll("\\$", ".")))
                             .addArgument(supplierExpression)
             );
         }
