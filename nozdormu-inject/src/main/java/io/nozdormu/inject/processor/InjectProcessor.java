@@ -576,7 +576,7 @@ public class InjectProcessor extends AbstractProcessor {
             staticInitializer.addStatement(
                     new MethodCallExpr()
                             .setName("put")
-                            .addArgument(new ClassExpr().setType(putClassQualifiedName))
+                            .addArgument(new ClassExpr().setType(putClassQualifiedName.replaceAll("\\$",".")))
                             .addArgument(keyExpr)
                             .addArgument(supplierExpression)
             );
@@ -584,7 +584,7 @@ public class InjectProcessor extends AbstractProcessor {
             staticInitializer.addStatement(
                     new MethodCallExpr()
                             .setName("put")
-                            .addArgument(new ClassExpr().setType(putClassQualifiedName))
+                            .addArgument(new ClassExpr().setType(putClassQualifiedName.replaceAll("\\$",".")))
                             .addArgument(supplierExpression)
             );
         }
@@ -908,7 +908,7 @@ public class InjectProcessor extends AbstractProcessor {
             staticInitializer.addStatement(
                     new MethodCallExpr()
                             .setName("put")
-                            .addArgument(new ClassExpr().setType(putClassQualifiedName))
+                            .addArgument(new ClassExpr().setType(putClassQualifiedName.replaceAll("\\$",".")))
                             .addArgument(keyExpr)
                             .addArgument(supplierExpression)
             );
@@ -916,7 +916,7 @@ public class InjectProcessor extends AbstractProcessor {
             staticInitializer.addStatement(
                     new MethodCallExpr()
                             .setName("put")
-                            .addArgument(new ClassExpr().setType(putClassQualifiedName))
+                            .addArgument(new ClassExpr().setType(putClassQualifiedName.replaceAll("\\$",".")))
                             .addArgument(supplierExpression)
             );
         }
