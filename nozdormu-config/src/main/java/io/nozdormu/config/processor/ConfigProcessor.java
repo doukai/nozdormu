@@ -3,21 +3,20 @@ package io.nozdormu.config.processor;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.Modifier;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
+import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.expr.*;
 import com.github.javaparser.ast.stmt.BlockStmt;
 import com.github.javaparser.ast.stmt.ExpressionStmt;
-import com.github.javaparser.ast.type.ClassOrInterfaceType;
+import com.github.javaparser.ast.type.VoidType;
 import com.google.auto.service.AutoService;
 import io.nozdormu.common.ProcessorManager;
-import io.nozdormu.spi.context.BaseModuleContext;
 import io.nozdormu.spi.context.BeanContext;
-import io.nozdormu.spi.context.ModuleContext;
+import io.nozdormu.spi.context.BeanContextLoader;
 import io.nozdormu.spi.error.InjectionProcessException;
 import jakarta.annotation.Generated;
 import org.eclipse.microprofile.config.Config;
 import org.eclipse.microprofile.config.ConfigProvider;
 import org.eclipse.microprofile.config.inject.ConfigProperties;
-import org.eclipse.microprofile.config.spi.Converter;
 import org.tinylog.Logger;
 
 import javax.annotation.processing.*;
@@ -73,7 +72,7 @@ public class ConfigProcessor extends AbstractProcessor {
                 .setName(processorManager.getRootPackageName().replaceAll("\\.", "_") + "_Config_Context")
                 .addAnnotation(
                         new SingleMemberAnnotationExpr()
-                                .setMemberValue(new ClassExpr().setType(ModuleContext.class))
+                                .setMemberValue(new ClassExpr().setType(BeanContextLoader.class))
                                 .setName(AutoService.class.getSimpleName())
                 )
                 .addAnnotation(
@@ -81,19 +80,24 @@ public class ConfigProcessor extends AbstractProcessor {
                                 .addPair("value", new StringLiteralExpr(getClass().getName()))
                                 .setName(Generated.class.getSimpleName())
                 )
-                .addExtendedType(BaseModuleContext.class);
+                .addImplementedType(BeanContextLoader.class);
 
         CompilationUnit contextCompilationUnit = new CompilationUnit()
                 .addType(contextClassDeclaration)
                 .addImport(AutoService.class)
                 .addImport(Generated.class)
-                .addImport(ModuleContext.class)
-                .addImport(BaseModuleContext.class)
+                .addImport(BeanContextLoader.class)
                 .addImport(BeanContext.class)
                 .addImport(Config.class)
                 .addImport(ConfigProvider.class);
 
-        BlockStmt staticInitializer = contextClassDeclaration.addStaticInitializer();
+        MethodDeclaration loadMethod = new MethodDeclaration()
+                .setName("load")
+                .setModifiers(Modifier.Keyword.PUBLIC)
+                .setType(new VoidType())
+                .addAnnotation(Override.class);
+        contextClassDeclaration.addMember(loadMethod);
+        BlockStmt staticInitializer = loadMethod.createBody();
 
         componentCompilationUnits
                 .forEach(compilationUnit -> {
@@ -141,6 +145,7 @@ public class ConfigProcessor extends AbstractProcessor {
                                                                             )
                                                             )
                                             )
+                                            .setScope(new NameExpr("BeanContext"))
                             );
                         }
                 );

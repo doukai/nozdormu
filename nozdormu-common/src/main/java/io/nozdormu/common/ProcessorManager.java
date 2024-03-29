@@ -245,6 +245,20 @@ public class ProcessorManager {
         return getCompilationUnit(qualifiedName).orElseThrow(() -> new InjectionProcessException(InjectionProcessErrorType.CANNOT_PARSER_SOURCE_CODE.bind(qualifiedName)));
     }
 
+    public ClassOrInterfaceDeclaration getClassOrInterfaceDeclarationOrError(String qualifiedName) {
+        CompilationUnit compilationUnit = getCompilationUnitOrError(qualifiedName);
+        return compilationUnit.getTypes().stream()
+                .filter(BodyDeclaration::isClassOrInterfaceDeclaration)
+                .map(BodyDeclaration::asClassOrInterfaceDeclaration)
+                .filter(classOrInterfaceDeclaration ->
+                        classOrInterfaceDeclaration.getFullyQualifiedName()
+                                .orElse(classOrInterfaceDeclaration.getNameAsString())
+                                .equals(qualifiedName)
+                )
+                .findFirst()
+                .orElse(null);
+    }
+
     public Stream<ResolvedType> getMethodReturnResolvedType(MethodDeclaration methodDeclaration) {
         return methodDeclaration.findAll(ReturnStmt.class).stream()
                 .map(ReturnStmt::getExpression)
@@ -322,8 +336,12 @@ public class ProcessorManager {
     }
 
     public String getQualifiedName(ClassOrInterfaceType type) {
-        ResolvedReferenceType resolvedReferenceType = getResolvedType(type).asReferenceType();
-        return resolvedReferenceType.getQualifiedName();
+        try {
+            ResolvedReferenceType resolvedReferenceType = getResolvedType(type).asReferenceType();
+            return resolvedReferenceType.getQualifiedName();
+        } catch (UnsupportedOperationException e) {
+            return type.getNameAsString();
+        }
     }
 
     public String getQualifiedName(MethodDeclaration methodDeclaration) {
@@ -337,7 +355,7 @@ public class ProcessorManager {
     public ResolvedType getResolvedType(Type type) {
         try {
             return javaSymbolSolver.toResolvedType(type, ResolvedReferenceType.class);
-        } catch (UnsolvedSymbolException e) {
+        } catch (UnsolvedSymbolException | UnsupportedOperationException e) {
             if (type.isClassOrInterfaceType() && type.hasScope()) {
                 return getResolvedInnerType(type.asClassOrInterfaceType());
             }

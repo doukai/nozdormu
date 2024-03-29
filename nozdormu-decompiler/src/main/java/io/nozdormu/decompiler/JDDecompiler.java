@@ -24,7 +24,7 @@ public class JDDecompiler implements TypeElementDecompiler {
     public String decompile(TypeElement typeElement) {
         try {
             DecompilerPrinter decompilerPrinter = new DecompilerPrinter();
-            decompiler.decompile(decompilerLoader, decompilerPrinter, typeElement.asType().toString());
+            decompiler.decompile(decompilerLoader, decompilerPrinter, typeElement.getQualifiedName().toString());
             return "package " + typeElement.getEnclosingElement().asType().toString() + ";" + System.lineSeparator() + decompilerPrinter;
         } catch (Exception e) {
             throw new RuntimeException(e);

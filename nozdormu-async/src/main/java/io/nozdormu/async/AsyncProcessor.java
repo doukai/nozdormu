@@ -165,24 +165,37 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                             );
                     break;
                 }
-            }
-            if (statement.isReturnStmt() && statement.asReturnStmt().getExpression().isPresent()) {
-                Expression expression = statement.asReturnStmt().getExpression().get();
-                if (expression.isMethodCallExpr() && expression.asMethodCallExpr().getNameAsString().equals("await")) {
-                    statements.add(
-                            new ReturnStmt(
-                                    expression.asMethodCallExpr().getArgument(0).asMethodCallExpr()
-                            )
-                    );
-                } else {
-                    statements.add(
-                            new ReturnStmt(
-                                    new MethodCallExpr("just")
-                                            .addArgument(statement.asReturnStmt().getExpression().get())
-                                            .setScope(new NameExpr(Mono.class.getSimpleName()))
-                            )
-                    );
+            } else if (statement.isBlockStmt()) {
+                statement.asBlockStmt().setStatements(buildAsyncMethodBody(componentClassDeclaration, statement.asBlockStmt().getStatements()));
+                statements.add(statement);
+            } else if (statement.isIfStmt()) {
+                if (statement.asIfStmt().getThenStmt().isBlockStmt()) {
+                    statement.asIfStmt().getThenStmt().asBlockStmt().setStatements(buildAsyncMethodBody(componentClassDeclaration, statement.asIfStmt().getThenStmt().asBlockStmt().getStatements()));
+                    statements.add(statement);
+                } else if (statement.asIfStmt().getThenStmt().isReturnStmt()) {
+                    buildAsyncReturnStatement(statement.asIfStmt().getThenStmt().asReturnStmt())
+                            .ifPresentOrElse(
+                                    statements::add,
+                                    () -> statements.add(statement)
+                            );
+                } else if (statement.asIfStmt().getElseStmt().isPresent()) {
+                    if (statement.asIfStmt().getElseStmt().get().isBlockStmt()) {
+                        statement.asIfStmt().getElseStmt().get().asBlockStmt().setStatements(buildAsyncMethodBody(componentClassDeclaration, statement.asIfStmt().getElseStmt().get().asBlockStmt().getStatements()));
+                        statements.add(statement);
+                    } else if (statement.asIfStmt().getElseStmt().get().isReturnStmt()) {
+                        buildAsyncReturnStatement(statement.asIfStmt().getElseStmt().get().asReturnStmt())
+                                .ifPresentOrElse(
+                                        statements::add,
+                                        () -> statements.add(statement)
+                                );
+                    }
                 }
+            } else if (statement.isReturnStmt()) {
+                buildAsyncReturnStatement(statement.asReturnStmt())
+                        .ifPresentOrElse(
+                                statements::add,
+                                () -> statements.add(statement)
+                        );
             } else {
                 statements.add(statement);
             }
@@ -190,7 +203,25 @@ public class AsyncProcessor implements ComponentProxyProcessor {
         return statements;
     }
 
-    Optional<MethodDeclaration> buildAsyncMethodDeclaration(ClassOrInterfaceDeclaration componentClassDeclaration) {
+    private Optional<ReturnStmt> buildAsyncReturnStatement(ReturnStmt returnStmt) {
+        return returnStmt.getExpression()
+                .map(expression -> {
+                            if (expression.isMethodCallExpr() && expression.asMethodCallExpr().getNameAsString().equals("await")) {
+                                return new ReturnStmt(
+                                        expression.asMethodCallExpr().getArgument(0).asMethodCallExpr()
+                                );
+                            } else {
+                                return new ReturnStmt(
+                                        new MethodCallExpr("just")
+                                                .addArgument(expression)
+                                                .setScope(new NameExpr(Mono.class.getSimpleName()))
+                                );
+                            }
+                        }
+                );
+    }
+
+    private Optional<MethodDeclaration> buildAsyncMethodDeclaration(ClassOrInterfaceDeclaration componentClassDeclaration) {
         CompilationUnit asyncableCompilationUnit = processorManager.getCompilationUnitOrError(Asyncable.class.getCanonicalName());
         ClassOrInterfaceDeclaration asyncableClassOrInterfaceDeclaration = processorManager.getPublicClassOrInterfaceDeclarationOrError(asyncableCompilationUnit);
         MethodDeclaration asyncMethodDeclaration = asyncableClassOrInterfaceDeclaration.getMethodsByName("async").get(0);

@@ -9,13 +9,19 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static io.nozdormu.spi.context.ModuleContext.*;
-
 public class BeanContext {
 
-    private static Set<ModuleContext> moduleContexts;
+    public static final String CLASS_PREFIX = "class:";
 
-    private static final BeanProviders CONTEXT_CACHE = new BeanProviders();
+    public static final String IMPL_PREFIX = "impl:";
+
+    public static final String NAME_PREFIX = "name:";
+
+    public static final String DEFAULT_KEY = "default";
+
+    public static final String PRIORITY_PREFIX = "priority:";
+
+    private static final BeanProviders CONTEXT = new BeanProviders();
 
     static {
         load(BeanContext.class.getClassLoader());
@@ -26,11 +32,27 @@ public class BeanContext {
 
     public static void load(ClassLoader classLoader) {
         Thread.currentThread().setContextClassLoader(classLoader);
-        Logger.info("load ModuleContext from {}", classLoader.getName());
-        moduleContexts = ServiceLoader.load(ModuleContext.class, classLoader).stream()
-                .map(ServiceLoader.Provider::get)
-                .collect(Collectors.toSet());
-        Logger.info(moduleContexts.size() + " ModuleContext loaded");
+        ServiceLoader.load(BeanContextLoader.class, classLoader).forEach(BeanContextLoader::load);
+    }
+
+    public static void put(Class<?> beanClass, Supplier<?> supplier) {
+        put(beanClass, CLASS_PREFIX + beanClass.getName(), supplier);
+    }
+
+    public static void putDefault(Class<?> beanClass, Supplier<?> supplier) {
+        put(beanClass, DEFAULT_KEY, supplier);
+    }
+
+    public static void putName(Class<?> beanClass, Supplier<?> supplier, String name) {
+        put(beanClass, NAME_PREFIX + name, supplier);
+    }
+
+    public static void putPriority(Class<?> beanClass, Integer priority, Supplier<?> supplier) {
+        put(beanClass, PRIORITY_PREFIX + Optional.ofNullable(priority).orElse(Integer.MAX_VALUE), supplier);
+    }
+
+    public static void put(Class<?> beanClass, String key, Supplier<?> supplier) {
+        CONTEXT.get(beanClass).put(key, supplier);
     }
 
     public static <T> T get(Class<T> beanClass) {
@@ -173,40 +195,31 @@ public class BeanContext {
 
     @SuppressWarnings("unchecked")
     private static <T> Optional<Supplier<T>> getSupplierOptional(Class<T> beanClass, String key) {
-        Supplier<?> supplier = CONTEXT_CACHE.get(beanClass).get(key);
+        Supplier<?> supplier = CONTEXT.get(beanClass).get(key);
         return Optional.ofNullable((Supplier<T>) supplier);
     }
 
     @SuppressWarnings("unchecked")
     private static <T> Optional<Supplier<Mono<T>>> getMonoSupplierOptional(Class<T> beanClass, String key) {
-        Supplier<?> supplier = CONTEXT_CACHE.get(beanClass).get(key);
+        Supplier<?> supplier = CONTEXT.get(beanClass).get(key);
         return Optional.ofNullable((Supplier<Mono<T>>) supplier);
     }
 
     @SuppressWarnings("unchecked")
     private static <T> Optional<Supplier<T>> getAndCacheSupplier(Class<T> beanClass, String key) {
         Logger.debug("search bean instance for class {} key {}", beanClass.getName(), key);
-        return moduleContexts.stream()
-                .map(moduleContext -> moduleContext.getOptional(beanClass, key))
-                .flatMap(Optional::stream)
-                .findFirst()
-                .map(supplier -> (Supplier<T>) CONTEXT_CACHE.get(beanClass).computeIfAbsent(key, k -> supplier));
+        return Optional.ofNullable((Supplier<T>) CONTEXT.get(beanClass).get(key));
     }
 
     @SuppressWarnings("unchecked")
     private static <T> Optional<Supplier<Mono<T>>> getAndCacheMonoSupplier(Class<T> beanClass, String key) {
         Logger.debug("search bean instance for class {} key {}", beanClass.getName(), key);
-        return moduleContexts.stream()
-                .map(moduleContext -> moduleContext.getOptional(beanClass, key))
-                .flatMap(Optional::stream)
-                .findFirst()
-                .map(supplier -> (Supplier<Mono<T>>) CONTEXT_CACHE.get(beanClass).computeIfAbsent(key, k -> supplier));
+        return Optional.ofNullable((Supplier<Mono<T>>) CONTEXT.get(beanClass).get(key));
     }
 
     public static <T> Stream<Map.Entry<String, Supplier<?>>> getImplEntryStream(Class<T> beanClass) {
         Logger.debug("search bean map for class {}", beanClass.getName());
-        return moduleContexts.stream()
-                .flatMap(moduleContext -> Stream.ofNullable(moduleContext.getMap(beanClass)))
+        return Stream.ofNullable(CONTEXT.get(beanClass))
                 .flatMap(map -> map.entrySet().stream())
                 .filter(entry -> entry.getKey().startsWith(IMPL_PREFIX))
                 .collect(
@@ -223,8 +236,7 @@ public class BeanContext {
 
     public static <T> Stream<Map.Entry<String, Supplier<?>>> getPriorityEntryStream(Class<T> beanClass) {
         Logger.debug("search bean map for class {}", beanClass.getName());
-        return moduleContexts.stream()
-                .flatMap(moduleContext -> Stream.ofNullable(moduleContext.getMap(beanClass)))
+        return Stream.ofNullable(CONTEXT.get(beanClass))
                 .flatMap(map -> map.entrySet().stream())
                 .filter(entry -> entry.getKey().startsWith(PRIORITY_PREFIX))
                 .collect(
@@ -247,8 +259,7 @@ public class BeanContext {
 
     public static <T> Stream<Map.Entry<String, Supplier<?>>> getNameEntryStream(Class<T> beanClass) {
         Logger.debug("search bean map for class {}", beanClass.getName());
-        return moduleContexts.stream()
-                .flatMap(moduleContext -> Stream.ofNullable(moduleContext.getMap(beanClass)))
+        return Stream.ofNullable(CONTEXT.get(beanClass))
                 .flatMap(map -> map.entrySet().stream())
                 .filter(entry -> entry.getKey().startsWith(NAME_PREFIX))
                 .collect(
@@ -439,6 +450,6 @@ public class BeanContext {
 
     @SuppressWarnings("unchecked")
     public static <T> Supplier<T> compute(Class<T> beanClass, String name, Object object) {
-        return (Supplier<T>) CONTEXT_CACHE.get(beanClass).compute(name, (k, v) -> () -> object);
+        return (Supplier<T>) CONTEXT.get(beanClass).compute(name, (k, v) -> () -> object);
     }
 }
