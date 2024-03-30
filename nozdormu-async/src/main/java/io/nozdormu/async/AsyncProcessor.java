@@ -84,9 +84,69 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                 MethodDeclaration methodDeclaration = processorManager.resolveMethodDeclaration(componentClassDeclaration, methodCallExpr);
                 if (methodCallExpr.getScope().isPresent() && methodCallExpr.getScope().get().calculateResolvedType().asReferenceType().getQualifiedName().equals(Provider.class.getCanonicalName()) ||
                         methodDeclaration.getType().isClassOrInterfaceType() && processorManager.getQualifiedName(methodDeclaration.getType()).equals(Mono.class.getCanonicalName())) {
-                    statements.add(new ExpressionStmt(new MethodCallExpr("subscribe").setScope(methodCallExpr)));
+                    if (hasReturnStmt) {
+                        MethodCallExpr then = new MethodCallExpr("then")
+                                .addArgument(
+                                        new MethodCallExpr("defer")
+                                                .addArgument(
+                                                        new LambdaExpr()
+                                                                .setEnclosingParameters(true)
+                                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementNodeList.subList(i + 1, statementNodeList.size()))))
+                                                )
+                                                .setScope(new NameExpr(Mono.class.getSimpleName()))
+                                )
+                                .setScope(methodCallExpr);
+                        statements.add(new ReturnStmt(then));
+                    } else {
+                        MethodCallExpr thenEmpty = new MethodCallExpr("thenEmpty")
+                                .addArgument(
+                                        new MethodCallExpr("fromRunnable")
+                                                .addArgument(
+                                                        new LambdaExpr()
+                                                                .setEnclosingParameters(true)
+                                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementNodeList.subList(i + 1, statementNodeList.size()))))
+                                                )
+                                                .setScope(new NameExpr(Mono.class.getSimpleName()))
+                                )
+                                .setScope(methodCallExpr);
+                        statements.add(new ReturnStmt(thenEmpty));
+                    }
+                    break;
                 } else if (methodDeclaration.getType().isClassOrInterfaceType() && processorManager.getQualifiedName(methodDeclaration.getType()).equals(Flux.class.getCanonicalName())) {
-                    statements.add(new ExpressionStmt(new MethodCallExpr("subscribe").setScope(methodCallExpr)));
+                    if (hasReturnStmt) {
+                        MethodCallExpr then = new MethodCallExpr("then")
+                                .addArgument(
+                                        new MethodCallExpr("defer")
+                                                .addArgument(
+                                                        new LambdaExpr()
+                                                                .setEnclosingParameters(true)
+                                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementNodeList.subList(i + 1, statementNodeList.size()))))
+                                                )
+                                                .setScope(new NameExpr(Mono.class.getSimpleName()))
+                                )
+                                .setScope(
+                                        new MethodCallExpr("collectList")
+                                                .setScope(methodCallExpr)
+                                );
+                        statements.add(new ReturnStmt(then));
+                    } else {
+                        MethodCallExpr thenEmpty = new MethodCallExpr("thenEmpty")
+                                .addArgument(
+                                        new MethodCallExpr("fromRunnable")
+                                                .addArgument(
+                                                        new LambdaExpr()
+                                                                .setEnclosingParameters(true)
+                                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementNodeList.subList(i + 1, statementNodeList.size()))))
+                                                )
+                                                .setScope(new NameExpr(Mono.class.getSimpleName()))
+                                )
+                                .setScope(
+                                        new MethodCallExpr("collectList")
+                                                .setScope(methodCallExpr)
+                                );
+                        statements.add(new ReturnStmt(thenEmpty));
+                    }
+                    break;
                 } else {
                     String asyncMethodName = Stream
                             .concat(
@@ -114,7 +174,35 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                             );
 
                     methodCallExpr.getScope().ifPresent(asyncMethodCallExpr::setScope);
-                    statements.add(new ExpressionStmt(new MethodCallExpr("subscribe").setScope(asyncMethodCallExpr)));
+
+                    if (hasReturnStmt) {
+                        MethodCallExpr then = new MethodCallExpr("then")
+                                .addArgument(
+                                        new MethodCallExpr("defer")
+                                                .addArgument(
+                                                        new LambdaExpr()
+                                                                .setEnclosingParameters(true)
+                                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementNodeList.subList(i + 1, statementNodeList.size()))))
+                                                )
+                                                .setScope(new NameExpr(Mono.class.getSimpleName()))
+                                )
+                                .setScope(asyncMethodCallExpr);
+                        statements.add(new ReturnStmt(then));
+                    } else {
+                        MethodCallExpr thenEmpty = new MethodCallExpr("thenEmpty")
+                                .addArgument(
+                                        new MethodCallExpr("fromRunnable")
+                                                .addArgument(
+                                                        new LambdaExpr()
+                                                                .setEnclosingParameters(true)
+                                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementNodeList.subList(i + 1, statementNodeList.size()))))
+                                                )
+                                                .setScope(new NameExpr(Mono.class.getSimpleName()))
+                                )
+                                .setScope(asyncMethodCallExpr);
+                        statements.add(new ReturnStmt(thenEmpty));
+                    }
+                    break;
                 }
             } else if (statement.isExpressionStmt() &&
                     statement.asExpressionStmt().getExpression().isVariableDeclarationExpr() &&
@@ -128,36 +216,51 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                 MethodDeclaration methodDeclaration = processorManager.resolveMethodDeclaration(componentClassDeclaration, methodCallExpr);
                 if (methodCallExpr.getScope().isPresent() && methodCallExpr.getScope().get().calculateResolvedType().asReferenceType().getQualifiedName().equals(Provider.class.getCanonicalName()) ||
                         methodDeclaration.getType().isClassOrInterfaceType() && processorManager.getQualifiedName(methodDeclaration.getType()).equals(Mono.class.getCanonicalName())) {
-                    MethodCallExpr flatMap = new MethodCallExpr(hasReturnStmt ? "flatMap" : "doOnSuccess")
-                            .addArgument(
-                                    new LambdaExpr()
-                                            .addParameter(new Parameter(new UnknownType(), variableDeclarator.getName()))
-                                            .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementNodeList.subList(i + 1, statementNodeList.size()))))
-                            )
-                            .setScope(methodCallExpr);
-
                     if (hasReturnStmt) {
+                        MethodCallExpr flatMap = new MethodCallExpr("flatMap")
+                                .addArgument(
+                                        new LambdaExpr()
+                                                .addParameter(new Parameter(new UnknownType(), variableDeclarator.getName()))
+                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementNodeList.subList(i + 1, statementNodeList.size()))))
+                                )
+                                .setScope(methodCallExpr);
                         statements.add(new ReturnStmt(flatMap));
                     } else {
-                        statements.add(new ExpressionStmt(new MethodCallExpr("subscribe").setScope(flatMap)));
+                        MethodCallExpr doOnSuccess = new MethodCallExpr("doOnSuccess")
+                                .addArgument(
+                                        new LambdaExpr()
+                                                .addParameter(new Parameter(new UnknownType(), variableDeclarator.getName()))
+                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementNodeList.subList(i + 1, statementNodeList.size()))))
+                                )
+                                .setScope(methodCallExpr);
+                        statements.add(new ReturnStmt(new MethodCallExpr("then").setScope(doOnSuccess)));
                     }
                     break;
                 } else if (methodDeclaration.getType().isClassOrInterfaceType() && processorManager.getQualifiedName(methodDeclaration.getType()).equals(Flux.class.getCanonicalName())) {
-                    MethodCallExpr flatMap = new MethodCallExpr(hasReturnStmt ? "flatMap" : "doOnSuccess")
-                            .addArgument(
-                                    new LambdaExpr()
-                                            .addParameter(new Parameter(new UnknownType(), variableDeclarator.getName()))
-                                            .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementNodeList.subList(i + 1, statementNodeList.size()))))
-                            )
-                            .setScope(
-                                    new MethodCallExpr("collectList")
-                                            .setScope(methodCallExpr)
-                            );
-
                     if (hasReturnStmt) {
+                        MethodCallExpr flatMap = new MethodCallExpr("flatMap")
+                                .addArgument(
+                                        new LambdaExpr()
+                                                .addParameter(new Parameter(new UnknownType(), variableDeclarator.getName()))
+                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementNodeList.subList(i + 1, statementNodeList.size()))))
+                                )
+                                .setScope(
+                                        new MethodCallExpr("collectList")
+                                                .setScope(methodCallExpr)
+                                );
                         statements.add(new ReturnStmt(flatMap));
                     } else {
-                        statements.add(new ExpressionStmt(new MethodCallExpr("subscribe").setScope(flatMap)));
+                        MethodCallExpr doOnSuccess = new MethodCallExpr("doOnSuccess")
+                                .addArgument(
+                                        new LambdaExpr()
+                                                .addParameter(new Parameter(new UnknownType(), variableDeclarator.getName()))
+                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementNodeList.subList(i + 1, statementNodeList.size()))))
+                                )
+                                .setScope(
+                                        new MethodCallExpr("collectList")
+                                                .setScope(methodCallExpr)
+                                );
+                        statements.add(new ReturnStmt(new MethodCallExpr("then").setScope(doOnSuccess)));
                     }
                     break;
                 } else {
@@ -188,32 +291,41 @@ public class AsyncProcessor implements ComponentProxyProcessor {
 
                     methodCallExpr.getScope().ifPresent(asyncMethodCallExpr::setScope);
 
-                    MethodCallExpr flatMap = new MethodCallExpr(hasReturnStmt ? "flatMap" : "doOnSuccess")
-                            .addArgument(
-                                    new LambdaExpr()
-                                            .addParameter(new Parameter(new UnknownType(), variableDeclarator.getName()))
-                                            .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementNodeList.subList(i + 1, statementNodeList.size()))))
-                            )
-                            .setScope(new NameExpr(variableDeclarator.getNameAsString() + "Mono"));
-
-                    statements
-                            .addAll(
-                                    new NodeList<>(
-                                            new ExpressionStmt(
-                                                    new VariableDeclarationExpr()
-                                                            .addVariable(
-                                                                    new VariableDeclarator()
-                                                                            .setName(variableDeclarator.getNameAsString() + "Mono")
-                                                                            .setType(new ClassOrInterfaceType().setName(Mono.class.getSimpleName()).setTypeArguments(variableDeclarator.getType()))
-                                                                            .setInitializer(asyncMethodCallExpr)
-                                                            )
-                                            ),
-                                            hasReturnStmt ?
-                                                    new ReturnStmt(flatMap) :
-                                                    new ExpressionStmt(new MethodCallExpr("subscribe").setScope(flatMap))
-
-                                    )
-                            );
+                    if (hasReturnStmt) {
+                        MethodCallExpr flatMap = new MethodCallExpr("flatMap")
+                                .addArgument(
+                                        new LambdaExpr()
+                                                .addParameter(new Parameter(new UnknownType(), variableDeclarator.getName()))
+                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementNodeList.subList(i + 1, statementNodeList.size()))))
+                                )
+                                .setScope(
+                                        new MethodCallExpr("map")
+                                                .addArgument(
+                                                        new LambdaExpr()
+                                                                .addParameter(new Parameter(new UnknownType(), "result"))
+                                                                .setBody(new ExpressionStmt(new CastExpr().setType(methodDeclaration.getType()).setExpression(new NameExpr("result"))))
+                                                )
+                                                .setScope(asyncMethodCallExpr)
+                                );
+                        statements.add(new ReturnStmt(flatMap));
+                    } else {
+                        MethodCallExpr doOnSuccess = new MethodCallExpr("doOnSuccess")
+                                .addArgument(
+                                        new LambdaExpr()
+                                                .addParameter(new Parameter(new UnknownType(), variableDeclarator.getName()))
+                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementNodeList.subList(i + 1, statementNodeList.size()))))
+                                )
+                                .setScope(
+                                        new MethodCallExpr("map")
+                                                .addArgument(
+                                                        new LambdaExpr()
+                                                                .addParameter(new Parameter(new UnknownType(), "result"))
+                                                                .setBody(new ExpressionStmt(new CastExpr().setType(methodDeclaration.getType()).setExpression(new NameExpr("result"))))
+                                                )
+                                                .setScope(asyncMethodCallExpr)
+                                );
+                        statements.add(new ReturnStmt(new MethodCallExpr("then").setScope(doOnSuccess)));
+                    }
                     break;
                 }
             } else if (statement.isBlockStmt()) {
