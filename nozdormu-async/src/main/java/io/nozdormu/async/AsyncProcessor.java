@@ -84,14 +84,19 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                 MethodDeclaration methodDeclaration = processorManager.resolveMethodDeclaration(componentClassDeclaration, methodCallExpr);
                 if (methodCallExpr.getScope().isPresent() && methodCallExpr.getScope().get().calculateResolvedType().asReferenceType().getQualifiedName().equals(Provider.class.getCanonicalName()) ||
                         methodDeclaration.getType().isClassOrInterfaceType() && processorManager.getQualifiedName(methodDeclaration.getType()).equals(Mono.class.getCanonicalName())) {
-                    if (hasReturnStmt) {
+                    List<Statement> statementList = statementNodeList.subList(i + 1, statementNodeList.size());
+                    if (statementList.isEmpty()) {
+                        MethodCallExpr thenEmpty = new MethodCallExpr("then")
+                                .setScope(methodCallExpr);
+                        statements.add(new ReturnStmt(thenEmpty));
+                    } else if (hasReturnStmt) {
                         MethodCallExpr then = new MethodCallExpr("then")
                                 .addArgument(
                                         new MethodCallExpr("defer")
                                                 .addArgument(
                                                         new LambdaExpr()
                                                                 .setEnclosingParameters(true)
-                                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementNodeList.subList(i + 1, statementNodeList.size()))))
+                                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementList)))
                                                 )
                                                 .setScope(new NameExpr(Mono.class.getSimpleName()))
                                 )
@@ -100,11 +105,11 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                     } else {
                         MethodCallExpr thenEmpty = new MethodCallExpr("thenEmpty")
                                 .addArgument(
-                                        new MethodCallExpr("fromRunnable")
+                                        new MethodCallExpr("defer")
                                                 .addArgument(
                                                         new LambdaExpr()
                                                                 .setEnclosingParameters(true)
-                                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementNodeList.subList(i + 1, statementNodeList.size()))))
+                                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementList)))
                                                 )
                                                 .setScope(new NameExpr(Mono.class.getSimpleName()))
                                 )
@@ -113,14 +118,22 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                     }
                     break;
                 } else if (methodDeclaration.getType().isClassOrInterfaceType() && processorManager.getQualifiedName(methodDeclaration.getType()).equals(Flux.class.getCanonicalName())) {
-                    if (hasReturnStmt) {
+                    List<Statement> statementList = statementNodeList.subList(i + 1, statementNodeList.size());
+                    if (statementList.isEmpty()) {
+                        MethodCallExpr then = new MethodCallExpr("then")
+                                .setScope(
+                                        new MethodCallExpr("collectList")
+                                                .setScope(methodCallExpr)
+                                );
+                        statements.add(new ReturnStmt(then));
+                    } else if (hasReturnStmt) {
                         MethodCallExpr then = new MethodCallExpr("then")
                                 .addArgument(
                                         new MethodCallExpr("defer")
                                                 .addArgument(
                                                         new LambdaExpr()
                                                                 .setEnclosingParameters(true)
-                                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementNodeList.subList(i + 1, statementNodeList.size()))))
+                                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementList)))
                                                 )
                                                 .setScope(new NameExpr(Mono.class.getSimpleName()))
                                 )
@@ -132,11 +145,11 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                     } else {
                         MethodCallExpr thenEmpty = new MethodCallExpr("thenEmpty")
                                 .addArgument(
-                                        new MethodCallExpr("fromRunnable")
+                                        new MethodCallExpr("defer")
                                                 .addArgument(
                                                         new LambdaExpr()
                                                                 .setEnclosingParameters(true)
-                                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementNodeList.subList(i + 1, statementNodeList.size()))))
+                                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementList)))
                                                 )
                                                 .setScope(new NameExpr(Mono.class.getSimpleName()))
                                 )
@@ -174,15 +187,19 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                             );
 
                     methodCallExpr.getScope().ifPresent(asyncMethodCallExpr::setScope);
-
-                    if (hasReturnStmt) {
+                    List<Statement> statementList = statementNodeList.subList(i + 1, statementNodeList.size());
+                    if (statementList.isEmpty()) {
+                        MethodCallExpr then = new MethodCallExpr("then")
+                                .setScope(asyncMethodCallExpr);
+                        statements.add(new ReturnStmt(then));
+                    } else if (hasReturnStmt) {
                         MethodCallExpr then = new MethodCallExpr("then")
                                 .addArgument(
                                         new MethodCallExpr("defer")
                                                 .addArgument(
                                                         new LambdaExpr()
                                                                 .setEnclosingParameters(true)
-                                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementNodeList.subList(i + 1, statementNodeList.size()))))
+                                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementList)))
                                                 )
                                                 .setScope(new NameExpr(Mono.class.getSimpleName()))
                                 )
@@ -191,11 +208,11 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                     } else {
                         MethodCallExpr thenEmpty = new MethodCallExpr("thenEmpty")
                                 .addArgument(
-                                        new MethodCallExpr("fromRunnable")
+                                        new MethodCallExpr("defer")
                                                 .addArgument(
                                                         new LambdaExpr()
                                                                 .setEnclosingParameters(true)
-                                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementNodeList.subList(i + 1, statementNodeList.size()))))
+                                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementList)))
                                                 )
                                                 .setScope(new NameExpr(Mono.class.getSimpleName()))
                                 )
