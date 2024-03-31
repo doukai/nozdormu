@@ -288,6 +288,15 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                 )
                                 .setScope(methodCallExpr);
                         statements.add(new ReturnStmt(flatMap));
+                    } else if (hasAwait) {
+                        MethodCallExpr doOnSuccess = new MethodCallExpr("flatMap")
+                                .addArgument(
+                                        new LambdaExpr()
+                                                .addParameter(new Parameter(new UnknownType(), variableDeclarator.getName()))
+                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementNodeList.subList(i + 1, statementNodeList.size()))))
+                                )
+                                .setScope(methodCallExpr);
+                        statements.add(new ReturnStmt(new MethodCallExpr("then").setScope(doOnSuccess)));
                     } else {
                         MethodCallExpr doOnSuccess = new MethodCallExpr("doOnSuccess")
                                 .addArgument(
@@ -312,6 +321,18 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                                 .setScope(methodCallExpr)
                                 );
                         statements.add(new ReturnStmt(flatMap));
+                    } else if (hasAwait) {
+                        MethodCallExpr doOnSuccess = new MethodCallExpr("flatMap")
+                                .addArgument(
+                                        new LambdaExpr()
+                                                .addParameter(new Parameter(new UnknownType(), variableDeclarator.getName()))
+                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementNodeList.subList(i + 1, statementNodeList.size()))))
+                                )
+                                .setScope(
+                                        new MethodCallExpr("collectList")
+                                                .setScope(methodCallExpr)
+                                );
+                        statements.add(new ReturnStmt(new MethodCallExpr("then").setScope(doOnSuccess)));
                     } else {
                         MethodCallExpr doOnSuccess = new MethodCallExpr("doOnSuccess")
                                 .addArgument(
@@ -371,6 +392,23 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                                 .setScope(asyncMethodCallExpr)
                                 );
                         statements.add(new ReturnStmt(flatMap));
+                    } else if (hasAwait) {
+                        MethodCallExpr doOnSuccess = new MethodCallExpr("flatMap")
+                                .addArgument(
+                                        new LambdaExpr()
+                                                .addParameter(new Parameter(new UnknownType(), variableDeclarator.getName()))
+                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementNodeList.subList(i + 1, statementNodeList.size()))))
+                                )
+                                .setScope(
+                                        new MethodCallExpr("map")
+                                                .addArgument(
+                                                        new LambdaExpr()
+                                                                .addParameter(new Parameter(new UnknownType(), "result"))
+                                                                .setBody(new ExpressionStmt(new CastExpr().setType(methodDeclaration.getType()).setExpression(new NameExpr("result"))))
+                                                )
+                                                .setScope(asyncMethodCallExpr)
+                                );
+                        statements.add(new ReturnStmt(new MethodCallExpr("then").setScope(doOnSuccess)));
                     } else {
                         MethodCallExpr doOnSuccess = new MethodCallExpr("doOnSuccess")
                                 .addArgument(
@@ -491,17 +529,48 @@ public class AsyncProcessor implements ComponentProxyProcessor {
 
     private boolean hasAwait(List<Statement> statementList) {
         return statementList.stream()
-                .anyMatch(statement ->
-                        statement.isExpressionStmt() &&
-                                (
-                                        statement.asExpressionStmt().getExpression().isMethodCallExpr() &&
-                                                statement.asExpressionStmt().getExpression().asMethodCallExpr().getNameAsString().equals("await") ||
-                                                statement.asExpressionStmt().getExpression().isVariableDeclarationExpr() &&
-                                                        statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariables().size() == 1 &&
-                                                        statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariable(0).getInitializer().isPresent() &&
-                                                        statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariable(0).getInitializer().get().isMethodCallExpr() &&
-                                                        statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariable(0).getInitializer().get().asMethodCallExpr().getNameAsString().equals("await")
-                                )
+                .anyMatch(statement -> {
+                            if (statement.isExpressionStmt() &&
+                                    (
+                                            statement.asExpressionStmt().getExpression().isMethodCallExpr() &&
+                                                    statement.asExpressionStmt().getExpression().asMethodCallExpr().getNameAsString().equals("await") ||
+                                                    statement.asExpressionStmt().getExpression().isVariableDeclarationExpr() &&
+                                                            statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariables().size() == 1 &&
+                                                            statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariable(0).getInitializer().isPresent() &&
+                                                            statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariable(0).getInitializer().get().isMethodCallExpr() &&
+                                                            statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariable(0).getInitializer().get().asMethodCallExpr().getNameAsString().equals("await")
+                                    )
+                            ) {
+                                return true;
+                            } else if (statement.isBlockStmt()) {
+                                return hasAwait(statement.asBlockStmt().getStatements());
+                            } else if (statement.isIfStmt()) {
+                                if (statement.asIfStmt().getThenStmt().isReturnStmt()) {
+                                    return hasAwait(statement.asIfStmt().getThenStmt().asReturnStmt());
+                                } else if (statement.asIfStmt().getThenStmt().isBlockStmt()) {
+                                    return hasAwait(statement.asIfStmt().getThenStmt().asBlockStmt().getStatements());
+                                } else if (statement.asIfStmt().getElseStmt().isPresent()) {
+                                    if (statement.asIfStmt().getElseStmt().get().isReturnStmt()) {
+                                        return hasAwait(statement.asIfStmt().getElseStmt().get().asReturnStmt());
+                                    } else if (statement.asIfStmt().getElseStmt().get().isBlockStmt()) {
+                                        return hasAwait(statement.asIfStmt().getElseStmt().get().asBlockStmt().getStatements());
+                                    }
+                                }
+                            } else if (statement.isTryStmt()) {
+                                return hasAwait(statement.asTryStmt().getTryBlock().getStatements());
+                            } else if (statement.isSwitchStmt()) {
+                                return statement.asSwitchStmt().getEntries().stream().anyMatch(switchEntry -> hasAwait(switchEntry.getStatements()));
+                            }
+                            return false;
+                        }
+                );
+    }
+
+    private boolean hasAwait(ReturnStmt returnStmt) {
+        return returnStmt.getExpression().stream()
+                .anyMatch(expression ->
+                        expression.isMethodCallExpr() &&
+                                expression.asMethodCallExpr().getNameAsString().equals("await")
                 );
     }
 
