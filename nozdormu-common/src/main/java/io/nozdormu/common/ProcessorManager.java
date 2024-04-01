@@ -221,7 +221,7 @@ public class ProcessorManager {
     }
 
     public Optional<CompilationUnit> getCompilationUnit(String qualifiedName) {
-        TypeElement typeElement = elements.getTypeElement(qualifiedName);
+        TypeElement typeElement = elements.getTypeElement(qualifiedName.replaceAll("\\$", "."));
         return getCompilationUnit(typeElement);
     }
 
@@ -253,7 +253,7 @@ public class ProcessorManager {
                 .filter(classOrInterfaceDeclaration ->
                         classOrInterfaceDeclaration.getFullyQualifiedName()
                                 .orElse(classOrInterfaceDeclaration.getNameAsString())
-                                .equals(qualifiedName)
+                                .equals(qualifiedName.replaceAll("\\$", "."))
                 )
                 .findFirst()
                 .orElse(null);
@@ -483,19 +483,22 @@ public class ProcessorManager {
     public Stream<String> getExtendedTypes(ClassOrInterfaceDeclaration classOrInterfaceDeclaration) {
         return Stream
                 .concat(
-                        classOrInterfaceDeclaration.getExtendedTypes().stream().map(this::getQualifiedName),
+                        classOrInterfaceDeclaration.getExtendedTypes().stream()
+                                .map(this::getQualifiedName),
                         classOrInterfaceDeclaration.getExtendedTypes().stream()
                                 .flatMap(this::getExtendedTypes)
                 )
-                .distinct()
-                .filter(name -> !name.equals(Object.class.getName()));
+                .filter(name -> !name.startsWith("java."))
+                .distinct();
     }
 
     public Stream<String> getExtendedTypes(ClassOrInterfaceType classOrInterfaceType) {
         return classOrInterfaceType.resolve().asReferenceType().getTypeDeclaration()
                 .flatMap(resolvedReferenceTypeDeclaration -> getClass(resolvedReferenceTypeDeclaration.getQualifiedName()))
                 .stream()
-                .flatMap(this::getExtendedTypeNames);
+                .flatMap(this::getExtendedTypeNames)
+                .filter(name -> !name.startsWith("java."))
+                .distinct();
     }
 
     public Stream<String> getExtendedTypeNames(Class<?> clazz) {
@@ -506,25 +509,30 @@ public class ProcessorManager {
                                         Stream.of(superClazz.getName()),
                                         getExtendedTypeNames(superClazz)
                                 )
-                );
+                )
+                .filter(name -> !name.startsWith("java."))
+                .distinct();
     }
 
     public Stream<String> getImplementedTypes(ClassOrInterfaceDeclaration classOrInterfaceDeclaration) {
         return Stream
                 .concat(
-                        classOrInterfaceDeclaration.getImplementedTypes().stream().map(this::getQualifiedName),
+                        classOrInterfaceDeclaration.getImplementedTypes().stream()
+                                .map(this::getQualifiedName),
                         classOrInterfaceDeclaration.getImplementedTypes().stream()
                                 .flatMap(this::getImplementedTypes)
                 )
-                .distinct()
-                .filter(name -> !name.equals(Object.class.getName()));
+                .filter(name -> !name.startsWith("java."))
+                .distinct();
     }
 
     public Stream<String> getImplementedTypes(ClassOrInterfaceType classOrInterfaceType) {
         return classOrInterfaceType.resolve().asReferenceType().getTypeDeclaration()
                 .flatMap(resolvedReferenceTypeDeclaration -> getClass(resolvedReferenceTypeDeclaration.getQualifiedName()))
                 .stream()
-                .flatMap(this::getImplementedTypes);
+                .flatMap(this::getImplementedTypes)
+                .filter(name -> !name.startsWith("java."))
+                .distinct();
     }
 
     public Stream<String> getImplementedTypes(Class<?> clazz) {
@@ -536,6 +544,8 @@ public class ProcessorManager {
                                         Stream.of(interfaceClazz.getName()),
                                         getImplementedTypes(interfaceClazz)
                                 )
-                );
+                )
+                .filter(name -> !name.startsWith("java."))
+                .distinct();
     }
 }
