@@ -202,17 +202,30 @@ public class ProcessorManager {
     }
 
     public Optional<CompilationUnit> getCompilationUnit(TypeElement typeElement) {
-        TreePath treePath = trees.getPath(typeElement);
-        if (treePath != null) {
-            return parse(treePath.getCompilationUnit().toString());
-        } else {
-            try {
-                return typeElementDecompiler.decompileOrEmpty(typeElement).flatMap(source -> javaParser.parse(source).getResult());
-            } catch (Exception e) {
-                Logger.warn(e);
-                throw new RuntimeException(e);
-            }
-        }
+        return combinedTypeSolver.getRoot().solveType(typeElement.getQualifiedName().toString())
+                .toAst()
+                .map(node -> (ClassOrInterfaceDeclaration) node)
+                .flatMap(Node::findCompilationUnit)
+                .or(() ->
+                        Optional.ofNullable(trees.getPath(typeElement))
+                                .flatMap(treePath -> javaParser.parse(treePath.getCompilationUnit().toString()).getResult())
+                                .or(() -> {
+                                            try {
+                                                return typeElementDecompiler.decompileOrEmpty(typeElement)
+                                                        .flatMap(source -> javaParser.parse(source).getResult());
+                                            } catch (Exception e) {
+                                                throw new RuntimeException(e);
+                                            }
+                                        }
+                                )
+                );
+    }
+
+    public List<CompilationUnit> getCompilationUnitListWithAnnotationClass(Class<? extends Annotation> annotationClass) {
+        return roundEnv.getElementsAnnotatedWith(annotationClass).stream()
+                .filter(element -> element.getKind().equals(CLASS))
+                .map(element -> getCompilationUnit((TypeElement) element).orElseThrow(() -> new InjectionProcessException(InjectionProcessErrorType.CANNOT_PARSER_SOURCE_CODE.bind(((TypeElement) element).getQualifiedName()))))
+                .collect(Collectors.toList());
     }
 
     public Optional<CompilationUnit> getCompilationUnit(AnnotationExpr annotationExpr) {
@@ -221,16 +234,8 @@ public class ProcessorManager {
     }
 
     public Optional<CompilationUnit> getCompilationUnit(String qualifiedName) {
-        TypeElement typeElement = elements.getTypeElement(qualifiedName.replaceAll("\\$", "."));
+        TypeElement typeElement = elements.getTypeElement(qualifiedName);
         return getCompilationUnit(typeElement);
-    }
-
-    public Optional<Class<?>> getClass(String qualifiedName) {
-        try {
-            return Optional.of(Class.forName(qualifiedName, false, classLoader));
-        } catch (ClassNotFoundException e) {
-            return Optional.empty();
-        }
     }
 
     public CompilationUnit getCompilationUnitOrError(AnnotationExpr annotationExpr) {
@@ -253,7 +258,7 @@ public class ProcessorManager {
                 .filter(classOrInterfaceDeclaration ->
                         classOrInterfaceDeclaration.getFullyQualifiedName()
                                 .orElse(classOrInterfaceDeclaration.getNameAsString())
-                                .equals(qualifiedName.replaceAll("\\$", "."))
+                                .equals(qualifiedName)
                 )
                 .findFirst()
                 .orElse(null);
@@ -271,21 +276,6 @@ public class ProcessorManager {
         return getMethodReturnResolvedType(methodDeclaration)
                 .filter(ResolvedType::isReferenceType)
                 .map(ResolvedType::asReferenceType);
-    }
-
-    public Optional<CompilationUnit> parse(TypeElement typeElement) {
-        return parse(trees.getPath(typeElement).getCompilationUnit().toString());
-    }
-
-    private Optional<CompilationUnit> parse(String sourceCode) {
-        return javaParser.parse(sourceCode).getResult();
-    }
-
-    public List<CompilationUnit> getCompilationUnitListWithAnnotationClass(Class<? extends Annotation> annotationClass) {
-        return roundEnv.getElementsAnnotatedWith(annotationClass).stream()
-                .filter(element -> element.getKind().equals(CLASS))
-                .map(element -> parse((TypeElement) element).orElseThrow(() -> new InjectionProcessException(InjectionProcessErrorType.CANNOT_PARSER_SOURCE_CODE.bind(((TypeElement) element).getQualifiedName()))))
-                .collect(Collectors.toList());
     }
 
     public Optional<ClassOrInterfaceDeclaration> getPublicClassOrInterfaceDeclaration(CompilationUnit compilationUnit) {
@@ -347,7 +337,7 @@ public class ProcessorManager {
     public String getQualifiedName(MethodDeclaration methodDeclaration) {
         String qualifiedName = getQualifiedName(methodDeclaration.getType());
         if (qualifiedName.equals(Mono.class.getName())) {
-            return methodDeclaration.getType().resolve().asReferenceType().getTypeParametersMap().get(0).b.asReferenceType().getQualifiedName();
+            return getResolvedType(methodDeclaration.getType()).asReferenceType().getTypeParametersMap().get(0).b.asReferenceType().getQualifiedName();
         }
         return qualifiedName;
     }
@@ -361,6 +351,14 @@ public class ProcessorManager {
             }
             throw e;
         }
+    }
+
+    public ResolvedType calculateType(Expression expression) {
+        return javaSymbolSolver.calculateType(expression);
+    }
+
+    public ResolvedDeclaration getResolvedDeclaration(Node node) {
+        return javaSymbolSolver.resolveDeclaration(node, ResolvedDeclaration.class);
     }
 
     public MethodDeclaration resolveMethodDeclaration(ClassOrInterfaceDeclaration classOrInterfaceDeclaration, MethodCallExpr methodCallExpr) {
@@ -432,7 +430,7 @@ public class ProcessorManager {
                     .map(MemberValuePair::getValue)
                     .map(expression -> {
                                 if (expression.isFieldAccessExpr()) {
-                                    return expression.asFieldAccessExpr().resolve().toAst()
+                                    return getResolvedDeclaration(expression.asFieldAccessExpr()).toAst()
                                             .flatMap(Node::findCompilationUnit).stream()
                                             .flatMap(compilationUnit -> getPublicClassOrInterfaceDeclarationOrError(compilationUnit).getFields().stream())
                                             .flatMap(fieldDeclaration -> fieldDeclaration.getVariables().stream())
@@ -453,7 +451,7 @@ public class ProcessorManager {
         return methodDeclaration.getBody().stream()
                 .flatMap(blockStmt -> blockStmt.findAll(AssignExpr.class).stream())
                 .filter(assignExpr -> assignExpr.getTarget().isFieldAccessExpr())
-                .map(assignExpr -> assignExpr.getTarget().asFieldAccessExpr().resolve())
+                .map(assignExpr -> getResolvedDeclaration(assignExpr.getTarget().asFieldAccessExpr()))
                 .filter(ResolvedDeclaration::isField)
                 .flatMap(resolvedValueDeclaration -> resolvedValueDeclaration.asField().toAst().stream())
                 .map(node -> (FieldDeclaration) node)
@@ -493,25 +491,11 @@ public class ProcessorManager {
     }
 
     public Stream<String> getExtendedTypes(ClassOrInterfaceType classOrInterfaceType) {
-        return classOrInterfaceType.resolve().asReferenceType().getTypeDeclaration()
-                .flatMap(resolvedReferenceTypeDeclaration -> getClass(resolvedReferenceTypeDeclaration.getQualifiedName()))
+        return getResolvedType(classOrInterfaceType).asReferenceType().getTypeDeclaration()
+                .flatMap(AssociableToAST::toAst)
+                .map(node -> (ClassOrInterfaceDeclaration) node)
                 .stream()
-                .flatMap(this::getExtendedTypeNames)
-                .filter(name -> !name.startsWith("java."))
-                .distinct();
-    }
-
-    public Stream<String> getExtendedTypeNames(Class<?> clazz) {
-        return Stream.ofNullable(clazz.getSuperclass())
-                .flatMap(superClazz ->
-                        Stream
-                                .concat(
-                                        Stream.of(superClazz.getName()),
-                                        getExtendedTypeNames(superClazz)
-                                )
-                )
-                .filter(name -> !name.startsWith("java."))
-                .distinct();
+                .flatMap(this::getExtendedTypes);
     }
 
     public Stream<String> getImplementedTypes(ClassOrInterfaceDeclaration classOrInterfaceDeclaration) {
@@ -527,25 +511,10 @@ public class ProcessorManager {
     }
 
     public Stream<String> getImplementedTypes(ClassOrInterfaceType classOrInterfaceType) {
-        return classOrInterfaceType.resolve().asReferenceType().getTypeDeclaration()
-                .flatMap(resolvedReferenceTypeDeclaration -> getClass(resolvedReferenceTypeDeclaration.getQualifiedName()))
+        return getResolvedType(classOrInterfaceType).asReferenceType().getTypeDeclaration()
+                .flatMap(AssociableToAST::toAst)
+                .map(node -> (ClassOrInterfaceDeclaration) node)
                 .stream()
-                .flatMap(this::getImplementedTypes)
-                .filter(name -> !name.startsWith("java."))
-                .distinct();
-    }
-
-    public Stream<String> getImplementedTypes(Class<?> clazz) {
-        return Stream.ofNullable(clazz.getInterfaces())
-                .flatMap(Arrays::stream)
-                .flatMap(interfaceClazz ->
-                        Stream
-                                .concat(
-                                        Stream.of(interfaceClazz.getName()),
-                                        getImplementedTypes(interfaceClazz)
-                                )
-                )
-                .filter(name -> !name.startsWith("java."))
-                .distinct();
+                .flatMap(this::getImplementedTypes);
     }
 }

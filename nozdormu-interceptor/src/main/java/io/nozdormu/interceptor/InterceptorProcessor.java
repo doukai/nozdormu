@@ -291,23 +291,25 @@ public class InterceptorProcessor implements ComponentProxyProcessor {
                                                     );
                                         }
 
-                                        Expression addOwnerValueExpr = annotationExpr.asNormalAnnotationExpr().getPairs().stream()
-                                                .reduce(new MemberValuePair().setValue(proxyMethodCallExpr), (left, right) ->
-                                                        new MemberValuePair().setValue(
-                                                                new MethodCallExpr("addOwnerValue")
-                                                                        .addArgument(new StringLiteralExpr(right.getNameAsString()))
-                                                                        .addArgument(right.getValue())
-                                                                        .setScope(left.getValue()))
-                                                )
-                                                .getValue();
+                                        VariableDeclarator variableDeclarator = new VariableDeclarator()
+                                                .setType(InvocationContext.class)
+                                                .setName(contextName);
+                                        VariableDeclarationExpr variableDeclarationExpr = new VariableDeclarationExpr().addVariable(variableDeclarator);
 
-                                        VariableDeclarationExpr variableDeclarationExpr = new VariableDeclarationExpr()
-                                                .addVariable(new VariableDeclarator()
-                                                        .setType(InvocationContext.class)
-                                                        .setName(contextName)
-                                                        .setInitializer(addOwnerValueExpr)
-                                                );
-
+                                        if (annotationExpr.isNormalAnnotationExpr()) {
+                                            Expression addOwnerValueExpr = annotationExpr.asNormalAnnotationExpr().getPairs().stream()
+                                                    .reduce(new MemberValuePair().setValue(proxyMethodCallExpr), (left, right) ->
+                                                            new MemberValuePair().setValue(
+                                                                    new MethodCallExpr("addOwnerValue")
+                                                                            .addArgument(new StringLiteralExpr(right.getNameAsString()))
+                                                                            .addArgument(right.getValue())
+                                                                            .setScope(left.getValue()))
+                                                    )
+                                                    .getValue();
+                                            variableDeclarator.setInitializer(addOwnerValueExpr);
+                                        } else {
+                                            variableDeclarator.setInitializer(proxyMethodCallExpr);
+                                        }
                                         overrideMethodDeclaration.getBody().orElseGet(overrideMethodDeclaration::createBody).addStatement(variableDeclarationExpr);
 
                                         nextContextName = contextName;
@@ -531,23 +533,25 @@ public class InterceptorProcessor implements ComponentProxyProcessor {
                                                     );
                                         }
 
-                                        Expression addOwnerValueExpr = annotationExpr.asNormalAnnotationExpr().getPairs().stream()
-                                                .reduce(new MemberValuePair().setValue(proxyMethodCallExpr), (left, right) ->
-                                                        new MemberValuePair().setValue(
-                                                                new MethodCallExpr("addOwnerValue")
-                                                                        .addArgument(new StringLiteralExpr(right.getNameAsString()))
-                                                                        .addArgument(right.getValue())
-                                                                        .setScope(left.getValue()))
-                                                )
-                                                .getValue();
+                                        VariableDeclarator variableDeclarator = new VariableDeclarator()
+                                                .setType(InvocationContext.class)
+                                                .setName(contextName);
+                                        VariableDeclarationExpr variableDeclarationExpr = new VariableDeclarationExpr().addVariable(variableDeclarator);
 
-                                        VariableDeclarationExpr variableDeclarationExpr = new VariableDeclarationExpr()
-                                                .addVariable(new VariableDeclarator()
-                                                        .setType(InvocationContext.class)
-                                                        .setName(contextName)
-                                                        .setInitializer(addOwnerValueExpr)
-                                                );
-
+                                        if (annotationExpr.isNormalAnnotationExpr()) {
+                                            Expression addOwnerValueExpr = annotationExpr.asNormalAnnotationExpr().getPairs().stream()
+                                                    .reduce(new MemberValuePair().setValue(proxyMethodCallExpr), (left, right) ->
+                                                            new MemberValuePair().setValue(
+                                                                    new MethodCallExpr("addOwnerValue")
+                                                                            .addArgument(new StringLiteralExpr(right.getNameAsString()))
+                                                                            .addArgument(right.getValue())
+                                                                            .setScope(left.getValue()))
+                                                    )
+                                                    .getValue();
+                                            variableDeclarator.setInitializer(addOwnerValueExpr);
+                                        } else {
+                                            variableDeclarator.setInitializer(proxyMethodCallExpr);
+                                        }
                                         creatorMethod.getBody().orElseGet(creatorMethod::createBody).addStatement(variableDeclarationExpr);
 
                                         nextContextName = contextName;

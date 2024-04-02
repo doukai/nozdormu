@@ -10,6 +10,7 @@ import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.nodeTypes.NodeWithSimpleName;
 import com.github.javaparser.resolution.declarations.ResolvedDeclaration;
 import com.google.auto.service.AutoService;
+import io.nozdormu.common.ProcessorManager;
 import io.nozdormu.inject.processor.ComponentProxyProcessor;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
@@ -17,6 +18,13 @@ import java.util.stream.Collectors;
 
 @AutoService(ComponentProxyProcessor.class)
 public class ConfigComponentProcessor implements ComponentProxyProcessor {
+
+    private ProcessorManager processorManager;
+
+    @Override
+    public void init(ProcessorManager processorManager) {
+        this.processorManager = processorManager;
+    }
 
     @Override
     public void processComponentProxy(CompilationUnit componentCompilationUnit, ClassOrInterfaceDeclaration componentClassDeclaration, CompilationUnit componentProxyCompilationUnit, ClassOrInterfaceDeclaration componentProxyClassDeclaration) {
@@ -49,7 +57,7 @@ public class ConfigComponentProcessor implements ComponentProxyProcessor {
         return methodDeclaration.getBody().stream()
                 .flatMap(blockStmt -> blockStmt.findAll(AssignExpr.class).stream())
                 .filter(assignExpr -> assignExpr.getTarget().isFieldAccessExpr())
-                .map(assignExpr -> assignExpr.getTarget().asFieldAccessExpr().resolve())
+                .map(assignExpr -> processorManager.getResolvedDeclaration(assignExpr.getTarget().asFieldAccessExpr()))
                 .filter(ResolvedDeclaration::isField)
                 .flatMap(resolvedValueDeclaration -> resolvedValueDeclaration.asField().toAst().stream())
                 .map(node -> (FieldDeclaration) node)

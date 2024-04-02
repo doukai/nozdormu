@@ -59,7 +59,9 @@ public class ConfigProcessor extends AbstractProcessor {
         }
 
         processorManager.setRoundEnv(roundEnv);
-        List<CompilationUnit> compilationUnitList = typeElements.stream().flatMap(typeElement -> processorManager.parse(typeElement).stream()).collect(Collectors.toList());
+        List<CompilationUnit> compilationUnitList = typeElements.stream()
+                .flatMap(typeElement -> processorManager.getCompilationUnit(typeElement).stream())
+                .collect(Collectors.toList());
         CompilationUnit moduleContextCompilationUnit = buildModuleContext(compilationUnitList);
         processorManager.writeToFiler(moduleContextCompilationUnit);
         Logger.debug("config module context class build success");

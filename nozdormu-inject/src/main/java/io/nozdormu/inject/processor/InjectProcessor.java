@@ -127,7 +127,12 @@ public class InjectProcessor extends AbstractProcessor {
         componentProxyCompilationUnits.forEach(compilationUnit -> processorManager.writeToFiler(compilationUnit));
         Logger.debug("all proxy class build success");
 
-        CompilationUnit moduleContextCompilationUnit = buildModuleContext(typeElements.stream().flatMap(typeElement -> processorManager.parse(typeElement).stream()).collect(Collectors.toList()), componentProxyCompilationUnits);
+        CompilationUnit moduleContextCompilationUnit = buildModuleContext(
+                typeElements.stream()
+                        .flatMap(typeElement -> processorManager.getCompilationUnit(typeElement).stream())
+                        .collect(Collectors.toList()),
+                componentProxyCompilationUnits
+        );
         processorManager.writeToFiler(moduleContextCompilationUnit);
         Logger.debug("module context class build success");
 
@@ -143,7 +148,9 @@ public class InjectProcessor extends AbstractProcessor {
     }
 
     private CompilationUnit buildComponentProxy(TypeElement typeElement) {
-        return processorManager.parse(typeElement).map(this::buildComponentProxy).orElseThrow(() -> new InjectionProcessException(CANNOT_GET_COMPILATION_UNIT.bind(typeElement.getQualifiedName().toString())));
+        return processorManager.getCompilationUnit(typeElement)
+                .map(this::buildComponentProxy)
+                .orElseThrow(() -> new InjectionProcessException(CANNOT_GET_COMPILATION_UNIT.bind(typeElement.getQualifiedName().toString())));
     }
 
     private CompilationUnit buildComponentProxy(CompilationUnit componentCompilationUnit) {
@@ -344,19 +351,19 @@ public class InjectProcessor extends AbstractProcessor {
                                                                     return new StringLiteralExpr(NAME_PREFIX + expression.asStringLiteralExpr().getValue());
                                                                 } else {
                                                                     expression.findAll(NameExpr.class).stream()
-                                                                            .map(Expression::calculateResolvedType)
+                                                                            .map(expr -> processorManager.calculateType(expr))
                                                                             .filter(ResolvedType::isReferenceType)
                                                                             .map(ResolvedType::asReferenceType)
                                                                             .map(ResolvedReferenceType::getQualifiedName)
                                                                             .forEach(contextCompilationUnit::addImport);
-                                                                    if (expression.isNameExpr() && expression.asNameExpr().resolve().isField()) {
+                                                                    if (expression.isNameExpr() && processorManager.getResolvedDeclaration(expression.asNameExpr()).isField()) {
                                                                         return new BinaryExpr()
                                                                                 .setLeft(new StringLiteralExpr(NAME_PREFIX))
                                                                                 .setOperator(BinaryExpr.Operator.PLUS)
                                                                                 .setRight(
                                                                                         new FieldAccessExpr()
                                                                                                 .setName(expression.asNameExpr().getName())
-                                                                                                .setScope(new NameExpr(expression.asNameExpr().resolve().asField().declaringType().getQualifiedName()))
+                                                                                                .setScope(new NameExpr(processorManager.getResolvedDeclaration(expression.asNameExpr()).asField().declaringType().getQualifiedName()))
                                                                                 );
                                                                     }
                                                                     return new BinaryExpr()
@@ -377,19 +384,19 @@ public class InjectProcessor extends AbstractProcessor {
                                                                     return new StringLiteralExpr(PRIORITY_PREFIX + expression.asIntegerLiteralExpr().getValue());
                                                                 } else {
                                                                     expression.findAll(NameExpr.class).stream()
-                                                                            .map(Expression::calculateResolvedType)
+                                                                            .map(expr -> processorManager.calculateType(expr))
                                                                             .filter(ResolvedType::isReferenceType)
                                                                             .map(ResolvedType::asReferenceType)
                                                                             .map(ResolvedReferenceType::getQualifiedName)
                                                                             .forEach(contextCompilationUnit::addImport);
-                                                                    if (expression.isNameExpr() && expression.asNameExpr().resolve().isField()) {
+                                                                    if (expression.isNameExpr() && processorManager.getResolvedDeclaration(expression.asNameExpr()).isField()) {
                                                                         return new BinaryExpr()
                                                                                 .setLeft(new StringLiteralExpr(NAME_PREFIX))
                                                                                 .setOperator(BinaryExpr.Operator.PLUS)
                                                                                 .setRight(
                                                                                         new FieldAccessExpr()
                                                                                                 .setName(expression.asNameExpr().getName())
-                                                                                                .setScope(new NameExpr(expression.asNameExpr().resolve().asField().declaringType().getQualifiedName()))
+                                                                                                .setScope(new NameExpr(processorManager.getResolvedDeclaration(expression.asNameExpr()).asField().declaringType().getQualifiedName()))
                                                                                 );
                                                                     }
                                                                     return new BinaryExpr()
@@ -433,7 +440,7 @@ public class InjectProcessor extends AbstractProcessor {
                                                                                                         .map(methodCallExpr -> (Expression) methodCallExpr)
                                                                                                         .collect(Collectors.toCollection(NodeList::new))
                                                                                         )
-                                                                                        .orElseThrow(() -> new InjectionProcessException(CONSTRUCTOR_NOT_EXIST.bind(classOrInterfaceDeclaration.getNameAsString())))
+                                                                                        .orElseGet(NodeList::new)
                                                                         )
                                                         );
 
@@ -553,7 +560,7 @@ public class InjectProcessor extends AbstractProcessor {
                                                                     .map(methodCallExpr -> (Expression) methodCallExpr)
                                                                     .collect(Collectors.toCollection(NodeList::new))
                                                     )
-                                                    .orElseThrow(() -> new InjectionProcessException(CONSTRUCTOR_NOT_EXIST.bind(classOrInterfaceDeclaration.getNameAsString())))
+                                                    .orElseGet(NodeList::new)
                                     )
                     );
 
@@ -606,7 +613,7 @@ public class InjectProcessor extends AbstractProcessor {
             staticInitializer.addStatement(
                     new MethodCallExpr()
                             .setName("put")
-                            .addArgument(new ClassExpr().setType(putClassQualifiedName.replaceAll("\\$", ".")))
+                            .addArgument(new ClassExpr().setType(putClassQualifiedName))
                             .addArgument(keyExpr)
                             .addArgument(supplierExpression)
                             .setScope(new NameExpr("BeanContext"))
@@ -615,7 +622,7 @@ public class InjectProcessor extends AbstractProcessor {
             staticInitializer.addStatement(
                     new MethodCallExpr()
                             .setName("put")
-                            .addArgument(new ClassExpr().setType(putClassQualifiedName.replaceAll("\\$", ".")))
+                            .addArgument(new ClassExpr().setType(putClassQualifiedName))
                             .addArgument(supplierExpression)
                             .setScope(new NameExpr("BeanContext"))
             );
@@ -633,19 +640,19 @@ public class InjectProcessor extends AbstractProcessor {
                                                 return new StringLiteralExpr(NAME_PREFIX + expression.asStringLiteralExpr().getValue());
                                             } else {
                                                 expression.findAll(NameExpr.class).stream()
-                                                        .map(Expression::calculateResolvedType)
+                                                        .map(expr -> processorManager.calculateType(expr))
                                                         .filter(ResolvedType::isReferenceType)
                                                         .map(ResolvedType::asReferenceType)
                                                         .map(ResolvedReferenceType::getQualifiedName)
                                                         .forEach(compilationUnit::addImport);
-                                                if (expression.isNameExpr() && expression.asNameExpr().resolve().isField()) {
+                                                if (expression.isNameExpr() && processorManager.getResolvedDeclaration(expression.asNameExpr()).isField()) {
                                                     return new BinaryExpr()
                                                             .setLeft(new StringLiteralExpr(NAME_PREFIX))
                                                             .setOperator(BinaryExpr.Operator.PLUS)
                                                             .setRight(
                                                                     new FieldAccessExpr()
                                                                             .setName(expression.asNameExpr().getName())
-                                                                            .setScope(new NameExpr(expression.asNameExpr().resolve().asField().declaringType().getQualifiedName()))
+                                                                            .setScope(new NameExpr(processorManager.getResolvedDeclaration(expression.asNameExpr()).asField().declaringType().getQualifiedName()))
                                                             );
                                                 }
                                                 return new BinaryExpr()
@@ -758,19 +765,19 @@ public class InjectProcessor extends AbstractProcessor {
                                                                         return new StringLiteralExpr(NAME_PREFIX + expression.asStringLiteralExpr().getValue());
                                                                     } else {
                                                                         expression.findAll(NameExpr.class).stream()
-                                                                                .map(Expression::calculateResolvedType)
+                                                                                .map(expr -> processorManager.calculateType(expr))
                                                                                 .filter(ResolvedType::isReferenceType)
                                                                                 .map(ResolvedType::asReferenceType)
                                                                                 .map(ResolvedReferenceType::getQualifiedName)
                                                                                 .forEach(moduleContextCompilationUnit::addImport);
-                                                                        if (expression.isNameExpr() && expression.asNameExpr().resolve().isField()) {
+                                                                        if (expression.isNameExpr() && processorManager.getResolvedDeclaration(expression.asNameExpr()).isField()) {
                                                                             return new BinaryExpr()
                                                                                     .setLeft(new StringLiteralExpr(NAME_PREFIX))
                                                                                     .setOperator(BinaryExpr.Operator.PLUS)
                                                                                     .setRight(
                                                                                             new FieldAccessExpr()
                                                                                                     .setName(expression.asNameExpr().getName())
-                                                                                                    .setScope(new NameExpr(expression.asNameExpr().resolve().asField().declaringType().getQualifiedName()))
+                                                                                                    .setScope(new NameExpr(processorManager.getResolvedDeclaration(expression.asNameExpr()).asField().declaringType().getQualifiedName()))
                                                                                     );
                                                                         }
                                                                         return new BinaryExpr()
@@ -791,19 +798,19 @@ public class InjectProcessor extends AbstractProcessor {
                                                                         return new StringLiteralExpr(PRIORITY_PREFIX + expression.asIntegerLiteralExpr().getValue());
                                                                     } else {
                                                                         expression.findAll(NameExpr.class).stream()
-                                                                                .map(Expression::calculateResolvedType)
+                                                                                .map(expr -> processorManager.calculateType(expr))
                                                                                 .filter(ResolvedType::isReferenceType)
                                                                                 .map(ResolvedType::asReferenceType)
                                                                                 .map(ResolvedReferenceType::getQualifiedName)
                                                                                 .forEach(moduleContextCompilationUnit::addImport);
-                                                                        if (expression.isNameExpr() && expression.asNameExpr().resolve().isField()) {
+                                                                        if (expression.isNameExpr() && processorManager.getResolvedDeclaration(expression.asNameExpr()).isField()) {
                                                                             return new BinaryExpr()
                                                                                     .setLeft(new StringLiteralExpr(NAME_PREFIX))
                                                                                     .setOperator(BinaryExpr.Operator.PLUS)
                                                                                     .setRight(
                                                                                             new FieldAccessExpr()
                                                                                                     .setName(expression.asNameExpr().getName())
-                                                                                                    .setScope(new NameExpr(expression.asNameExpr().resolve().asField().declaringType().getQualifiedName()))
+                                                                                                    .setScope(new NameExpr(processorManager.getResolvedDeclaration(expression.asNameExpr()).asField().declaringType().getQualifiedName()))
                                                                                     );
                                                                         }
                                                                         return new BinaryExpr()
@@ -996,7 +1003,7 @@ public class InjectProcessor extends AbstractProcessor {
             staticInitializer.addStatement(
                     new MethodCallExpr()
                             .setName("put")
-                            .addArgument(new ClassExpr().setType(putClassQualifiedName.replaceAll("\\$", ".")))
+                            .addArgument(new ClassExpr().setType(putClassQualifiedName))
                             .addArgument(keyExpr)
                             .addArgument(supplierExpression)
                             .setScope(new NameExpr("BeanContext"))
@@ -1005,7 +1012,7 @@ public class InjectProcessor extends AbstractProcessor {
             staticInitializer.addStatement(
                     new MethodCallExpr()
                             .setName("put")
-                            .addArgument(new ClassExpr().setType(putClassQualifiedName.replaceAll("\\$", ".")))
+                            .addArgument(new ClassExpr().setType(putClassQualifiedName))
                             .addArgument(supplierExpression)
                             .setScope(new NameExpr("BeanContext"))
             );
