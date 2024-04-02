@@ -86,7 +86,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
             ) {
                 MethodCallExpr methodCallExpr = statement.asExpressionStmt().getExpression().asMethodCallExpr().getArgument(0).asMethodCallExpr();
                 MethodDeclaration methodDeclaration = processorManager.resolveMethodDeclaration(componentClassDeclaration, methodCallExpr);
-                if (methodCallExpr.getScope().isPresent() && methodCallExpr.getScope().get().calculateResolvedType().asReferenceType().getQualifiedName().equals(Provider.class.getCanonicalName()) ||
+                if (methodCallExpr.getScope().isPresent() && processorManager.calculateType(methodCallExpr.getScope().get()).asReferenceType().getQualifiedName().equals(Provider.class.getCanonicalName()) ||
                         methodDeclaration.getType().isClassOrInterfaceType() && processorManager.getQualifiedName(methodDeclaration.getType()).equals(Mono.class.getCanonicalName())) {
                     List<Statement> statementList = statementNodeList.subList(i + 1, statementNodeList.size());
                     if (statementList.isEmpty()) {
@@ -277,7 +277,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                 VariableDeclarator variableDeclarator = statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariable(0);
                 MethodCallExpr methodCallExpr = variableDeclarator.getInitializer().get().asMethodCallExpr().getArgument(0).asMethodCallExpr();
                 MethodDeclaration methodDeclaration = processorManager.resolveMethodDeclaration(componentClassDeclaration, methodCallExpr);
-                if (methodCallExpr.getScope().isPresent() && methodCallExpr.getScope().get().calculateResolvedType().asReferenceType().getQualifiedName().equals(Provider.class.getCanonicalName()) ||
+                if (methodCallExpr.getScope().isPresent() && processorManager.calculateType(methodCallExpr.getScope().get()).asReferenceType().getQualifiedName().equals(Provider.class.getCanonicalName()) ||
                         methodDeclaration.getType().isClassOrInterfaceType() && processorManager.getQualifiedName(methodDeclaration.getType()).equals(Mono.class.getCanonicalName())) {
                     if (hasReturnStmt) {
                         MethodCallExpr flatMap = new MethodCallExpr("flatMap")

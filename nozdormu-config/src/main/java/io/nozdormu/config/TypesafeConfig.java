@@ -98,9 +98,12 @@ public class TypesafeConfig implements Config {
                         .filter(filePath -> filePath.toString().endsWith(".conf") || filePath.toString().endsWith(".json") || filePath.toString().endsWith(".properties"))
                         .collect(Collectors.toList());
                 for (Path configFile : configFileList) {
-                    merge(ConfigFactory.parseFile(configFile.toFile()));
+                    try {
+                        merge(ConfigFactory.parseFile(configFile.toFile()));
+                    } catch (ConfigException e) {
+                        Logger.info("{} Ignored", e.origin().filename());
+                    }
                 }
-            } catch (ConfigException ignored) {
             } catch (IOException e) {
                 Logger.error(e);
             }

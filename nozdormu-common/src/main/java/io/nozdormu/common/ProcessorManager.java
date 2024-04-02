@@ -365,7 +365,7 @@ public class ProcessorManager {
 
     public MethodDeclaration resolveMethodDeclaration(ClassOrInterfaceDeclaration classOrInterfaceDeclaration, MethodCallExpr methodCallExpr) {
         ClassOrInterfaceDeclaration scopeClassOrInterfaceDeclaration = methodCallExpr.getScope()
-                .map(expression -> getCompilationUnitOrError(expression.calculateResolvedType().asReferenceType().getQualifiedName()))
+                .map(expression -> getCompilationUnitOrError(calculateType(expression).asReferenceType().getQualifiedName()))
                 .map(this::getPublicClassOrInterfaceDeclarationOrError)
                 .orElse(classOrInterfaceDeclaration);
 
@@ -376,7 +376,7 @@ public class ProcessorManager {
                         IntStream.range(0, methodCallExpr.getArguments().size())
                                 .allMatch(index -> {
                                             try {
-                                                ResolvedType resolvedType = methodCallExpr.getArgument(index).calculateResolvedType();
+                                                ResolvedType resolvedType = calculateType(methodCallExpr.getArgument(index));
                                                 if (resolvedType.isPrimitive()) {
                                                     return methodDeclaration.getParameter(index).getType().isPrimitiveType() && resolvedType.asPrimitive().name().toLowerCase().equals(methodDeclaration.getParameter(index).getType().asString());
                                                 } else {
@@ -412,7 +412,9 @@ public class ProcessorManager {
             ResolvedTypeDeclaration typeDeclaration = ref.getCorrespondingDeclaration();
             List<ResolvedType> typeParameters = Collections.emptyList();
             if (classOrInterfaceType.getTypeArguments().isPresent()) {
-                typeParameters = classOrInterfaceType.getTypeArguments().get().stream().map(this::getResolvedType).collect(Collectors.toList());
+                typeParameters = classOrInterfaceType.getTypeArguments().get().stream()
+                        .map(this::getResolvedType)
+                        .collect(Collectors.toList());
             }
             if (typeDeclaration.isTypeParameter()) {
                 return new ResolvedTypeVariable(typeDeclaration.asTypeParameter()).asReferenceType();
