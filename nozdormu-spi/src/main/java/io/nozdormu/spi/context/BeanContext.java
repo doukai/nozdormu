@@ -47,8 +47,8 @@ public class BeanContext {
         put(beanClass, NAME_PREFIX + name, supplier);
     }
 
-    public static void putPriority(Class<?> beanClass, Integer priority, Supplier<?> supplier) {
-        put(beanClass, PRIORITY_PREFIX + Optional.ofNullable(priority).orElse(Integer.MAX_VALUE), supplier);
+    public static void putPriority(Class<?> beanClass, Integer priority, Supplier<?> supplier, String name) {
+        put(beanClass, PRIORITY_PREFIX + Optional.ofNullable(priority).orElse(Integer.MAX_VALUE) + ":" + name, supplier);
     }
 
     public static void put(Class<?> beanClass, String key, Supplier<?> supplier) {
@@ -251,7 +251,7 @@ public class BeanContext {
                 .sorted(
                         Comparator
                                 .comparingInt((Map.Entry<String, ? extends Supplier<?>> entry) ->
-                                        Integer.parseInt(entry.getKey().replaceFirst(PRIORITY_PREFIX, ""))
+                                        Integer.parseInt(entry.getKey().split(":")[1])
                                 )
                 )
                 .map(entry -> new AbstractMap.SimpleEntry<>(entry.getKey(), entry.getValue()));

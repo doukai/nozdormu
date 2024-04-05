@@ -381,7 +381,7 @@ public class InjectProcessor extends AbstractProcessor {
                                                     .flatMap(processorManager::findAnnotationValue)
                                                     .map(expression -> {
                                                                 if (expression.isIntegerLiteralExpr()) {
-                                                                    return new StringLiteralExpr(PRIORITY_PREFIX + expression.asIntegerLiteralExpr().getValue());
+                                                                    return new StringLiteralExpr(PRIORITY_PREFIX + expression.asIntegerLiteralExpr().getValue() + ":" + qualifiedName);
                                                                 } else {
                                                                     expression.findAll(NameExpr.class).stream()
                                                                             .map(expr -> processorManager.calculateType(expr))
@@ -394,19 +394,29 @@ public class InjectProcessor extends AbstractProcessor {
                                                                                 .setLeft(new StringLiteralExpr(NAME_PREFIX))
                                                                                 .setOperator(BinaryExpr.Operator.PLUS)
                                                                                 .setRight(
-                                                                                        new FieldAccessExpr()
-                                                                                                .setName(expression.asNameExpr().getName())
-                                                                                                .setScope(new NameExpr(processorManager.getResolvedDeclaration(expression.asNameExpr()).asField().declaringType().getQualifiedName()))
+                                                                                        new BinaryExpr()
+                                                                                                .setLeft(
+                                                                                                        new FieldAccessExpr()
+                                                                                                                .setName(expression.asNameExpr().getName())
+                                                                                                                .setScope(new NameExpr(processorManager.getResolvedDeclaration(expression.asNameExpr()).asField().declaringType().getQualifiedName()))
+                                                                                                )
+                                                                                                .setOperator(BinaryExpr.Operator.PLUS)
+                                                                                                .setRight(new StringLiteralExpr(":" + qualifiedName))
                                                                                 );
                                                                     }
                                                                     return new BinaryExpr()
                                                                             .setLeft(new StringLiteralExpr(PRIORITY_PREFIX))
                                                                             .setOperator(BinaryExpr.Operator.PLUS)
-                                                                            .setRight(new EnclosedExpr(expression));
+                                                                            .setRight(
+                                                                                    new BinaryExpr()
+                                                                                            .setLeft(new EnclosedExpr(expression))
+                                                                                            .setOperator(BinaryExpr.Operator.PLUS)
+                                                                                            .setRight(new StringLiteralExpr(":" + qualifiedName))
+                                                                            );
                                                                 }
                                                             }
                                                     )
-                                                    .orElseGet(() -> new StringLiteralExpr(PRIORITY_PREFIX + Integer.MAX_VALUE));
+                                                    .orElseGet(() -> new StringLiteralExpr(PRIORITY_PREFIX + Integer.MAX_VALUE + ":" + qualifiedName));
 
                                             if (classOrInterfaceDeclaration.isAnnotationPresent(Singleton.class) || classOrInterfaceDeclaration.isAnnotationPresent(ApplicationScoped.class)) {
                                                 ClassOrInterfaceDeclaration holderClassDeclaration = new ClassOrInterfaceDeclaration()
@@ -445,10 +455,10 @@ public class InjectProcessor extends AbstractProcessor {
                                                         );
 
                                                 holderClassDeclaration.addFieldWithInitializer(
-                                                                qualifiedName,
-                                                                "INSTANCE",
-                                                                objectCreateExpression
-                                                        )
+                                                        qualifiedName,
+                                                        "INSTANCE",
+                                                        objectCreateExpression
+                                                )
                                                         .setModifiers(Modifier.Keyword.PRIVATE, Modifier.Keyword.STATIC, Modifier.Keyword.FINAL);
 
                                                 contextClassDeclaration.addMember(holderClassDeclaration);
@@ -795,7 +805,7 @@ public class InjectProcessor extends AbstractProcessor {
                                                         .flatMap(processorManager::findAnnotationValue)
                                                         .map(expression -> {
                                                                     if (expression.isIntegerLiteralExpr()) {
-                                                                        return new StringLiteralExpr(PRIORITY_PREFIX + expression.asIntegerLiteralExpr().getValue());
+                                                                        return new StringLiteralExpr(PRIORITY_PREFIX + expression.asIntegerLiteralExpr().getValue() + ":" + qualifiedName);
                                                                     } else {
                                                                         expression.findAll(NameExpr.class).stream()
                                                                                 .map(expr -> processorManager.calculateType(expr))
@@ -808,19 +818,29 @@ public class InjectProcessor extends AbstractProcessor {
                                                                                     .setLeft(new StringLiteralExpr(NAME_PREFIX))
                                                                                     .setOperator(BinaryExpr.Operator.PLUS)
                                                                                     .setRight(
-                                                                                            new FieldAccessExpr()
-                                                                                                    .setName(expression.asNameExpr().getName())
-                                                                                                    .setScope(new NameExpr(processorManager.getResolvedDeclaration(expression.asNameExpr()).asField().declaringType().getQualifiedName()))
+                                                                                            new BinaryExpr()
+                                                                                                    .setLeft(
+                                                                                                            new FieldAccessExpr()
+                                                                                                                    .setName(expression.asNameExpr().getName())
+                                                                                                                    .setScope(new NameExpr(processorManager.getResolvedDeclaration(expression.asNameExpr()).asField().declaringType().getQualifiedName()))
+                                                                                                    )
+                                                                                                    .setOperator(BinaryExpr.Operator.PLUS)
+                                                                                                    .setRight(new StringLiteralExpr(":" + qualifiedName))
                                                                                     );
                                                                         }
                                                                         return new BinaryExpr()
                                                                                 .setLeft(new StringLiteralExpr(PRIORITY_PREFIX))
                                                                                 .setOperator(BinaryExpr.Operator.PLUS)
-                                                                                .setRight(new EnclosedExpr(expression));
+                                                                                .setRight(
+                                                                                        new BinaryExpr()
+                                                                                                .setLeft(new EnclosedExpr(expression))
+                                                                                                .setOperator(BinaryExpr.Operator.PLUS)
+                                                                                                .setRight(new StringLiteralExpr(":" + qualifiedName))
+                                                                                );
                                                                     }
                                                                 }
                                                         )
-                                                        .orElseGet(() -> new StringLiteralExpr(PRIORITY_PREFIX + Integer.MAX_VALUE));
+                                                        .orElseGet(() -> new StringLiteralExpr(PRIORITY_PREFIX + Integer.MAX_VALUE + ":" + qualifiedName));
 
                                                 if (producesMethodDeclaration.isAnnotationPresent(Singleton.class) || producesMethodDeclaration.isAnnotationPresent(ApplicationScoped.class)) {
                                                     ClassOrInterfaceDeclaration holderClassOrInterfaceDeclaration = new ClassOrInterfaceDeclaration();

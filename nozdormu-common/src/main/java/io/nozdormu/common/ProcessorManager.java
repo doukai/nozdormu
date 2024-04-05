@@ -252,18 +252,24 @@ public class ProcessorManager {
         return getCompilationUnit(qualifiedName).orElseThrow(() -> new InjectionProcessException(InjectionProcessErrorType.CANNOT_PARSER_SOURCE_CODE.bind(qualifiedName)));
     }
 
+
+    public Optional<ClassOrInterfaceDeclaration> getClassOrInterfaceDeclaration(String qualifiedName) {
+        return getCompilationUnit(qualifiedName)
+                .flatMap(compilationUnit ->
+                        compilationUnit.getTypes().stream()
+                                .filter(BodyDeclaration::isClassOrInterfaceDeclaration)
+                                .map(BodyDeclaration::asClassOrInterfaceDeclaration)
+                                .filter(classOrInterfaceDeclaration ->
+                                        classOrInterfaceDeclaration.getFullyQualifiedName()
+                                                .orElse(classOrInterfaceDeclaration.getNameAsString())
+                                                .equals(qualifiedName)
+                                )
+                                .findFirst()
+                );
+    }
+
     public ClassOrInterfaceDeclaration getClassOrInterfaceDeclarationOrError(String qualifiedName) {
-        CompilationUnit compilationUnit = getCompilationUnitOrError(qualifiedName);
-        return compilationUnit.getTypes().stream()
-                .filter(BodyDeclaration::isClassOrInterfaceDeclaration)
-                .map(BodyDeclaration::asClassOrInterfaceDeclaration)
-                .filter(classOrInterfaceDeclaration ->
-                        classOrInterfaceDeclaration.getFullyQualifiedName()
-                                .orElse(classOrInterfaceDeclaration.getNameAsString())
-                                .equals(qualifiedName)
-                )
-                .findFirst()
-                .orElse(null);
+        return getClassOrInterfaceDeclaration(qualifiedName).orElseThrow(() -> new InjectionProcessException(InjectionProcessErrorType.CLASS_NOT_EXIST.bind(qualifiedName)));
     }
 
     public Stream<ResolvedType> getMethodReturnResolvedType(MethodDeclaration methodDeclaration) {
@@ -496,10 +502,14 @@ public class ProcessorManager {
 
     public Stream<String> getExtendedTypes(ClassOrInterfaceType classOrInterfaceType) {
         return getResolvedType(classOrInterfaceType).asReferenceType().getTypeDeclaration()
-                .flatMap(AssociableToAST::toAst)
-                .map(node -> (ClassOrInterfaceDeclaration) node)
+                .flatMap(resolvedReferenceTypeDeclaration -> getClassOrInterfaceDeclaration(resolvedReferenceTypeDeclaration.getQualifiedName()))
                 .stream()
-                .flatMap(this::getExtendedTypes);
+                .flatMap(classOrInterfaceDeclaration ->
+                        Stream.concat(
+                                getExtendedTypes(classOrInterfaceDeclaration),
+                                getImplementedTypes(classOrInterfaceDeclaration)
+                        )
+                );
     }
 
     public Stream<String> getImplementedTypes(ClassOrInterfaceDeclaration classOrInterfaceDeclaration) {
@@ -516,9 +526,8 @@ public class ProcessorManager {
 
     public Stream<String> getImplementedTypes(ClassOrInterfaceType classOrInterfaceType) {
         return getResolvedType(classOrInterfaceType).asReferenceType().getTypeDeclaration()
-                .flatMap(AssociableToAST::toAst)
-                .map(node -> (ClassOrInterfaceDeclaration) node)
+                .flatMap(resolvedReferenceTypeDeclaration -> getClassOrInterfaceDeclaration(resolvedReferenceTypeDeclaration.getQualifiedName()))
                 .stream()
-                .flatMap(this::getImplementedTypes);
+                .flatMap(this::getExtendedTypes);
     }
 }

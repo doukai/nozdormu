@@ -5,6 +5,7 @@ public enum InjectionProcessErrorType {
     ROOT_PACKAGE_NOT_EXIST(-101, "can't find root package"),
     CANNOT_PARSER_SOURCE_CODE(-102, "can't parser source code: %s"),
     CANNOT_GET_COMPILATION_UNIT(-103, "can't get compilation unit of %s"),
+    CLASS_NOT_EXIST(-104, "class not exist in: %s"),
     PUBLIC_CLASS_NOT_EXIST(-104, "public class not exist in: %s"),
     PUBLIC_ANNOTATION_NOT_EXIST(-105, "public annotation not exist in: %s"),
     CONSTRUCTOR_NOT_EXIST(-106, "can't find constructor of %s"),
