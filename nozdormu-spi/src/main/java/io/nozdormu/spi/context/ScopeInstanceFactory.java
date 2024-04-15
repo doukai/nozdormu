@@ -29,11 +29,13 @@ public abstract class ScopeInstanceFactory {
     public <T> Mono<T> get(Class<T> beanClass, String name, Provider<Mono<T>> instanceProvider) {
         return get(beanClass, name)
                 .switchIfEmpty(
-                        instanceProvider.get()
-                                .flatMap(instance ->
-                                        getScopeInstances()
-                                                .mapNotNull(scopeInstances -> (T) scopeInstances.get(beanClass).compute(name, (k, v) -> instance))
-                                )
+                        Mono.defer(() ->
+                                instanceProvider.get()
+                                        .flatMap(instance ->
+                                                getScopeInstances()
+                                                        .mapNotNull(scopeInstances -> (T) scopeInstances.get(beanClass).compute(name, (k, v) -> instance))
+                                        )
+                        )
                 );
     }
 

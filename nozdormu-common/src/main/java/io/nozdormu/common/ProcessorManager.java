@@ -206,7 +206,6 @@ public class ProcessorManager {
     public Optional<CompilationUnit> getCompilationUnit(TypeElement typeElement) {
         return combinedTypeSolver.getRoot().solveType(typeElement.getQualifiedName().toString())
                 .toAst()
-                .map(node -> (ClassOrInterfaceDeclaration) node)
                 .flatMap(Node::findCompilationUnit)
                 .or(() ->
                         Optional.ofNullable(trees.getPath(typeElement))
