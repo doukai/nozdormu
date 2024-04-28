@@ -321,6 +321,17 @@ public class ProcessorManager {
         return resolvedAnnotationDeclaration.getQualifiedName();
     }
 
+    public String getQualifiedName(ResolvedType resolvedType) {
+        if (resolvedType.isPrimitive()) {
+            return resolvedType.asPrimitive().getBoxTypeQName();
+        } else if (resolvedType.isReferenceType()) {
+            return resolvedType.asReferenceType().getQualifiedName();
+        } else if (resolvedType.isArray()) {
+            return getQualifiedName(resolvedType.asArrayType().getComponentType()) + "[]";
+        }
+        return resolvedType.describe();
+    }
+
     public String getQualifiedName(Type type) {
         if (type.isClassOrInterfaceType()) {
             return getQualifiedName(type.asClassOrInterfaceType());
@@ -392,16 +403,7 @@ public class ProcessorManager {
                                                 )
                                 )
                                 .findFirst()
-                                .map(resolvedMethodDeclaration -> {
-                                            if (resolvedMethodDeclaration.getReturnType().isPrimitive()) {
-                                                return resolvedMethodDeclaration.getReturnType().asPrimitive().name().toLowerCase();
-                                            } else if (resolvedMethodDeclaration.getReturnType().isTypeVariable()) {
-                                                return resolvedMethodDeclaration.getReturnType().asTypeVariable().describe();
-                                            } else {
-                                                return resolvedMethodDeclaration.getReturnType().asReferenceType().getQualifiedName();
-                                            }
-                                        }
-                                )
+                                .map(resolvedMethodDeclaration -> getQualifiedName(resolvedMethodDeclaration.getReturnType()))
                 )
                 .orElseGet(() ->
                         classOrInterfaceDeclaration.getMethods().stream()
