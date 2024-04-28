@@ -85,9 +85,9 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                     statement.asExpressionStmt().getExpression().asMethodCallExpr().getNameAsString().equals("await")
             ) {
                 MethodCallExpr methodCallExpr = statement.asExpressionStmt().getExpression().asMethodCallExpr().getArgument(0).asMethodCallExpr();
-                MethodDeclaration methodDeclaration = processorManager.resolveMethodDeclaration(componentClassDeclaration, methodCallExpr);
+                String methodDeclarationReturnTypeName = processorManager.resolveMethodDeclarationReturnTypeName(componentClassDeclaration, methodCallExpr);
                 if (methodCallExpr.getScope().isPresent() && processorManager.calculateType(methodCallExpr.getScope().get()).asReferenceType().getQualifiedName().equals(Provider.class.getCanonicalName()) ||
-                        methodDeclaration.getType().isClassOrInterfaceType() && processorManager.getQualifiedName(methodDeclaration.getType()).equals(Mono.class.getCanonicalName())) {
+                        methodDeclarationReturnTypeName.equals(Mono.class.getCanonicalName())) {
                     List<Statement> statementList = statementNodeList.subList(i + 1, statementNodeList.size());
                     if (statementList.isEmpty()) {
                         MethodCallExpr thenEmpty = new MethodCallExpr("then")
@@ -134,7 +134,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                         statements.add(new ReturnStmt(thenEmpty));
                     }
                     break;
-                } else if (methodDeclaration.getType().isClassOrInterfaceType() && processorManager.getQualifiedName(methodDeclaration.getType()).equals(Flux.class.getCanonicalName())) {
+                } else if (methodDeclarationReturnTypeName.equals(Flux.class.getCanonicalName())) {
                     List<Statement> statementList = statementNodeList.subList(i + 1, statementNodeList.size());
                     if (statementList.isEmpty()) {
                         MethodCallExpr then = new MethodCallExpr("then")
@@ -197,15 +197,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                     String asyncMethodName = Stream
                             .concat(
                                     Stream.of(methodCallExpr.getNameAsString() + ASYNC_METHOD_NAME_SUFFIX),
-                                    processorManager.resolveMethodDeclaration(componentClassDeclaration, methodCallExpr).getParameters().stream()
-                                            .map(parameter -> {
-                                                        if (parameter.getType().isPrimitiveType()) {
-                                                            return parameter.getType().asPrimitiveType().toBoxedType().getNameAsString();
-                                                        } else {
-                                                            return parameter.getTypeAsString();
-                                                        }
-                                                    }
-                                            )
+                                    processorManager.resolveMethodDeclarationParameterTypeNames(componentClassDeclaration, methodCallExpr)
                             )
                             .collect(Collectors.joining("_"));
 
@@ -276,9 +268,9 @@ public class AsyncProcessor implements ComponentProxyProcessor {
             ) {
                 VariableDeclarator variableDeclarator = statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariable(0);
                 MethodCallExpr methodCallExpr = variableDeclarator.getInitializer().get().asMethodCallExpr().getArgument(0).asMethodCallExpr();
-                MethodDeclaration methodDeclaration = processorManager.resolveMethodDeclaration(componentClassDeclaration, methodCallExpr);
+                String methodDeclarationReturnTypeName = processorManager.resolveMethodDeclarationReturnTypeName(componentClassDeclaration, methodCallExpr);
                 if (methodCallExpr.getScope().isPresent() && processorManager.calculateType(methodCallExpr.getScope().get()).asReferenceType().getQualifiedName().equals(Provider.class.getCanonicalName()) ||
-                        methodDeclaration.getType().isClassOrInterfaceType() && processorManager.getQualifiedName(methodDeclaration.getType()).equals(Mono.class.getCanonicalName())) {
+                        methodDeclarationReturnTypeName.equals(Mono.class.getCanonicalName())) {
                     if (hasReturnStmt) {
                         MethodCallExpr flatMap = new MethodCallExpr("flatMap")
                                 .addArgument(
@@ -308,7 +300,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                         statements.add(new ReturnStmt(new MethodCallExpr("then").setScope(doOnSuccess)));
                     }
                     break;
-                } else if (methodDeclaration.getType().isClassOrInterfaceType() && processorManager.getQualifiedName(methodDeclaration.getType()).equals(Flux.class.getCanonicalName())) {
+                } else if (methodDeclarationReturnTypeName.equals(Flux.class.getCanonicalName())) {
                     if (hasReturnStmt) {
                         MethodCallExpr flatMap = new MethodCallExpr("flatMap")
                                 .addArgument(
@@ -351,15 +343,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                     String asyncMethodName = Stream
                             .concat(
                                     Stream.of(methodCallExpr.getNameAsString() + ASYNC_METHOD_NAME_SUFFIX),
-                                    processorManager.resolveMethodDeclaration(componentClassDeclaration, methodCallExpr).getParameters().stream()
-                                            .map(parameter -> {
-                                                        if (parameter.getType().isPrimitiveType()) {
-                                                            return parameter.getType().asPrimitiveType().toBoxedType().getNameAsString();
-                                                        } else {
-                                                            return parameter.getTypeAsString();
-                                                        }
-                                                    }
-                                            )
+                                    processorManager.resolveMethodDeclarationParameterTypeNames(componentClassDeclaration, methodCallExpr)
                             )
                             .collect(Collectors.joining("_"));
 
@@ -387,7 +371,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                                 .addArgument(
                                                         new LambdaExpr()
                                                                 .addParameter(new Parameter(new UnknownType(), "result"))
-                                                                .setBody(new ExpressionStmt(new CastExpr().setType(methodDeclaration.getType()).setExpression(new NameExpr("result"))))
+                                                                .setBody(new ExpressionStmt(new CastExpr().setType(methodDeclarationReturnTypeName).setExpression(new NameExpr("result"))))
                                                 )
                                                 .setScope(asyncMethodCallExpr)
                                 );
@@ -404,7 +388,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                                 .addArgument(
                                                         new LambdaExpr()
                                                                 .addParameter(new Parameter(new UnknownType(), "result"))
-                                                                .setBody(new ExpressionStmt(new CastExpr().setType(methodDeclaration.getType()).setExpression(new NameExpr("result"))))
+                                                                .setBody(new ExpressionStmt(new CastExpr().setType(methodDeclarationReturnTypeName).setExpression(new NameExpr("result"))))
                                                 )
                                                 .setScope(asyncMethodCallExpr)
                                 );
@@ -421,7 +405,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                                 .addArgument(
                                                         new LambdaExpr()
                                                                 .addParameter(new Parameter(new UnknownType(), "result"))
-                                                                .setBody(new ExpressionStmt(new CastExpr().setType(methodDeclaration.getType()).setExpression(new NameExpr("result"))))
+                                                                .setBody(new ExpressionStmt(new CastExpr().setType(methodDeclarationReturnTypeName).setExpression(new NameExpr("result"))))
                                                 )
                                                 .setScope(asyncMethodCallExpr)
                                 );
@@ -459,11 +443,9 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                         );
                 statements.add(statement);
             } else if (statement.isReturnStmt()) {
-                buildAsyncReturnStatement(componentClassDeclaration, statement.asReturnStmt())
-                        .ifPresentOrElse(
-                                statements::add,
-                                () -> statements.add(statement)
-                        );
+                buildAsyncReturnExpression(componentClassDeclaration, statement.asReturnStmt())
+                        .ifPresent(expression -> statement.asReturnStmt().setExpression(expression));
+                statements.add(statement);
             } else {
                 statements.add(statement);
             }
@@ -508,10 +490,8 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                 ifStmt.getThenStmt().asBlockStmt().setStatements(buildAsyncMethodBody(componentClassDeclaration, ifStmt.getThenStmt().asBlockStmt().getStatements()));
             }
         } else if (ifStmt.getThenStmt().isReturnStmt()) {
-            Optional<ReturnStmt> returnStmt = buildAsyncReturnStatement(componentClassDeclaration, ifStmt.getThenStmt().asReturnStmt());
-            if (returnStmt.isPresent() && returnStmt.get().getExpression().isPresent()) {
-                ifStmt.getThenStmt().asReturnStmt().setExpression(returnStmt.get().getExpression().get());
-            }
+            buildAsyncReturnExpression(componentClassDeclaration, ifStmt.getThenStmt().asReturnStmt())
+                    .ifPresent(expression -> ifStmt.getThenStmt().asReturnStmt().setExpression(expression));
         }
 
         if (ifStmt.getElseStmt().isPresent()) {
@@ -524,10 +504,8 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                     ifStmt.getElseStmt().get().asBlockStmt().setStatements(buildAsyncMethodBody(componentClassDeclaration, ifStmt.getElseStmt().get().asBlockStmt().getStatements()));
                 }
             } else if (ifStmt.getElseStmt().get().isReturnStmt()) {
-                Optional<ReturnStmt> returnStmt = buildAsyncReturnStatement(componentClassDeclaration, ifStmt.getElseStmt().get().asReturnStmt());
-                if (returnStmt.isPresent() && returnStmt.get().getExpression().isPresent()) {
-                    ifStmt.getElseStmt().get().asReturnStmt().setExpression(returnStmt.get().getExpression().get());
-                }
+                buildAsyncReturnExpression(componentClassDeclaration, ifStmt.getElseStmt().get().asReturnStmt())
+                        .ifPresent(expression -> ifStmt.getElseStmt().get().asReturnStmt().setExpression(expression));
             }
         }
     }
@@ -579,25 +557,30 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                 );
     }
 
-    private Optional<ReturnStmt> buildAsyncReturnStatement(ClassOrInterfaceDeclaration componentClassDeclaration, ReturnStmt returnStmt) {
+    private Optional<Expression> buildAsyncReturnExpression(ClassOrInterfaceDeclaration componentClassDeclaration, ReturnStmt returnStmt) {
         return returnStmt.getExpression()
                 .map(expression -> {
                             if (expression.isMethodCallExpr()) {
                                 if (expression.asMethodCallExpr().getNameAsString().equals("await")) {
-                                    return new ReturnStmt(
-                                            expression.asMethodCallExpr().getArgument(0).asMethodCallExpr()
-                                    );
+                                    return expression.asMethodCallExpr().getArgument(0).asMethodCallExpr();
                                 }
-                                MethodDeclaration methodDeclaration = processorManager.resolveMethodDeclaration(componentClassDeclaration, expression.asMethodCallExpr());
-                                if (methodDeclaration.getType().isClassOrInterfaceType() && processorManager.getQualifiedName(methodDeclaration.getType()).equals(Mono.class.getCanonicalName())) {
-                                    return new ReturnStmt(expression);
+                                if (expression.asMethodCallExpr().getScope().isPresent() && expression.asMethodCallExpr().getScope().get().isNameExpr()) {
+                                    if (expression.asMethodCallExpr().getScope().get().asNameExpr().getNameAsString().equals(Mono.class.getSimpleName())) {
+                                        return expression;
+                                    } else {
+                                        return new MethodCallExpr("just")
+                                                .addArgument(expression)
+                                                .setScope(new NameExpr(Mono.class.getSimpleName()));
+                                    }
+                                }
+                                String methodDeclarationReturnTypeName = processorManager.resolveMethodDeclarationReturnTypeName(componentClassDeclaration, expression.asMethodCallExpr());
+                                if (methodDeclarationReturnTypeName.equals(Mono.class.getCanonicalName())) {
+                                    return expression;
                                 }
                             }
-                            return new ReturnStmt(
-                                    new MethodCallExpr("just")
-                                            .addArgument(expression)
-                                            .setScope(new NameExpr(Mono.class.getSimpleName()))
-                            );
+                            return new MethodCallExpr("just")
+                                    .addArgument(expression)
+                                    .setScope(new NameExpr(Mono.class.getSimpleName()));
                         }
                 );
     }
