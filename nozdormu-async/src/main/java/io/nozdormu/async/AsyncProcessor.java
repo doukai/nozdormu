@@ -12,6 +12,7 @@ import com.github.javaparser.ast.expr.*;
 import com.github.javaparser.ast.stmt.*;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import com.github.javaparser.ast.type.UnknownType;
+import com.github.javaparser.resolution.UnsolvedSymbolException;
 import com.google.auto.service.AutoService;
 import io.nozdormu.common.ProcessorManager;
 import io.nozdormu.inject.processor.ComponentProxyProcessor;
