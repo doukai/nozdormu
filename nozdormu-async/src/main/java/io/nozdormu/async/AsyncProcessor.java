@@ -2,6 +2,7 @@ package io.nozdormu.async;
 
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.Modifier;
+import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.NodeList;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
@@ -47,6 +48,8 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                             if (blockStmtOptional.isPresent()) {
                                 componentProxyCompilationUnit.addImport(Mono.class);
                                 BlockStmt blockStmt = blockStmtOptional.get();
+                                blockStmt.findAll(BlockStmt.class)
+                                        .forEach(item -> item.getStatements().forEach(statement -> statement.setParentNode(item)));
                                 String asyncMethodName = Stream
                                         .concat(
                                                 Stream.of(methodDeclaration.getNameAsString() + ASYNC_METHOD_NAME_SUFFIX),
@@ -61,12 +64,14 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                                         )
                                         )
                                         .collect(Collectors.joining("_"));
-                                MethodDeclaration asyncMethodDeclaration = new MethodDeclaration()
-                                        .setName(asyncMethodName)
+                                MethodDeclaration asyncMethodDeclaration = new MethodDeclaration();
+                                asyncMethodDeclaration.setParentNode(componentProxyClassDeclaration);
+
+                                asyncMethodDeclaration.setName(asyncMethodName)
                                         .setModifiers(methodDeclaration.getModifiers())
                                         .setParameters(methodDeclaration.getParameters())
                                         .setType(new ClassOrInterfaceType().setName(Mono.class.getSimpleName()).setTypeArguments(methodDeclaration.getType()))
-                                        .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, blockStmt.getStatements())));
+                                        .setBody(buildAsyncMethodBodyBlockStmt(componentClassDeclaration, blockStmt.getStatements()));
                                 componentProxyClassDeclaration.addMember(asyncMethodDeclaration);
                             }
                         }
@@ -74,7 +79,13 @@ public class AsyncProcessor implements ComponentProxyProcessor {
         buildAsyncMethodDeclaration(componentClassDeclaration).ifPresent(componentProxyClassDeclaration::addMember);
     }
 
-    protected NodeList<Statement> buildAsyncMethodBody(ClassOrInterfaceDeclaration componentClassDeclaration, List<Statement> statementNodeList) {
+    protected BlockStmt buildAsyncMethodBodyBlockStmt(ClassOrInterfaceDeclaration componentClassDeclaration, List<Statement> statementNodeList) {
+        BlockStmt body = new BlockStmt();
+        body.setStatements(buildAsyncMethodBody(body, componentClassDeclaration, statementNodeList));
+        return body;
+    }
+
+    protected NodeList<Statement> buildAsyncMethodBody(Node parentNode, ClassOrInterfaceDeclaration componentClassDeclaration, List<Statement> statementNodeList) {
         boolean hasReturnStmt = hasReturnStmt(statementNodeList);
         boolean hasAwait = hasAwait(statementNodeList);
         NodeList<Statement> statements = new NodeList<>();
@@ -85,7 +96,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                     statement.asExpressionStmt().getExpression().asMethodCallExpr().getNameAsString().equals("await")
             ) {
                 MethodCallExpr methodCallExpr = statement.asExpressionStmt().getExpression().asMethodCallExpr().getArgument(0).asMethodCallExpr();
-                String methodDeclarationReturnTypeName = processorManager.resolveMethodDeclarationReturnTypeName(componentClassDeclaration, methodCallExpr);
+                String methodDeclarationReturnTypeName = processorManager.resolveMethodDeclarationReturnTypeQualifiedName(componentClassDeclaration, methodCallExpr);
                 if (methodCallExpr.getScope().isPresent() && processorManager.calculateType(methodCallExpr.getScope().get()).asReferenceType().getQualifiedName().equals(Provider.class.getCanonicalName()) ||
                         methodDeclarationReturnTypeName.equals(Mono.class.getCanonicalName())) {
                     List<Statement> statementList = statementNodeList.subList(i + 1, statementNodeList.size());
@@ -100,7 +111,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                                 .addArgument(
                                                         new LambdaExpr()
                                                                 .setEnclosingParameters(true)
-                                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementList)))
+                                                                .setBody(buildAsyncMethodBodyBlockStmt(componentClassDeclaration, statementList))
                                                 )
                                                 .setScope(new NameExpr(Mono.class.getSimpleName()))
                                 )
@@ -113,7 +124,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                                 .addArgument(
                                                         new LambdaExpr()
                                                                 .setEnclosingParameters(true)
-                                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementList)))
+                                                                .setBody(buildAsyncMethodBodyBlockStmt(componentClassDeclaration, statementList))
                                                 )
                                                 .setScope(new NameExpr(Mono.class.getSimpleName()))
                                 )
@@ -126,7 +137,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                                 .addArgument(
                                                         new LambdaExpr()
                                                                 .setEnclosingParameters(true)
-                                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementList)))
+                                                                .setBody(buildAsyncMethodBodyBlockStmt(componentClassDeclaration, statementList))
                                                 )
                                                 .setScope(new NameExpr(Mono.class.getSimpleName()))
                                 )
@@ -150,7 +161,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                                 .addArgument(
                                                         new LambdaExpr()
                                                                 .setEnclosingParameters(true)
-                                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementList)))
+                                                                .setBody(buildAsyncMethodBodyBlockStmt(componentClassDeclaration, statementList))
                                                 )
                                                 .setScope(new NameExpr(Mono.class.getSimpleName()))
                                 )
@@ -166,7 +177,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                                 .addArgument(
                                                         new LambdaExpr()
                                                                 .setEnclosingParameters(true)
-                                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementList)))
+                                                                .setBody(buildAsyncMethodBodyBlockStmt(componentClassDeclaration, statementList))
                                                 )
                                                 .setScope(new NameExpr(Mono.class.getSimpleName()))
                                 )
@@ -182,7 +193,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                                 .addArgument(
                                                         new LambdaExpr()
                                                                 .setEnclosingParameters(true)
-                                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementList)))
+                                                                .setBody(buildAsyncMethodBodyBlockStmt(componentClassDeclaration, statementList))
                                                 )
                                                 .setScope(new NameExpr(Mono.class.getSimpleName()))
                                 )
@@ -224,7 +235,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                                 .addArgument(
                                                         new LambdaExpr()
                                                                 .setEnclosingParameters(true)
-                                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementList)))
+                                                                .setBody(buildAsyncMethodBodyBlockStmt(componentClassDeclaration, statementList))
                                                 )
                                                 .setScope(new NameExpr(Mono.class.getSimpleName()))
                                 )
@@ -237,7 +248,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                                 .addArgument(
                                                         new LambdaExpr()
                                                                 .setEnclosingParameters(true)
-                                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementList)))
+                                                                .setBody(buildAsyncMethodBodyBlockStmt(componentClassDeclaration, statementList))
                                                 )
                                                 .setScope(new NameExpr(Mono.class.getSimpleName()))
                                 )
@@ -250,7 +261,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                                 .addArgument(
                                                         new LambdaExpr()
                                                                 .setEnclosingParameters(true)
-                                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementList)))
+                                                                .setBody(buildAsyncMethodBodyBlockStmt(componentClassDeclaration, statementList))
                                                 )
                                                 .setScope(new NameExpr(Mono.class.getSimpleName()))
                                 )
@@ -268,7 +279,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
             ) {
                 VariableDeclarator variableDeclarator = statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariable(0);
                 MethodCallExpr methodCallExpr = variableDeclarator.getInitializer().get().asMethodCallExpr().getArgument(0).asMethodCallExpr();
-                String methodDeclarationReturnTypeName = processorManager.resolveMethodDeclarationReturnTypeName(componentClassDeclaration, methodCallExpr);
+                String methodDeclarationReturnTypeName = processorManager.resolveMethodDeclarationReturnTypeQualifiedName(componentClassDeclaration, methodCallExpr);
                 if (methodCallExpr.getScope().isPresent() && processorManager.calculateType(methodCallExpr.getScope().get()).asReferenceType().getQualifiedName().equals(Provider.class.getCanonicalName()) ||
                         methodDeclarationReturnTypeName.equals(Mono.class.getCanonicalName())) {
                     if (hasReturnStmt) {
@@ -276,7 +287,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                 .addArgument(
                                         new LambdaExpr()
                                                 .addParameter(new Parameter(new UnknownType(), variableDeclarator.getName()))
-                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementNodeList.subList(i + 1, statementNodeList.size()))))
+                                                .setBody(buildAsyncMethodBodyBlockStmt(componentClassDeclaration, statementNodeList.subList(i + 1, statementNodeList.size())))
                                 )
                                 .setScope(methodCallExpr);
                         statements.add(new ReturnStmt(flatMap));
@@ -285,7 +296,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                 .addArgument(
                                         new LambdaExpr()
                                                 .addParameter(new Parameter(new UnknownType(), variableDeclarator.getName()))
-                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementNodeList.subList(i + 1, statementNodeList.size()))))
+                                                .setBody(buildAsyncMethodBodyBlockStmt(componentClassDeclaration, statementNodeList.subList(i + 1, statementNodeList.size())))
                                 )
                                 .setScope(methodCallExpr);
                         statements.add(new ReturnStmt(new MethodCallExpr("then").setScope(doOnSuccess)));
@@ -294,7 +305,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                 .addArgument(
                                         new LambdaExpr()
                                                 .addParameter(new Parameter(new UnknownType(), variableDeclarator.getName()))
-                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementNodeList.subList(i + 1, statementNodeList.size()))))
+                                                .setBody(buildAsyncMethodBodyBlockStmt(componentClassDeclaration, statementNodeList.subList(i + 1, statementNodeList.size())))
                                 )
                                 .setScope(methodCallExpr);
                         statements.add(new ReturnStmt(new MethodCallExpr("then").setScope(doOnSuccess)));
@@ -306,7 +317,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                 .addArgument(
                                         new LambdaExpr()
                                                 .addParameter(new Parameter(new UnknownType(), variableDeclarator.getName()))
-                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementNodeList.subList(i + 1, statementNodeList.size()))))
+                                                .setBody(buildAsyncMethodBodyBlockStmt(componentClassDeclaration, statementNodeList.subList(i + 1, statementNodeList.size())))
                                 )
                                 .setScope(
                                         new MethodCallExpr("collectList")
@@ -318,7 +329,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                 .addArgument(
                                         new LambdaExpr()
                                                 .addParameter(new Parameter(new UnknownType(), variableDeclarator.getName()))
-                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementNodeList.subList(i + 1, statementNodeList.size()))))
+                                                .setBody(buildAsyncMethodBodyBlockStmt(componentClassDeclaration, statementNodeList.subList(i + 1, statementNodeList.size())))
                                 )
                                 .setScope(
                                         new MethodCallExpr("collectList")
@@ -330,7 +341,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                 .addArgument(
                                         new LambdaExpr()
                                                 .addParameter(new Parameter(new UnknownType(), variableDeclarator.getName()))
-                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementNodeList.subList(i + 1, statementNodeList.size()))))
+                                                .setBody(buildAsyncMethodBodyBlockStmt(componentClassDeclaration, statementNodeList.subList(i + 1, statementNodeList.size())))
                                 )
                                 .setScope(
                                         new MethodCallExpr("collectList")
@@ -364,7 +375,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                 .addArgument(
                                         new LambdaExpr()
                                                 .addParameter(new Parameter(new UnknownType(), variableDeclarator.getName()))
-                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementNodeList.subList(i + 1, statementNodeList.size()))))
+                                                .setBody(buildAsyncMethodBodyBlockStmt(componentClassDeclaration, statementNodeList.subList(i + 1, statementNodeList.size())))
                                 )
                                 .setScope(
                                         new MethodCallExpr("map")
@@ -381,7 +392,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                 .addArgument(
                                         new LambdaExpr()
                                                 .addParameter(new Parameter(new UnknownType(), variableDeclarator.getName()))
-                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementNodeList.subList(i + 1, statementNodeList.size()))))
+                                                .setBody(buildAsyncMethodBodyBlockStmt(componentClassDeclaration, statementNodeList.subList(i + 1, statementNodeList.size())))
                                 )
                                 .setScope(
                                         new MethodCallExpr("map")
@@ -398,7 +409,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                 .addArgument(
                                         new LambdaExpr()
                                                 .addParameter(new Parameter(new UnknownType(), variableDeclarator.getName()))
-                                                .setBody(new BlockStmt(buildAsyncMethodBody(componentClassDeclaration, statementNodeList.subList(i + 1, statementNodeList.size()))))
+                                                .setBody(buildAsyncMethodBodyBlockStmt(componentClassDeclaration, statementNodeList.subList(i + 1, statementNodeList.size())))
                                 )
                                 .setScope(
                                         new MethodCallExpr("map")
@@ -414,33 +425,54 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                     break;
                 }
             } else if (statement.isBlockStmt()) {
+                statement.asBlockStmt().getStatements()
+                        .forEach(item -> item.setParentNode(statement));
                 if (hasAwait(statement.asBlockStmt().getStatements()) && !hasReturnStmt(statement.asBlockStmt().getStatements())) {
-                    statement.asBlockStmt().setStatements(buildAsyncMethodBody(componentClassDeclaration, Stream.concat(statement.asBlockStmt().getStatements().stream(), statementNodeList.subList(i + 1, statementNodeList.size()).stream()).collect(Collectors.toList())));
+                    statement.asBlockStmt().setStatements(buildAsyncMethodBody(statement.asBlockStmt().getParentNode().orElse(null), componentClassDeclaration, Stream.concat(statement.asBlockStmt().getStatements().stream(), statementNodeList.subList(i + 1, statementNodeList.size()).stream()).collect(Collectors.toList())));
                 } else {
-                    statement.asBlockStmt().setStatements(buildAsyncMethodBody(componentClassDeclaration, statement.asBlockStmt().getStatements()));
+                    statement.asBlockStmt().setStatements(buildAsyncMethodBody(statement.asBlockStmt().getParentNode().orElse(null), componentClassDeclaration, statement.asBlockStmt().getStatements()));
                 }
                 statements.add(statement);
             } else if (statement.isIfStmt()) {
                 buildIfStmt(componentClassDeclaration, statementNodeList, i, statement.asIfStmt());
                 statements.add(statement);
             } else if (statement.isTryStmt()) {
+                statement.asTryStmt().getTryBlock().getStatements()
+                        .forEach(item -> item.setParentNode(statement.asTryStmt().getTryBlock()));
                 if (hasAwait(statement.asTryStmt().getTryBlock().getStatements()) && !hasReturnStmt(statement.asTryStmt().getTryBlock().getStatements())) {
-                    statement.asTryStmt().getTryBlock().setStatements(buildAsyncMethodBody(componentClassDeclaration, Stream.concat(statement.asTryStmt().getTryBlock().getStatements().stream(), statementNodeList.subList(i + 1, statementNodeList.size()).stream()).collect(Collectors.toList())));
+                    statement.asTryStmt().getTryBlock().setStatements(buildAsyncMethodBody(statement.asTryStmt().getTryBlock().getParentNode().orElse(null), componentClassDeclaration, Stream.concat(statement.asTryStmt().getTryBlock().getStatements().stream(), statementNodeList.subList(i + 1, statementNodeList.size()).stream()).collect(Collectors.toList())));
                 } else {
-                    statement.asTryStmt().getTryBlock().setStatements(buildAsyncMethodBody(componentClassDeclaration, statement.asTryStmt().getTryBlock().getStatements()));
+                    statement.asTryStmt().getTryBlock().setStatements(buildAsyncMethodBody(statement.asTryStmt().getTryBlock().getParentNode().orElse(null), componentClassDeclaration, statement.asTryStmt().getTryBlock().getStatements()));
+                }
+                for (CatchClause catchClause : statement.asTryStmt().getCatchClauses()) {
+                    catchClause.getBody().getStatements()
+                            .forEach(item -> item.setParentNode(catchClause.getBody()));
+                    if (hasAwait(catchClause.getBody().getStatements()) && !hasReturnStmt(catchClause.getBody().getStatements())) {
+                        catchClause.getBody().setStatements(buildAsyncMethodBody(catchClause.getBody().getParentNode().orElse(null), componentClassDeclaration, Stream.concat(catchClause.getBody().getStatements().stream(), statementNodeList.subList(i + 1, statementNodeList.size()).stream()).collect(Collectors.toList())));
+                    } else {
+                        catchClause.getBody().setStatements(buildAsyncMethodBody(catchClause.getBody().getParentNode().orElse(null), componentClassDeclaration, catchClause.getBody().getStatements()));
+                    }
+                }
+                if (statement.asTryStmt().getFinallyBlock().isPresent()) {
+                    statement.asTryStmt().getFinallyBlock().get().getStatements()
+                            .forEach(item -> item.setParentNode(statement.asTryStmt().getFinallyBlock().get()));
+                    if (hasAwait(statement.asTryStmt().getFinallyBlock().get().getStatements()) && !hasReturnStmt(statement.asTryStmt().getFinallyBlock().get().getStatements())) {
+                        statement.asTryStmt().getFinallyBlock().get().setStatements(buildAsyncMethodBody(statement.asTryStmt().getFinallyBlock().get().getParentNode().orElse(null), componentClassDeclaration, Stream.concat(statement.asTryStmt().getFinallyBlock().get().getStatements().stream(), statementNodeList.subList(i + 1, statementNodeList.size()).stream()).collect(Collectors.toList())));
+                    } else {
+                        statement.asTryStmt().getFinallyBlock().get().setStatements(buildAsyncMethodBody(statement.asTryStmt().getFinallyBlock().get().getParentNode().orElse(null), componentClassDeclaration, statement.asTryStmt().getFinallyBlock().get().getStatements()));
+                    }
                 }
                 statements.add(statement);
             } else if (statement.isSwitchStmt()) {
-                List<Statement> statementList = statementNodeList.subList(i + 1, statementNodeList.size());
-                statement.asSwitchStmt().getEntries()
-                        .forEach(switchEntry -> {
-                                    if (hasAwait(switchEntry.getStatements()) && !hasReturnStmt(switchEntry.getStatements())) {
-                                        switchEntry.setStatements(buildAsyncMethodBody(componentClassDeclaration, Stream.concat(switchEntry.getStatements().stream(), statementList.stream()).collect(Collectors.toList())));
-                                    } else {
-                                        switchEntry.setStatements(buildAsyncMethodBody(componentClassDeclaration, switchEntry.getStatements()));
-                                    }
-                                }
-                        );
+                for (SwitchEntry switchEntry : statement.asSwitchStmt().getEntries()) {
+                    switchEntry.getStatements()
+                            .forEach(item -> item.setParentNode(switchEntry));
+                    if (hasAwait(switchEntry.getStatements()) && !hasReturnStmt(switchEntry.getStatements())) {
+                        switchEntry.setStatements(buildAsyncMethodBody(switchEntry.getParentNode().orElse(null), componentClassDeclaration, Stream.concat(switchEntry.getStatements().stream(), statementNodeList.subList(i + 1, statementNodeList.size()).stream()).collect(Collectors.toList())));
+                    } else {
+                        switchEntry.setStatements(buildAsyncMethodBody(switchEntry.getParentNode().orElse(null), componentClassDeclaration, switchEntry.getStatements()));
+                    }
+                }
                 statements.add(statement);
             } else if (statement.isReturnStmt()) {
                 buildAsyncReturnExpression(componentClassDeclaration, statement.asReturnStmt())
@@ -449,6 +481,11 @@ public class AsyncProcessor implements ComponentProxyProcessor {
             } else {
                 statements.add(statement);
             }
+        }
+        if (parentNode != null) {
+            statements.stream()
+                    .filter(statement -> statement.getParentNode().isEmpty())
+                    .forEach(statement -> statement.setParentNode(parentNode));
         }
         return statements;
     }
@@ -461,53 +498,17 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                             } else if (statement.isBlockStmt()) {
                                 return hasReturnStmt(statement.asBlockStmt().getStatements());
                             } else if (statement.isIfStmt()) {
-                                if (statement.asIfStmt().getThenStmt().isReturnStmt()) {
-                                    return true;
-                                } else if (statement.asIfStmt().getThenStmt().isBlockStmt()) {
-                                    return hasReturnStmt(statement.asIfStmt().getThenStmt().asBlockStmt().getStatements());
-                                } else if (statement.asIfStmt().getElseStmt().isPresent()) {
-                                    if (statement.asIfStmt().getElseStmt().get().isReturnStmt()) {
-                                        return true;
-                                    } else if (statement.asIfStmt().getElseStmt().get().isBlockStmt()) {
-                                        return hasReturnStmt(statement.asIfStmt().getElseStmt().get().asBlockStmt().getStatements());
-                                    }
-                                }
+                                return ifStmtHasReturnStmt(statement.asIfStmt());
                             } else if (statement.isTryStmt()) {
-                                return hasReturnStmt(statement.asTryStmt().getTryBlock().getStatements());
+                                return hasReturnStmt(statement.asTryStmt().getTryBlock().getStatements()) ||
+                                        statement.asTryStmt().getCatchClauses().stream().anyMatch(catchClause -> hasReturnStmt(catchClause.getBody().getStatements())) ||
+                                        statement.asTryStmt().getFinallyBlock().isPresent() && hasReturnStmt(statement.asTryStmt().getFinallyBlock().get().getStatements());
                             } else if (statement.isSwitchStmt()) {
                                 return statement.asSwitchStmt().getEntries().stream().anyMatch(switchEntry -> hasReturnStmt(switchEntry.getStatements()));
                             }
                             return false;
                         }
                 );
-    }
-
-    private void buildIfStmt(ClassOrInterfaceDeclaration componentClassDeclaration, List<Statement> statementNodeList, int i, IfStmt ifStmt) {
-        if (ifStmt.getThenStmt().isBlockStmt()) {
-            if (hasAwait(ifStmt.getThenStmt().asBlockStmt().getStatements()) && !hasReturnStmt(ifStmt.getThenStmt().asBlockStmt().getStatements())) {
-                ifStmt.getThenStmt().asBlockStmt().setStatements(buildAsyncMethodBody(componentClassDeclaration, Stream.concat(ifStmt.getThenStmt().asBlockStmt().getStatements().stream(), statementNodeList.subList(i + 1, statementNodeList.size()).stream()).collect(Collectors.toList())));
-            } else {
-                ifStmt.getThenStmt().asBlockStmt().setStatements(buildAsyncMethodBody(componentClassDeclaration, ifStmt.getThenStmt().asBlockStmt().getStatements()));
-            }
-        } else if (ifStmt.getThenStmt().isReturnStmt()) {
-            buildAsyncReturnExpression(componentClassDeclaration, ifStmt.getThenStmt().asReturnStmt())
-                    .ifPresent(expression -> ifStmt.getThenStmt().asReturnStmt().setExpression(expression));
-        }
-
-        if (ifStmt.getElseStmt().isPresent()) {
-            if (ifStmt.getElseStmt().get().isIfStmt()) {
-                buildIfStmt(componentClassDeclaration, statementNodeList, i, ifStmt.getElseStmt().get().asIfStmt());
-            } else if (ifStmt.getElseStmt().get().isBlockStmt()) {
-                if (hasAwait(ifStmt.getElseStmt().get().asBlockStmt().getStatements()) && !hasReturnStmt(ifStmt.getElseStmt().get().asBlockStmt().getStatements())) {
-                    ifStmt.getElseStmt().get().asBlockStmt().setStatements(buildAsyncMethodBody(componentClassDeclaration, Stream.concat(ifStmt.getElseStmt().get().asBlockStmt().getStatements().stream(), statementNodeList.subList(i + 1, statementNodeList.size()).stream()).collect(Collectors.toList())));
-                } else {
-                    ifStmt.getElseStmt().get().asBlockStmt().setStatements(buildAsyncMethodBody(componentClassDeclaration, ifStmt.getElseStmt().get().asBlockStmt().getStatements()));
-                }
-            } else if (ifStmt.getElseStmt().get().isReturnStmt()) {
-                buildAsyncReturnExpression(componentClassDeclaration, ifStmt.getElseStmt().get().asReturnStmt())
-                        .ifPresent(expression -> ifStmt.getElseStmt().get().asReturnStmt().setExpression(expression));
-            }
-        }
     }
 
     private boolean hasAwait(List<Statement> statementList) {
@@ -528,19 +529,11 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                             } else if (statement.isBlockStmt()) {
                                 return hasAwait(statement.asBlockStmt().getStatements());
                             } else if (statement.isIfStmt()) {
-                                if (statement.asIfStmt().getThenStmt().isReturnStmt()) {
-                                    return hasAwait(statement.asIfStmt().getThenStmt().asReturnStmt());
-                                } else if (statement.asIfStmt().getThenStmt().isBlockStmt()) {
-                                    return hasAwait(statement.asIfStmt().getThenStmt().asBlockStmt().getStatements());
-                                } else if (statement.asIfStmt().getElseStmt().isPresent()) {
-                                    if (statement.asIfStmt().getElseStmt().get().isReturnStmt()) {
-                                        return hasAwait(statement.asIfStmt().getElseStmt().get().asReturnStmt());
-                                    } else if (statement.asIfStmt().getElseStmt().get().isBlockStmt()) {
-                                        return hasAwait(statement.asIfStmt().getElseStmt().get().asBlockStmt().getStatements());
-                                    }
-                                }
+                                return ifStmtHasAwait(statement.asIfStmt());
                             } else if (statement.isTryStmt()) {
-                                return hasAwait(statement.asTryStmt().getTryBlock().getStatements());
+                                return hasAwait(statement.asTryStmt().getTryBlock().getStatements()) ||
+                                        statement.asTryStmt().getCatchClauses().stream().anyMatch(catchClause -> hasAwait(catchClause.getBody().getStatements())) ||
+                                        statement.asTryStmt().getFinallyBlock().isPresent() && hasAwait(statement.asTryStmt().getFinallyBlock().get().getStatements());
                             } else if (statement.isSwitchStmt()) {
                                 return statement.asSwitchStmt().getEntries().stream().anyMatch(switchEntry -> hasAwait(switchEntry.getStatements()));
                             }
@@ -557,29 +550,99 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                 );
     }
 
+    private boolean ifStmtHasReturnStmt(IfStmt ifStmt) {
+        if (ifStmt.getThenStmt().isReturnStmt()) {
+            return true;
+        } else if (ifStmt.getThenStmt().isBlockStmt()) {
+            return hasReturnStmt(ifStmt.getThenStmt().asBlockStmt().getStatements());
+        }
+
+        if (ifStmt.getElseStmt().isPresent()) {
+            if (ifStmt.getElseStmt().get().isReturnStmt()) {
+                return true;
+            } else if (ifStmt.getElseStmt().get().isBlockStmt()) {
+                return hasReturnStmt(ifStmt.getElseStmt().get().asBlockStmt().getStatements());
+            } else if (ifStmt.getElseStmt().get().isIfStmt()) {
+                return ifStmtHasReturnStmt(ifStmt.getElseStmt().get().asIfStmt());
+            }
+        }
+        return false;
+    }
+
+    private boolean ifStmtHasAwait(IfStmt ifStmt) {
+        if (ifStmt.getThenStmt().isReturnStmt()) {
+            return hasAwait(ifStmt.getThenStmt().asReturnStmt());
+        } else if (ifStmt.getThenStmt().isBlockStmt()) {
+            return hasAwait(ifStmt.getThenStmt().asBlockStmt().getStatements());
+        }
+
+        if (ifStmt.getElseStmt().isPresent()) {
+            if (ifStmt.getElseStmt().get().isReturnStmt()) {
+                return hasAwait(ifStmt.getElseStmt().get().asReturnStmt());
+            } else if (ifStmt.getElseStmt().get().isBlockStmt()) {
+                return hasAwait(ifStmt.getElseStmt().get().asBlockStmt().getStatements());
+            } else if (ifStmt.getElseStmt().get().isIfStmt()) {
+                return ifStmtHasAwait(ifStmt.getElseStmt().get().asIfStmt());
+            }
+        }
+        return false;
+    }
+
+    private void buildIfStmt(ClassOrInterfaceDeclaration componentClassDeclaration, List<Statement> statementNodeList, int i, IfStmt ifStmt) {
+        if (ifStmt.getThenStmt().isBlockStmt()) {
+            ifStmt.getThenStmt().asBlockStmt().getStatements()
+                    .forEach(item -> item.setParentNode(ifStmt.getThenStmt()));
+            if (hasAwait(ifStmt.getThenStmt().asBlockStmt().getStatements()) && !hasReturnStmt(ifStmt.getThenStmt().asBlockStmt().getStatements())) {
+                ifStmt.getThenStmt().asBlockStmt().setStatements(buildAsyncMethodBody(ifStmt.getThenStmt().asBlockStmt().getParentNode().orElse(null), componentClassDeclaration, Stream.concat(ifStmt.getThenStmt().asBlockStmt().getStatements().stream(), statementNodeList.subList(i + 1, statementNodeList.size()).stream()).collect(Collectors.toList())));
+            } else {
+                ifStmt.getThenStmt().asBlockStmt().setStatements(buildAsyncMethodBody(ifStmt.getThenStmt().asBlockStmt().getParentNode().orElse(null), componentClassDeclaration, ifStmt.getThenStmt().asBlockStmt().getStatements()));
+            }
+        } else if (ifStmt.getThenStmt().isReturnStmt()) {
+            buildAsyncReturnExpression(componentClassDeclaration, ifStmt.getThenStmt().asReturnStmt())
+                    .ifPresent(expression -> ifStmt.getThenStmt().asReturnStmt().setExpression(expression));
+        }
+
+        if (ifStmt.getElseStmt().isPresent()) {
+            if (ifStmt.getElseStmt().get().isIfStmt()) {
+                buildIfStmt(componentClassDeclaration, statementNodeList, i, ifStmt.getElseStmt().get().asIfStmt());
+            } else if (ifStmt.getElseStmt().get().isBlockStmt()) {
+                ifStmt.getElseStmt().get().asBlockStmt().getStatements()
+                        .forEach(item -> item.setParentNode(ifStmt.getElseStmt().get()));
+                if (hasAwait(ifStmt.getElseStmt().get().asBlockStmt().getStatements()) && !hasReturnStmt(ifStmt.getElseStmt().get().asBlockStmt().getStatements())) {
+                    ifStmt.getElseStmt().get().asBlockStmt().setStatements(buildAsyncMethodBody(ifStmt.getElseStmt().get().asBlockStmt().getParentNode().orElse(null), componentClassDeclaration, Stream.concat(ifStmt.getElseStmt().get().asBlockStmt().getStatements().stream(), statementNodeList.subList(i + 1, statementNodeList.size()).stream()).collect(Collectors.toList())));
+                } else {
+                    ifStmt.getElseStmt().get().asBlockStmt().setStatements(buildAsyncMethodBody(ifStmt.getElseStmt().get().asBlockStmt().getParentNode().orElse(null), componentClassDeclaration, ifStmt.getElseStmt().get().asBlockStmt().getStatements()));
+                }
+            } else if (ifStmt.getElseStmt().get().isReturnStmt()) {
+                buildAsyncReturnExpression(componentClassDeclaration, ifStmt.getElseStmt().get().asReturnStmt())
+                        .ifPresent(expression -> ifStmt.getElseStmt().get().asReturnStmt().setExpression(expression));
+            }
+        }
+    }
+
     private Optional<Expression> buildAsyncReturnExpression(ClassOrInterfaceDeclaration componentClassDeclaration, ReturnStmt returnStmt) {
         return returnStmt.getExpression()
                 .map(expression -> {
                             if (expression.isMethodCallExpr()) {
                                 if (expression.asMethodCallExpr().getNameAsString().equals("await")) {
-                                    return expression.asMethodCallExpr().getArgument(0).asMethodCallExpr();
+                                    return expression.asMethodCallExpr().getArgument(0).asMethodCallExpr().clone();
                                 }
                                 if (expression.asMethodCallExpr().getScope().isPresent() && expression.asMethodCallExpr().getScope().get().isNameExpr()) {
                                     if (expression.asMethodCallExpr().getScope().get().asNameExpr().getNameAsString().equals(Mono.class.getSimpleName())) {
-                                        return expression;
+                                        return expression.clone();
                                     } else {
                                         return new MethodCallExpr("just")
-                                                .addArgument(expression)
+                                                .addArgument(expression.clone())
                                                 .setScope(new NameExpr(Mono.class.getSimpleName()));
                                     }
                                 }
-                                String methodDeclarationReturnTypeName = processorManager.resolveMethodDeclarationReturnTypeName(componentClassDeclaration, expression.asMethodCallExpr());
+                                String methodDeclarationReturnTypeName = processorManager.resolveMethodDeclarationReturnTypeQualifiedName(componentClassDeclaration, expression.asMethodCallExpr());
                                 if (methodDeclarationReturnTypeName.equals(Mono.class.getCanonicalName())) {
                                     return expression;
                                 }
                             }
                             return new MethodCallExpr("just")
-                                    .addArgument(expression)
+                                    .addArgument(expression.clone())
                                     .setScope(new NameExpr(Mono.class.getSimpleName()));
                         }
                 );

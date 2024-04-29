@@ -167,6 +167,18 @@ public class InjectProcessor extends AbstractProcessor {
                 .setName(componentClassDeclaration.getNameAsString() + "_Proxy")
                 .addAnnotation(new NormalAnnotationExpr().addPair("value", new StringLiteralExpr(getClass().getName())).setName(Generated.class.getSimpleName()));
 
+        CompilationUnit proxyCompilationUnit = new CompilationUnit()
+                .addType(proxyClassDeclaration)
+                .addImport(Generated.class);
+
+        componentCompilationUnit.getPackageDeclaration()
+                .map(PackageDeclaration::clone)
+                .ifPresent(proxyCompilationUnit::setPackageDeclaration);
+
+        proxyClassDeclaration.setParentNode(proxyCompilationUnit);
+
+        processorManager.importAllClassOrInterfaceType(proxyClassDeclaration, componentClassDeclaration);
+
         List<FieldDeclaration> privateFieldDeclarationList = componentClassDeclaration.getFields().stream()
                 .filter(fieldDeclaration -> fieldDeclaration.hasModifier(Modifier.Keyword.PRIVATE))
                 .filter(fieldDeclaration -> !fieldDeclaration.hasModifier(Modifier.Keyword.STATIC))
@@ -237,10 +249,6 @@ public class InjectProcessor extends AbstractProcessor {
                         }
                 );
 
-        CompilationUnit proxyCompilationUnit = new CompilationUnit()
-                .addType(proxyClassDeclaration)
-                .addImport(Generated.class);
-
 //        componentClassDeclaration.getAnnotationByClass(Named.class)
 //                .map(AnnotationExpr::clone)
 //                .ifPresent(annotationExpr -> {
@@ -280,12 +288,6 @@ public class InjectProcessor extends AbstractProcessor {
                             proxyClassDeclaration.addAnnotation(annotationExpr);
                         }
                 );
-
-        componentCompilationUnit.getPackageDeclaration()
-                .map(PackageDeclaration::clone)
-                .ifPresent(proxyCompilationUnit::setPackageDeclaration);
-
-        processorManager.importAllClassOrInterfaceType(proxyClassDeclaration, componentClassDeclaration);
 
         componentProxyProcessors
                 .forEach(componentProxyProcessor -> {
@@ -455,10 +457,10 @@ public class InjectProcessor extends AbstractProcessor {
                                                         );
 
                                                 holderClassDeclaration.addFieldWithInitializer(
-                                                        qualifiedName,
-                                                        "INSTANCE",
-                                                        objectCreateExpression
-                                                )
+                                                                qualifiedName,
+                                                                "INSTANCE",
+                                                                objectCreateExpression
+                                                        )
                                                         .setModifiers(Modifier.Keyword.PRIVATE, Modifier.Keyword.STATIC, Modifier.Keyword.FINAL);
 
                                                 contextClassDeclaration.addMember(holderClassDeclaration);

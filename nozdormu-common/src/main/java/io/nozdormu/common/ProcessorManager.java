@@ -12,7 +12,10 @@ import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import com.github.javaparser.ast.type.Type;
 import com.github.javaparser.resolution.Context;
 import com.github.javaparser.resolution.UnsolvedSymbolException;
-import com.github.javaparser.resolution.declarations.*;
+import com.github.javaparser.resolution.declarations.ResolvedAnnotationDeclaration;
+import com.github.javaparser.resolution.declarations.ResolvedDeclaration;
+import com.github.javaparser.resolution.declarations.ResolvedReferenceTypeDeclaration;
+import com.github.javaparser.resolution.declarations.ResolvedTypeDeclaration;
 import com.github.javaparser.resolution.model.SymbolReference;
 import com.github.javaparser.resolution.model.typesystem.ReferenceTypeImpl;
 import com.github.javaparser.resolution.types.ResolvedReferenceType;
@@ -251,7 +254,6 @@ public class ProcessorManager {
         return getCompilationUnit(qualifiedName).orElseThrow(() -> new InjectionProcessException(InjectionProcessErrorType.CANNOT_PARSER_SOURCE_CODE.bind(qualifiedName)));
     }
 
-
     public Optional<ClassOrInterfaceDeclaration> getClassOrInterfaceDeclaration(String qualifiedName) {
         return getCompilationUnit(qualifiedName)
                 .flatMap(compilationUnit ->
@@ -379,7 +381,7 @@ public class ProcessorManager {
         return javaSymbolSolver.resolveDeclaration(node, ResolvedDeclaration.class);
     }
 
-    public String resolveMethodDeclarationReturnTypeName(ClassOrInterfaceDeclaration classOrInterfaceDeclaration, MethodCallExpr methodCallExpr) {
+    public String resolveMethodDeclarationReturnTypeQualifiedName(ClassOrInterfaceDeclaration classOrInterfaceDeclaration, MethodCallExpr methodCallExpr) {
         return methodCallExpr.getScope()
                 .flatMap(expression -> calculateType(expression).asReferenceType().getTypeDeclaration())
                 .flatMap(resolvedReferenceTypeDeclaration ->
@@ -431,7 +433,6 @@ public class ProcessorManager {
                 );
     }
 
-
     public Stream<String> resolveMethodDeclarationParameterTypeNames(ClassOrInterfaceDeclaration classOrInterfaceDeclaration, MethodCallExpr methodCallExpr) {
         return methodCallExpr.getScope()
                 .flatMap(expression -> calculateType(expression).asReferenceType().getTypeDeclaration())
@@ -461,9 +462,10 @@ public class ProcessorManager {
                                                 .map(resolvedType -> {
                                                             if (resolvedType.isPrimitive()) {
                                                                 return resolvedType.asPrimitive().getBoxTypeClass().getSimpleName();
-                                                            } else {
+                                                            } else if (resolvedType.isReferenceType()) {
                                                                 return resolvedType.asReferenceType().getQualifiedName().substring(resolvedType.asReferenceType().getQualifiedName().lastIndexOf(".") + 1);
                                                             }
+                                                            return resolvedType.describe();
                                                         }
                                                 )
                                 )
