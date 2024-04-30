@@ -12,8 +12,6 @@ import com.github.javaparser.ast.expr.*;
 import com.github.javaparser.ast.stmt.*;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import com.github.javaparser.ast.type.UnknownType;
-import com.github.javaparser.resolution.UnsolvedSymbolException;
-import com.github.javaparser.resolution.types.ResolvedType;
 import com.google.auto.service.AutoService;
 import io.nozdormu.common.ProcessorManager;
 import io.nozdormu.inject.processor.ComponentProxyProcessor;
@@ -631,16 +629,9 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                                 .setScope(new NameExpr(Mono.class.getSimpleName()));
                                     }
                                 }
-                                try {
-                                    String methodDeclarationReturnTypeName = processorManager.resolveMethodDeclarationReturnTypeQualifiedName(expression.asMethodCallExpr());
-                                    if (methodDeclarationReturnTypeName.equals(Mono.class.getCanonicalName())) {
-                                        return expression;
-                                    }
-                                } catch (UnsolvedSymbolException e) {
-                                    ResolvedType findResolvedType = processorManager.findResolvedType(expression);
-                                    if (findResolvedType.isReferenceType() && findResolvedType.asReferenceType().getQualifiedName().equals(Mono.class.getCanonicalName())) {
-                                        return expression;
-                                    }
+                                String methodDeclarationReturnTypeName = processorManager.resolveMethodDeclarationReturnTypeQualifiedName(expression.asMethodCallExpr());
+                                if (methodDeclarationReturnTypeName.equals(Mono.class.getCanonicalName())) {
+                                    return expression;
                                 }
                             }
                             return new MethodCallExpr("just")
