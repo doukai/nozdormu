@@ -43,10 +43,13 @@ public class AsyncProcessor implements ComponentProxyProcessor {
     public void processComponentProxy(CompilationUnit componentCompilationUnit, ClassOrInterfaceDeclaration componentClassDeclaration, CompilationUnit componentProxyCompilationUnit, ClassOrInterfaceDeclaration componentProxyClassDeclaration) {
         componentClassDeclaration.getMethods().stream()
                 .filter(methodDeclaration -> methodDeclaration.isAnnotationPresent(Async.class))
+                .map(MethodDeclaration::clone)
                 .forEach(methodDeclaration -> {
+                            methodDeclaration.setParentNode(componentProxyClassDeclaration);
                             Optional<BlockStmt> blockStmtOptional = methodDeclaration.getBody();
                             if (blockStmtOptional.isPresent()) {
                                 componentProxyCompilationUnit.addImport(Mono.class);
+                                componentProxyCompilationUnit.addImport(Flux.class);
                                 BlockStmt blockStmt = blockStmtOptional.get();
                                 String asyncMethodName = Stream
                                         .concat(
@@ -64,11 +67,13 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                         .collect(Collectors.joining("_"));
                                 MethodDeclaration asyncMethodDeclaration = new MethodDeclaration();
                                 asyncMethodDeclaration.setParentNode(componentProxyClassDeclaration);
+                                BlockStmt body = buildAsyncMethodBodyBlockStmt(null, blockStmt.getStatements());
+                                body.setParentNode(methodDeclaration);
                                 asyncMethodDeclaration.setName(asyncMethodName)
                                         .setModifiers(methodDeclaration.getModifiers())
                                         .setParameters(methodDeclaration.getParameters())
                                         .setType(new ClassOrInterfaceType().setName(Mono.class.getSimpleName()).setTypeArguments(methodDeclaration.getType()))
-                                        .setBody(buildAsyncMethodBodyBlockStmt(null, blockStmt.getStatements()));
+                                        .setBody(body);
                                 componentProxyClassDeclaration.addMember(asyncMethodDeclaration);
                             }
                         }
@@ -294,14 +299,14 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                 .setScope(methodCallExpr);
                         statements.add(new ReturnStmt(flatMap));
                     } else if (hasAwait) {
-                        MethodCallExpr doOnSuccess = new MethodCallExpr("flatMap")
+                        MethodCallExpr flatMap = new MethodCallExpr("flatMap")
                                 .addArgument(
                                         new LambdaExpr()
                                                 .addParameter(new Parameter(new UnknownType(), variableDeclarator.getName()))
                                                 .setBody(buildAsyncMethodBodyBlockStmt(parentNode, statementNodeList.subList(i + 1, statementNodeList.size())))
                                 )
                                 .setScope(methodCallExpr);
-                        statements.add(new ReturnStmt(new MethodCallExpr("then").setScope(doOnSuccess)));
+                        statements.add(new ReturnStmt(new MethodCallExpr("then").setScope(flatMap)));
                     } else {
                         MethodCallExpr doOnSuccess = new MethodCallExpr("doOnSuccess")
                                 .addArgument(
@@ -327,7 +332,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                 );
                         statements.add(new ReturnStmt(flatMap));
                     } else if (hasAwait) {
-                        MethodCallExpr doOnSuccess = new MethodCallExpr("flatMap")
+                        MethodCallExpr flatMap = new MethodCallExpr("flatMap")
                                 .addArgument(
                                         new LambdaExpr()
                                                 .addParameter(new Parameter(new UnknownType(), variableDeclarator.getName()))
@@ -337,7 +342,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                         new MethodCallExpr("collectList")
                                                 .setScope(methodCallExpr)
                                 );
-                        statements.add(new ReturnStmt(new MethodCallExpr("then").setScope(doOnSuccess)));
+                        statements.add(new ReturnStmt(new MethodCallExpr("then").setScope(flatMap)));
                     } else {
                         MethodCallExpr doOnSuccess = new MethodCallExpr("doOnSuccess")
                                 .addArgument(
@@ -390,7 +395,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                 );
                         statements.add(new ReturnStmt(flatMap));
                     } else if (hasAwait) {
-                        MethodCallExpr doOnSuccess = new MethodCallExpr("flatMap")
+                        MethodCallExpr flatMap = new MethodCallExpr("flatMap")
                                 .addArgument(
                                         new LambdaExpr()
                                                 .addParameter(new Parameter(new UnknownType(), variableDeclarator.getName()))
@@ -405,7 +410,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                                 )
                                                 .setScope(asyncMethodCallExpr)
                                 );
-                        statements.add(new ReturnStmt(new MethodCallExpr("then").setScope(doOnSuccess)));
+                        statements.add(new ReturnStmt(new MethodCallExpr("then").setScope(flatMap)));
                     } else {
                         MethodCallExpr doOnSuccess = new MethodCallExpr("doOnSuccess")
                                 .addArgument(
@@ -435,6 +440,49 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                 statements.add(statement);
             } else if (statement.isIfStmt()) {
                 buildIfStmt(parentNode, statementNodeList, i, statement.asIfStmt());
+                statements.add(statement);
+            } else if (statement.isForStmt()) {
+                if (statement.asForStmt().getBody().isBlockStmt()) {
+                    if (hasAwait(statement.asForStmt().getBody().asBlockStmt().getStatements()) && !hasReturnStmt(statement.asForStmt().getBody().asBlockStmt().getStatements())) {
+                    }
+                    if (hasAwait(statement.asForStmt().getBody().asBlockStmt().getStatements()) && !hasReturnStmt(statement.asForStmt().getBody().asBlockStmt().getStatements())) {
+                        statement.asForStmt().getBody().asBlockStmt().setStatements(buildAsyncMethodBody(statement.asForStmt().getBody().getParentNode().orElse(null), Stream.concat(statement.asForStmt().getBody().asBlockStmt().getStatements().stream(), statementNodeList.subList(i + 1, statementNodeList.size()).stream()).collect(Collectors.toList())));
+                    } else {
+                        statement.asForStmt().getBody().asBlockStmt().setStatements(buildAsyncMethodBody(statement.asForStmt().getBody().getParentNode().orElse(null), statement.asForStmt().getBody().asBlockStmt().getStatements()));
+                    }
+                } else if (statement.asForStmt().getBody().isReturnStmt()) {
+                    buildAsyncReturnExpression(statement.asForStmt().getBody().asReturnStmt())
+                            .ifPresent(expression -> statement.asForStmt().getBody().asReturnStmt().setExpression(expression));
+                }
+                statements.add(statement);
+            } else if (statement.isForEachStmt()) {
+                if (statement.asForEachStmt().getBody().isBlockStmt()) {
+                    if (hasAwait(statement.asForEachStmt().getBody().asBlockStmt().getStatements()) && !hasReturnStmt(statement.asForEachStmt().getBody().asBlockStmt().getStatements())) {
+                        MethodCallExpr flatMap = new MethodCallExpr("flatMap")
+                                .addArgument(
+                                        new LambdaExpr()
+                                                .addParameter(new Parameter(new UnknownType(), statement.asForEachStmt().getVariable().getVariable(0).getNameAsString()))
+                                                .setBody(buildAsyncMethodBodyBlockStmt(parentNode, Stream.concat(statement.asForEachStmt().getBody().asBlockStmt().getStatements().stream(), statementNodeList.subList(i + 1, statementNodeList.size()).stream()).collect(Collectors.toList())))
+                                )
+                                .setScope(
+                                        new MethodCallExpr("fromIterable")
+                                                .addArgument(statement.asForEachStmt().getIterable())
+                                                .setScope(new NameExpr(Flux.class.getSimpleName()))
+                                );
+                        ReturnStmt returnStmt = new ReturnStmt(new MethodCallExpr("then").setScope(flatMap));
+                        returnStmt.setParentNode(parentNode);
+                        statements.add(returnStmt);
+                        break;
+                    }
+                    if (hasAwait(statement.asForEachStmt().getBody().asBlockStmt().getStatements()) && !hasReturnStmt(statement.asForEachStmt().getBody().asBlockStmt().getStatements())) {
+                        statement.asForEachStmt().getBody().asBlockStmt().setStatements(buildAsyncMethodBody(statement.asForEachStmt().getBody().getParentNode().orElse(null), Stream.concat(statement.asForEachStmt().getBody().asBlockStmt().getStatements().stream(), statementNodeList.subList(i + 1, statementNodeList.size()).stream()).collect(Collectors.toList())));
+                    } else {
+                        statement.asForEachStmt().getBody().asBlockStmt().setStatements(buildAsyncMethodBody(statement.asForEachStmt().getBody().getParentNode().orElse(null), statement.asForEachStmt().getBody().asBlockStmt().getStatements()));
+                    }
+                } else if (statement.asForEachStmt().getBody().isReturnStmt()) {
+                    buildAsyncReturnExpression(statement.asForEachStmt().getBody().asReturnStmt())
+                            .ifPresent(expression -> statement.asForEachStmt().getBody().asReturnStmt().setExpression(expression));
+                }
                 statements.add(statement);
             } else if (statement.isTryStmt()) {
                 if (hasAwait(statement.asTryStmt().getTryBlock().getStatements()) && !hasReturnStmt(statement.asTryStmt().getTryBlock().getStatements())) {
@@ -491,6 +539,10 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                 return hasReturnStmt(statement.asBlockStmt().getStatements());
                             } else if (statement.isIfStmt()) {
                                 return ifStmtHasReturnStmt(statement.asIfStmt());
+                            } else if (statement.isForStmt() && statement.asForStmt().getBody().isBlockStmt()) {
+                                return hasReturnStmt(statement.asForStmt().getBody().asBlockStmt().getStatements());
+                            } else if (statement.isForEachStmt() && statement.asForEachStmt().getBody().isBlockStmt()) {
+                                return hasReturnStmt(statement.asForEachStmt().getBody().asBlockStmt().getStatements());
                             } else if (statement.isTryStmt()) {
                                 return hasReturnStmt(statement.asTryStmt().getTryBlock().getStatements()) ||
                                         statement.asTryStmt().getCatchClauses().stream().anyMatch(catchClause -> hasReturnStmt(catchClause.getBody().getStatements())) ||
@@ -522,6 +574,10 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                 return hasAwait(statement.asBlockStmt().getStatements());
                             } else if (statement.isIfStmt()) {
                                 return ifStmtHasAwait(statement.asIfStmt());
+                            } else if (statement.isForStmt() && statement.asForStmt().getBody().isBlockStmt()) {
+                                return hasAwait(statement.asForStmt().getBody().asBlockStmt().getStatements());
+                            } else if (statement.isForEachStmt() && statement.asForEachStmt().getBody().isBlockStmt()) {
+                                return hasAwait(statement.asForEachStmt().getBody().asBlockStmt().getStatements());
                             } else if (statement.isTryStmt()) {
                                 return hasAwait(statement.asTryStmt().getTryBlock().getStatements()) ||
                                         statement.asTryStmt().getCatchClauses().stream().anyMatch(catchClause -> hasAwait(catchClause.getBody().getStatements())) ||
