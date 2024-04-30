@@ -881,8 +881,7 @@ public class InjectProcessor extends AbstractProcessor {
                                                     defaultStringExpr.ifPresent(stringLiteralExpr -> addPutTypeProducerStatement(staticInitializer, qualifiedName, moduleContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, stringLiteralExpr, true));
 //                                                    addPutTypeProducerStatement(staticInitializer, qualifiedName, moduleContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, priorityIntegerExpr, true);
 
-                                                    processorManager.getCompilationUnit(qualifiedName)
-                                                            .map(returnTypeCompilationUnit -> processorManager.getPublicClassOrInterfaceDeclarationOrError(returnTypeCompilationUnit))
+                                                    processorManager.getClassOrInterfaceDeclaration(qualifiedName)
                                                             .ifPresent(returnTypeClassOrInterfaceDeclaration -> {
                                                                         processorManager.getExtendedTypes(returnTypeClassOrInterfaceDeclaration)
                                                                                 .filter(extendedTypeName -> processorManager.getClassOrInterfaceDeclarationOrError(extendedTypeName).hasModifier(Modifier.Keyword.PUBLIC))
@@ -914,8 +913,7 @@ public class InjectProcessor extends AbstractProcessor {
                                                     defaultStringExpr.ifPresent(stringLiteralExpr -> addPutTypeProducerStatement(staticInitializer, qualifiedName, moduleContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, stringLiteralExpr, false));
 //                                                    addPutTypeProducerStatement(staticInitializer, qualifiedName, moduleContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, priorityIntegerExpr, false);
 
-                                                    processorManager.getCompilationUnit(qualifiedName)
-                                                            .map(returnTypeCompilationUnit -> processorManager.getPublicClassOrInterfaceDeclarationOrError(returnTypeCompilationUnit))
+                                                    processorManager.getClassOrInterfaceDeclaration(qualifiedName)
                                                             .ifPresent(returnTypeClassOrInterfaceDeclaration -> {
                                                                         processorManager.getExtendedTypes(returnTypeClassOrInterfaceDeclaration)
                                                                                 .filter(extendedTypeName -> processorManager.getClassOrInterfaceDeclarationOrError(extendedTypeName).hasModifier(Modifier.Keyword.PUBLIC))

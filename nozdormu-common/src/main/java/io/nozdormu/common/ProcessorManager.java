@@ -12,10 +12,7 @@ import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import com.github.javaparser.ast.type.Type;
 import com.github.javaparser.resolution.Context;
 import com.github.javaparser.resolution.UnsolvedSymbolException;
-import com.github.javaparser.resolution.declarations.ResolvedAnnotationDeclaration;
-import com.github.javaparser.resolution.declarations.ResolvedDeclaration;
-import com.github.javaparser.resolution.declarations.ResolvedReferenceTypeDeclaration;
-import com.github.javaparser.resolution.declarations.ResolvedTypeDeclaration;
+import com.github.javaparser.resolution.declarations.*;
 import com.github.javaparser.resolution.model.SymbolReference;
 import com.github.javaparser.resolution.model.typesystem.ReferenceTypeImpl;
 import com.github.javaparser.resolution.types.ResolvedReferenceType;
@@ -23,6 +20,7 @@ import com.github.javaparser.resolution.types.ResolvedType;
 import com.github.javaparser.resolution.types.ResolvedTypeVariable;
 import com.github.javaparser.symbolsolver.JavaSymbolSolver;
 import com.github.javaparser.symbolsolver.javaparsermodel.JavaParserFactory;
+import com.github.javaparser.symbolsolver.javaparsermodel.declarations.*;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.ClassLoaderTypeSolver;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.CombinedTypeSolver;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.JavaParserTypeSolver;
@@ -278,7 +276,7 @@ public class ProcessorManager {
                 .map(ReturnStmt::getExpression)
                 .flatMap(Optional::stream)
                 .filter(expression -> !expression.isMethodReferenceExpr())
-                .map(javaSymbolSolver::calculateType);
+                .map(this::calculateType);
     }
 
     public Stream<ResolvedReferenceType> getMethodReturnResolvedReferenceType(MethodDeclaration methodDeclaration) {
@@ -374,14 +372,102 @@ public class ProcessorManager {
     }
 
     public ResolvedType calculateType(Expression expression) {
-        return javaSymbolSolver.calculateType(expression);
+        try {
+            return javaSymbolSolver.calculateType(expression);
+        } catch (UnsolvedSymbolException e) {
+            try {
+                return findResolvedType(expression);
+            } catch (UnsupportedOperationException ignored) {
+            }
+            throw e;
+        }
+    }
+
+    public ResolvedType findResolvedType(Expression expression) {
+        if (expression.isMethodCallExpr()) {
+            if (expression.asMethodCallExpr().hasScope() && !expression.asMethodCallExpr().getScope().get().isThisExpr()) {
+                return findResolvedType(expression.asMethodCallExpr().getScope().get()).asReferenceType().getAllMethods().stream()
+                        .filter(resolvedMethodDeclaration -> resolvedMethodDeclaration.getName().equals(expression.asMethodCallExpr().getNameAsString()))
+                        .filter(resolvedMethodDeclaration -> resolvedMethodDeclaration.getNumberOfParams() == expression.asMethodCallExpr().getArguments().size())
+                        .filter(resolvedMethodDeclaration ->
+                                IntStream.range(0, expression.asMethodCallExpr().getArguments().size())
+                                        .allMatch(index -> {
+                                                    try {
+                                                        ResolvedType resolvedType = calculateType(expression.asMethodCallExpr().getArgument(index));
+                                                        if (resolvedType.isPrimitive() && resolvedMethodDeclaration.getParam(index).getType().isPrimitive()) {
+                                                            return resolvedMethodDeclaration.getParam(index).getType().isPrimitive() && resolvedType.asPrimitive().name().equals(resolvedMethodDeclaration.getParam(index).getType().asPrimitive().name());
+                                                        } else {
+                                                            return resolvedType.asReferenceType().getQualifiedName().equals(resolvedMethodDeclaration.getParam(index).getType().asReferenceType().getQualifiedName());
+                                                        }
+                                                    } catch (UnsolvedSymbolException e) {
+                                                        return true;
+                                                    }
+                                                }
+                                        )
+                        )
+                        .findFirst()
+                        .map(ResolvedMethodDeclaration::getReturnType)
+                        .orElseThrow(() -> new RuntimeException(expression.asMethodCallExpr().getNameAsString() + " method not found"));
+            } else {
+                return expression.findCompilationUnit()
+                        .flatMap(this::getPublicClassOrInterfaceDeclaration).stream()
+                        .flatMap(classOrInterfaceDeclaration -> classOrInterfaceDeclaration.getMethods().stream())
+                        .filter(methodDeclaration -> methodDeclaration.getNameAsString().equals(expression.asMethodCallExpr().getNameAsString()))
+                        .filter(methodDeclaration -> methodDeclaration.getParameters().size() == expression.asMethodCallExpr().getArguments().size())
+                        .filter(methodDeclaration ->
+                                IntStream.range(0, expression.asMethodCallExpr().getArguments().size())
+                                        .allMatch(index -> {
+                                                    try {
+                                                        ResolvedType resolvedType = calculateType(expression.asMethodCallExpr().getArgument(index));
+                                                        if (resolvedType.isPrimitive()) {
+                                                            return methodDeclaration.getParameter(index).getType().isPrimitiveType() && resolvedType.asPrimitive().name().toLowerCase().equals(methodDeclaration.getParameter(index).getType().asString());
+                                                        } else {
+                                                            return resolvedType.asReferenceType().getQualifiedName().equals(getQualifiedName(methodDeclaration.getParameter(index).getType()));
+                                                        }
+                                                    } catch (UnsolvedSymbolException e) {
+                                                        return true;
+                                                    }
+                                                }
+                                        )
+                        )
+                        .findFirst()
+                        .map(methodDeclaration -> getResolvedType(methodDeclaration.getType()))
+                        .orElseThrow(() -> new RuntimeException(expression.asMethodCallExpr().getNameAsString() + " method not found"));
+            }
+        } else if (expression.isFieldAccessExpr()) {
+            return findResolvedType(expression.asFieldAccessExpr().getScope()).asReferenceType().getDeclaredFields().stream()
+                    .filter(resolvedFieldDeclaration -> resolvedFieldDeclaration.getName().equals(expression.asFieldAccessExpr().getNameAsString()))
+                    .findFirst()
+                    .map(ResolvedValueDeclaration::getType)
+                    .orElseThrow(() -> new RuntimeException(expression.asFieldAccessExpr().getNameAsString() + " field not found"));
+        } else {
+            return getResolvedType(expression)
+                    .filter(ResolvedType::isReferenceType)
+                    .orElseThrow(() -> new RuntimeException(expression + " not found"));
+        }
     }
 
     public ResolvedDeclaration getResolvedDeclaration(Node node) {
         return javaSymbolSolver.resolveDeclaration(node, ResolvedDeclaration.class);
     }
 
-    public String resolveMethodDeclarationReturnTypeQualifiedName(ClassOrInterfaceDeclaration classOrInterfaceDeclaration, MethodCallExpr methodCallExpr) {
+    public Optional<ResolvedType> getResolvedType(Node node) {
+        ResolvedDeclaration resolvedDeclaration = getResolvedDeclaration(node);
+        if (resolvedDeclaration.isField()) {
+            return Optional.of(((JavaParserFieldDeclaration) resolvedDeclaration).getType());
+        } else if (resolvedDeclaration.isMethod()) {
+            return Optional.of(((JavaParserMethodDeclaration) resolvedDeclaration).getReturnType());
+        } else if (resolvedDeclaration.isVariable()) {
+            return Optional.of(((JavaParserVariableDeclaration) resolvedDeclaration).getType());
+        } else if (resolvedDeclaration.isEnumConstant()) {
+            return Optional.of(((JavaParserEnumConstantDeclaration) resolvedDeclaration).getType());
+        } else if (resolvedDeclaration.isParameter()) {
+            return Optional.of(((JavaParserParameterDeclaration) resolvedDeclaration).getType());
+        }
+        return Optional.empty();
+    }
+
+    public String resolveMethodDeclarationReturnTypeQualifiedName(MethodCallExpr methodCallExpr) {
         return methodCallExpr.getScope()
                 .flatMap(expression -> calculateType(expression).asReferenceType().getTypeDeclaration())
                 .flatMap(resolvedReferenceTypeDeclaration ->
@@ -408,7 +494,9 @@ public class ProcessorManager {
                                 .map(resolvedMethodDeclaration -> getQualifiedName(resolvedMethodDeclaration.getReturnType()))
                 )
                 .orElseGet(() ->
-                        classOrInterfaceDeclaration.getMethods().stream()
+                        methodCallExpr.findCompilationUnit()
+                                .flatMap(this::getPublicClassOrInterfaceDeclaration).stream()
+                                .flatMap(classOrInterfaceDeclaration -> classOrInterfaceDeclaration.getMethods().stream())
                                 .filter(methodDeclaration -> methodDeclaration.getNameAsString().equals(methodCallExpr.getNameAsString()))
                                 .filter(methodDeclaration -> methodDeclaration.getParameters().size() == methodCallExpr.getArguments().size())
                                 .filter(methodDeclaration ->
@@ -433,7 +521,7 @@ public class ProcessorManager {
                 );
     }
 
-    public Stream<String> resolveMethodDeclarationParameterTypeNames(ClassOrInterfaceDeclaration classOrInterfaceDeclaration, MethodCallExpr methodCallExpr) {
+    public Stream<String> resolveMethodDeclarationParameterTypeNames(MethodCallExpr methodCallExpr) {
         return methodCallExpr.getScope()
                 .flatMap(expression -> calculateType(expression).asReferenceType().getTypeDeclaration())
                 .flatMap(resolvedReferenceTypeDeclaration ->
@@ -471,7 +559,9 @@ public class ProcessorManager {
                                 )
                 )
                 .orElseGet(() ->
-                        classOrInterfaceDeclaration.getMethods().stream()
+                        methodCallExpr.findCompilationUnit()
+                                .flatMap(this::getPublicClassOrInterfaceDeclaration).stream()
+                                .flatMap(classOrInterfaceDeclaration -> classOrInterfaceDeclaration.getMethods().stream())
                                 .filter(methodDeclaration -> methodDeclaration.getNameAsString().equals(methodCallExpr.getNameAsString()))
                                 .filter(methodDeclaration -> methodDeclaration.getParameters().size() == methodCallExpr.getArguments().size())
                                 .filter(methodDeclaration ->
