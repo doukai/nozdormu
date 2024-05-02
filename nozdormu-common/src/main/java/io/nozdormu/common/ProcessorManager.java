@@ -271,16 +271,16 @@ public class ProcessorManager {
         return getClassOrInterfaceDeclaration(qualifiedName).orElseThrow(() -> new InjectionProcessException(InjectionProcessErrorType.CLASS_NOT_EXIST.bind(qualifiedName)));
     }
 
-    public Stream<ResolvedType> getMethodReturnResolvedType(MethodDeclaration methodDeclaration) {
-        return methodDeclaration.findAll(ReturnStmt.class).stream()
+    public Stream<ResolvedType> getNodeReturnResolvedType(Node node) {
+        return node.findAll(ReturnStmt.class).stream()
                 .map(ReturnStmt::getExpression)
                 .flatMap(Optional::stream)
                 .filter(expression -> !expression.isMethodReferenceExpr())
                 .map(this::calculateType);
     }
 
-    public Stream<ResolvedReferenceType> getMethodReturnResolvedReferenceType(MethodDeclaration methodDeclaration) {
-        return getMethodReturnResolvedType(methodDeclaration)
+    public Stream<ResolvedReferenceType> getNodeReturnResolvedReferenceType(Node node) {
+        return getNodeReturnResolvedType(node)
                 .filter(ResolvedType::isReferenceType)
                 .map(ResolvedType::asReferenceType);
     }
@@ -374,76 +374,82 @@ public class ProcessorManager {
     public ResolvedType calculateType(Expression expression) {
         try {
             return javaSymbolSolver.calculateType(expression);
-        } catch (UnsolvedSymbolException e) {
+        } catch (UnsolvedSymbolException | IllegalArgumentException e) {
             try {
                 return findResolvedType(expression);
-            } catch (UnsupportedOperationException ignored) {
+            } catch (UnsupportedOperationException | IllegalArgumentException ignored) {
             }
             throw e;
         }
     }
 
     public ResolvedType findResolvedType(Expression expression) {
-        if (expression.isMethodCallExpr()) {
-            if (expression.asMethodCallExpr().hasScope() && !expression.asMethodCallExpr().getScope().get().isThisExpr()) {
-                return findResolvedType(expression.asMethodCallExpr().getScope().get()).asReferenceType().getAllMethods().stream()
-                        .filter(resolvedMethodDeclaration -> resolvedMethodDeclaration.getName().equals(expression.asMethodCallExpr().getNameAsString()))
-                        .filter(resolvedMethodDeclaration -> resolvedMethodDeclaration.getNumberOfParams() == expression.asMethodCallExpr().getArguments().size())
-                        .filter(resolvedMethodDeclaration ->
-                                IntStream.range(0, expression.asMethodCallExpr().getArguments().size())
-                                        .allMatch(index -> {
-                                                    try {
-                                                        ResolvedType resolvedType = calculateType(expression.asMethodCallExpr().getArgument(index));
-                                                        if (resolvedType.isPrimitive() && resolvedMethodDeclaration.getParam(index).getType().isPrimitive()) {
-                                                            return resolvedMethodDeclaration.getParam(index).getType().isPrimitive() && resolvedType.asPrimitive().name().equals(resolvedMethodDeclaration.getParam(index).getType().asPrimitive().name());
-                                                        } else {
-                                                            return resolvedType.asReferenceType().getQualifiedName().equals(resolvedMethodDeclaration.getParam(index).getType().asReferenceType().getQualifiedName());
+        try {
+            return calculateType(expression);
+        } catch (UnsolvedSymbolException | IllegalArgumentException e) {
+            if (expression.isMethodCallExpr()) {
+                if (expression.asMethodCallExpr().hasScope() && !expression.asMethodCallExpr().getScope().get().isThisExpr()) {
+                    return findResolvedType(expression.asMethodCallExpr().getScope().get()).asReferenceType().getAllMethods().stream()
+                            .filter(resolvedMethodDeclaration -> resolvedMethodDeclaration.getName().equals(expression.asMethodCallExpr().getNameAsString()))
+                            .filter(resolvedMethodDeclaration -> resolvedMethodDeclaration.getNumberOfParams() == expression.asMethodCallExpr().getArguments().size())
+                            .filter(resolvedMethodDeclaration ->
+                                    IntStream.range(0, expression.asMethodCallExpr().getArguments().size())
+                                            .allMatch(index -> {
+                                                        try {
+                                                            ResolvedType resolvedType = calculateType(expression.asMethodCallExpr().getArgument(index));
+                                                            if (resolvedType.isPrimitive() && resolvedMethodDeclaration.getParam(index).getType().isPrimitive()) {
+                                                                return resolvedType.asPrimitive().name().equals(resolvedMethodDeclaration.getParam(index).getType().asPrimitive().name());
+                                                            } else if (resolvedType.isReferenceType() && resolvedMethodDeclaration.getParam(index).getType().isReferenceType()) {
+                                                                return resolvedMethodDeclaration.getParam(index).getType().asReferenceType().isAssignableBy(resolvedType.asReferenceType());
+                                                            }
+                                                            return true;
+                                                        } catch (UnsolvedSymbolException | IllegalArgumentException e1) {
+                                                            return true;
                                                         }
-                                                    } catch (UnsolvedSymbolException e) {
-                                                        return true;
                                                     }
-                                                }
-                                        )
-                        )
+                                            )
+                            )
+                            .findFirst()
+                            .map(ResolvedMethodDeclaration::getReturnType)
+                            .orElseThrow(() -> new RuntimeException(expression.asMethodCallExpr().getNameAsString() + " method not found"));
+                } else {
+                    return expression.findCompilationUnit()
+                            .flatMap(this::getPublicClassOrInterfaceDeclaration).stream()
+                            .flatMap(classOrInterfaceDeclaration -> classOrInterfaceDeclaration.getMethods().stream())
+                            .filter(methodDeclaration -> methodDeclaration.getNameAsString().equals(expression.asMethodCallExpr().getNameAsString()))
+                            .filter(methodDeclaration -> methodDeclaration.getParameters().size() == expression.asMethodCallExpr().getArguments().size())
+                            .filter(methodDeclaration ->
+                                    IntStream.range(0, expression.asMethodCallExpr().getArguments().size())
+                                            .allMatch(index -> {
+                                                        try {
+                                                            ResolvedType resolvedType = calculateType(expression.asMethodCallExpr().getArgument(index));
+                                                            if (resolvedType.isPrimitive() && methodDeclaration.getParameter(index).getType().isPrimitiveType()) {
+                                                                return resolvedType.asPrimitive().name().toLowerCase().equals(methodDeclaration.getParameter(index).getType().asString());
+                                                            } else if (resolvedType.isReferenceType() && methodDeclaration.getParameter(index).getType().isReferenceType()) {
+                                                                return getResolvedType(methodDeclaration.getParameter(index).getType()).isAssignableBy(resolvedType.asReferenceType());
+                                                            }
+                                                            return true;
+                                                        } catch (UnsolvedSymbolException | IllegalArgumentException e1) {
+                                                            return true;
+                                                        }
+                                                    }
+                                            )
+                            )
+                            .findFirst()
+                            .map(methodDeclaration -> getResolvedType(methodDeclaration.getType()))
+                            .orElseThrow(() -> new RuntimeException(expression.asMethodCallExpr().getNameAsString() + " method not found"));
+                }
+            } else if (expression.isFieldAccessExpr()) {
+                return findResolvedType(expression.asFieldAccessExpr().getScope()).asReferenceType().getDeclaredFields().stream()
+                        .filter(resolvedFieldDeclaration -> resolvedFieldDeclaration.getName().equals(expression.asFieldAccessExpr().getNameAsString()))
                         .findFirst()
-                        .map(ResolvedMethodDeclaration::getReturnType)
-                        .orElseThrow(() -> new RuntimeException(expression.asMethodCallExpr().getNameAsString() + " method not found"));
+                        .map(ResolvedValueDeclaration::getType)
+                        .orElseThrow(() -> new RuntimeException(expression.asFieldAccessExpr().getNameAsString() + " field not found"));
             } else {
-                return expression.findCompilationUnit()
-                        .flatMap(this::getPublicClassOrInterfaceDeclaration).stream()
-                        .flatMap(classOrInterfaceDeclaration -> classOrInterfaceDeclaration.getMethods().stream())
-                        .filter(methodDeclaration -> methodDeclaration.getNameAsString().equals(expression.asMethodCallExpr().getNameAsString()))
-                        .filter(methodDeclaration -> methodDeclaration.getParameters().size() == expression.asMethodCallExpr().getArguments().size())
-                        .filter(methodDeclaration ->
-                                IntStream.range(0, expression.asMethodCallExpr().getArguments().size())
-                                        .allMatch(index -> {
-                                                    try {
-                                                        ResolvedType resolvedType = calculateType(expression.asMethodCallExpr().getArgument(index));
-                                                        if (resolvedType.isPrimitive()) {
-                                                            return methodDeclaration.getParameter(index).getType().isPrimitiveType() && resolvedType.asPrimitive().name().toLowerCase().equals(methodDeclaration.getParameter(index).getType().asString());
-                                                        } else {
-                                                            return resolvedType.asReferenceType().getQualifiedName().equals(getQualifiedName(methodDeclaration.getParameter(index).getType()));
-                                                        }
-                                                    } catch (UnsolvedSymbolException e) {
-                                                        return true;
-                                                    }
-                                                }
-                                        )
-                        )
-                        .findFirst()
-                        .map(methodDeclaration -> getResolvedType(methodDeclaration.getType()))
-                        .orElseThrow(() -> new RuntimeException(expression.asMethodCallExpr().getNameAsString() + " method not found"));
+                return getResolvedType(expression)
+                        .filter(ResolvedType::isReferenceType)
+                        .orElseThrow(() -> new RuntimeException(expression + " not found"));
             }
-        } else if (expression.isFieldAccessExpr()) {
-            return findResolvedType(expression.asFieldAccessExpr().getScope()).asReferenceType().getDeclaredFields().stream()
-                    .filter(resolvedFieldDeclaration -> resolvedFieldDeclaration.getName().equals(expression.asFieldAccessExpr().getNameAsString()))
-                    .findFirst()
-                    .map(ResolvedValueDeclaration::getType)
-                    .orElseThrow(() -> new RuntimeException(expression.asFieldAccessExpr().getNameAsString() + " field not found"));
-        } else {
-            return getResolvedType(expression)
-                    .filter(ResolvedType::isReferenceType)
-                    .orElseThrow(() -> new RuntimeException(expression + " not found"));
         }
     }
 
@@ -468,57 +474,63 @@ public class ProcessorManager {
     }
 
     public String resolveMethodDeclarationReturnTypeQualifiedName(MethodCallExpr methodCallExpr) {
-        return methodCallExpr.getScope()
-                .flatMap(expression -> calculateType(expression).asReferenceType().getTypeDeclaration())
-                .flatMap(resolvedReferenceTypeDeclaration ->
-                        resolvedReferenceTypeDeclaration.getDeclaredMethods().stream()
-                                .filter(resolvedMethodDeclaration -> resolvedMethodDeclaration.getName().equals(methodCallExpr.getNameAsString()))
-                                .filter(resolvedMethodDeclaration -> resolvedMethodDeclaration.getNumberOfParams() == methodCallExpr.getArguments().size())
-                                .filter(resolvedMethodDeclaration ->
-                                        IntStream.range(0, methodCallExpr.getArguments().size())
-                                                .allMatch(index -> {
-                                                            try {
-                                                                ResolvedType resolvedType = calculateType(methodCallExpr.getArgument(index));
-                                                                if (resolvedType.isPrimitive() && resolvedMethodDeclaration.getParam(index).getType().isPrimitive()) {
-                                                                    return resolvedMethodDeclaration.getParam(index).getType().isPrimitive() && resolvedType.asPrimitive().name().equals(resolvedMethodDeclaration.getParam(index).getType().asPrimitive().name());
-                                                                } else {
-                                                                    return resolvedType.asReferenceType().getQualifiedName().equals(resolvedMethodDeclaration.getParam(index).getType().asReferenceType().getQualifiedName());
+        try {
+            return getQualifiedName(calculateType(methodCallExpr));
+        } catch (UnsolvedSymbolException | IllegalArgumentException e) {
+            return methodCallExpr.getScope()
+                    .flatMap(expression -> calculateType(expression).asReferenceType().getTypeDeclaration())
+                    .flatMap(resolvedReferenceTypeDeclaration ->
+                            resolvedReferenceTypeDeclaration.getDeclaredMethods().stream()
+                                    .filter(resolvedMethodDeclaration -> resolvedMethodDeclaration.getName().equals(methodCallExpr.getNameAsString()))
+                                    .filter(resolvedMethodDeclaration -> resolvedMethodDeclaration.getNumberOfParams() == methodCallExpr.getArguments().size())
+                                    .filter(resolvedMethodDeclaration ->
+                                            IntStream.range(0, methodCallExpr.getArguments().size())
+                                                    .allMatch(index -> {
+                                                                try {
+                                                                    ResolvedType resolvedType = calculateType(methodCallExpr.getArgument(index));
+                                                                    if (resolvedType.isPrimitive() && resolvedMethodDeclaration.getParam(index).getType().isPrimitive()) {
+                                                                        return resolvedType.asPrimitive().name().equals(resolvedMethodDeclaration.getParam(index).getType().asPrimitive().name());
+                                                                    } else if (resolvedType.isReferenceType() && resolvedMethodDeclaration.getParam(index).getType().isReferenceType()) {
+                                                                        return resolvedMethodDeclaration.getParam(index).getType().asReferenceType().isAssignableBy(resolvedType.asReferenceType());
+                                                                    }
+                                                                    return true;
+                                                                } catch (UnsolvedSymbolException | IllegalArgumentException e1) {
+                                                                    return true;
                                                                 }
-                                                            } catch (UnsolvedSymbolException e) {
-                                                                return true;
                                                             }
-                                                        }
-                                                )
-                                )
-                                .findFirst()
-                                .map(resolvedMethodDeclaration -> getQualifiedName(resolvedMethodDeclaration.getReturnType()))
-                )
-                .orElseGet(() ->
-                        methodCallExpr.findCompilationUnit()
-                                .flatMap(this::getPublicClassOrInterfaceDeclaration).stream()
-                                .flatMap(classOrInterfaceDeclaration -> classOrInterfaceDeclaration.getMethods().stream())
-                                .filter(methodDeclaration -> methodDeclaration.getNameAsString().equals(methodCallExpr.getNameAsString()))
-                                .filter(methodDeclaration -> methodDeclaration.getParameters().size() == methodCallExpr.getArguments().size())
-                                .filter(methodDeclaration ->
-                                        IntStream.range(0, methodCallExpr.getArguments().size())
-                                                .allMatch(index -> {
-                                                            try {
-                                                                ResolvedType resolvedType = calculateType(methodCallExpr.getArgument(index));
-                                                                if (resolvedType.isPrimitive()) {
-                                                                    return methodDeclaration.getParameter(index).getType().isPrimitiveType() && resolvedType.asPrimitive().name().toLowerCase().equals(methodDeclaration.getParameter(index).getType().asString());
-                                                                } else {
-                                                                    return resolvedType.asReferenceType().getQualifiedName().equals(getQualifiedName(methodDeclaration.getParameter(index).getType()));
+                                                    )
+                                    )
+                                    .findFirst()
+                                    .map(resolvedMethodDeclaration -> getQualifiedName(resolvedMethodDeclaration.getReturnType()))
+                    )
+                    .orElseGet(() ->
+                            methodCallExpr.findCompilationUnit()
+                                    .flatMap(this::getPublicClassOrInterfaceDeclaration).stream()
+                                    .flatMap(classOrInterfaceDeclaration -> classOrInterfaceDeclaration.getMethods().stream())
+                                    .filter(methodDeclaration -> methodDeclaration.getNameAsString().equals(methodCallExpr.getNameAsString()))
+                                    .filter(methodDeclaration -> methodDeclaration.getParameters().size() == methodCallExpr.getArguments().size())
+                                    .filter(methodDeclaration ->
+                                            IntStream.range(0, methodCallExpr.getArguments().size())
+                                                    .allMatch(index -> {
+                                                                try {
+                                                                    ResolvedType resolvedType = calculateType(methodCallExpr.getArgument(index));
+                                                                    if (resolvedType.isPrimitive() && methodDeclaration.getParameter(index).getType().isPrimitiveType()) {
+                                                                        return resolvedType.asPrimitive().name().toLowerCase().equals(methodDeclaration.getParameter(index).getType().asString());
+                                                                    } else if (resolvedType.isReferenceType() && methodDeclaration.getParameter(index).getType().isReferenceType()) {
+                                                                        return getResolvedType(methodDeclaration.getParameter(index).getType()).isAssignableBy(resolvedType.asReferenceType());
+                                                                    }
+                                                                    return true;
+                                                                } catch (UnsolvedSymbolException | IllegalArgumentException e1) {
+                                                                    return true;
                                                                 }
-                                                            } catch (UnsolvedSymbolException e) {
-                                                                return true;
                                                             }
-                                                        }
-                                                )
-                                )
-                                .findFirst()
-                                .map(methodDeclaration -> getQualifiedName(methodDeclaration.getType()))
-                                .orElseThrow(() -> new RuntimeException(methodCallExpr.getNameAsString() + " method not found"))
-                );
+                                                    )
+                                    )
+                                    .findFirst()
+                                    .map(methodDeclaration -> getQualifiedName(methodDeclaration.getType()))
+                                    .orElseThrow(() -> new RuntimeException(methodCallExpr.getNameAsString() + " method not found"))
+                    );
+        }
     }
 
     public Stream<String> resolveMethodDeclarationParameterTypeNames(MethodCallExpr methodCallExpr) {
@@ -534,11 +546,12 @@ public class ProcessorManager {
                                                             try {
                                                                 ResolvedType resolvedType = calculateType(methodCallExpr.getArgument(index));
                                                                 if (resolvedType.isPrimitive() && resolvedMethodDeclaration.getParam(index).getType().isPrimitive()) {
-                                                                    return resolvedMethodDeclaration.getParam(index).getType().isPrimitive() && resolvedType.asPrimitive().name().equals(resolvedMethodDeclaration.getParam(index).getType().asPrimitive().name());
-                                                                } else {
-                                                                    return resolvedType.asReferenceType().getQualifiedName().equals(resolvedMethodDeclaration.getParam(index).getType().asReferenceType().getQualifiedName());
+                                                                    return resolvedType.asPrimitive().name().equals(resolvedMethodDeclaration.getParam(index).getType().asPrimitive().name());
+                                                                } else if (resolvedType.isReferenceType() && resolvedMethodDeclaration.getParam(index).getType().isReferenceType()) {
+                                                                    return resolvedMethodDeclaration.getParam(index).getType().asReferenceType().isAssignableBy(resolvedType.asReferenceType());
                                                                 }
-                                                            } catch (UnsolvedSymbolException e) {
+                                                                return true;
+                                                            } catch (UnsolvedSymbolException | IllegalArgumentException e) {
                                                                 return true;
                                                             }
                                                         }
@@ -569,12 +582,13 @@ public class ProcessorManager {
                                                 .allMatch(index -> {
                                                             try {
                                                                 ResolvedType resolvedType = calculateType(methodCallExpr.getArgument(index));
-                                                                if (resolvedType.isPrimitive()) {
-                                                                    return methodDeclaration.getParameter(index).getType().isPrimitiveType() && resolvedType.asPrimitive().name().toLowerCase().equals(methodDeclaration.getParameter(index).getType().asString());
-                                                                } else {
-                                                                    return resolvedType.asReferenceType().getQualifiedName().equals(getQualifiedName(methodDeclaration.getParameter(index).getType()));
+                                                                if (resolvedType.isPrimitive() && methodDeclaration.getParameter(index).getType().isPrimitiveType()) {
+                                                                    return resolvedType.asPrimitive().name().toLowerCase().equals(methodDeclaration.getParameter(index).getType().asString());
+                                                                } else if (resolvedType.isReferenceType() && methodDeclaration.getParameter(index).getType().isReferenceType()) {
+                                                                    return getResolvedType(methodDeclaration.getParameter(index).getType()).isAssignableBy(resolvedType.asReferenceType());
                                                                 }
-                                                            } catch (UnsolvedSymbolException e) {
+                                                                return true;
+                                                            } catch (UnsolvedSymbolException | IllegalArgumentException e) {
                                                                 return true;
                                                             }
                                                         }

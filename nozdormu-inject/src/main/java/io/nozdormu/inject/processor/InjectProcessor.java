@@ -872,7 +872,7 @@ public class InjectProcessor extends AbstractProcessor {
                                                     moduleContextClassDeclaration.addMember(holderClassOrInterfaceDeclaration);
 
                                                     addPutTypeProducerStatement(staticInitializer, qualifiedName, moduleContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, null, true);
-                                                    processorManager.getMethodReturnResolvedReferenceType(producesMethodDeclaration)
+                                                    processorManager.getNodeReturnResolvedReferenceType(producesMethodDeclaration)
                                                             .filter(resolvedReferenceType -> !resolvedReferenceType.getQualifiedName().equals(processorManager.getQualifiedName(producesMethodDeclaration.getType())))
                                                             .forEach(resolvedReferenceType ->
                                                                     addPutTypeProducerStatement(staticInitializer, qualifiedName, moduleContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, null, true)
