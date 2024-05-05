@@ -457,11 +457,8 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                 )
                         );
                         break;
-                    }
-                    if (hasAwait(statement.asForStmt().getBody().asBlockStmt().getStatements()) && !hasReturnStmt(statement.asForStmt().getBody().asBlockStmt().getStatements())) {
-                        statement.asForStmt().getBody().asBlockStmt().setStatements(buildAsyncStatements(Stream.concat(statement.asForStmt().getBody().asBlockStmt().getStatements().stream(), lastStatementList.stream()).collect(Collectors.toList())));
                     } else {
-                        statement.asForStmt().getBody().asBlockStmt().setStatements(buildAsyncStatements(statement.asForStmt().getBody().asBlockStmt().getStatements()));
+                        break;
                     }
                 } else if (statement.asForStmt().getBody().isReturnStmt()) {
                     buildAsyncReturnExpression(statement.asForStmt().getBody().asReturnStmt())
@@ -498,11 +495,8 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                 )
                         );
                         break;
-                    }
-                    if (hasAwait(statement.asForEachStmt().getBody().asBlockStmt().getStatements()) && !hasReturnStmt(statement.asForEachStmt().getBody().asBlockStmt().getStatements())) {
-                        statement.asForEachStmt().getBody().asBlockStmt().setStatements(buildAsyncStatements(Stream.concat(statement.asForEachStmt().getBody().asBlockStmt().getStatements().stream(), lastStatementList.stream()).collect(Collectors.toList())));
                     } else {
-                        statement.asForEachStmt().getBody().asBlockStmt().setStatements(buildAsyncStatements(statement.asForEachStmt().getBody().asBlockStmt().getStatements()));
+                        break;
                     }
                 } else if (statement.asForEachStmt().getBody().isReturnStmt()) {
                     buildAsyncReturnExpression(statement.asForEachStmt().getBody().asReturnStmt())
@@ -695,6 +689,8 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                         )
                                 )
                 );
+            } else if (hasReturnStmt(lastStatementList)) {
+                ifStmt.setElseStmt(new BlockStmt().setStatements(buildAsyncStatements(lastStatementList)));
             }
         }
     }
