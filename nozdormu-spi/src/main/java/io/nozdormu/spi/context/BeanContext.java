@@ -71,6 +71,14 @@ public class BeanContext {
         return getSupplier(beanClass, key).get();
     }
 
+    public static <T> T getOrNull(Class<T> beanClass) {
+        return getOrNull(beanClass, CLASS_PREFIX + beanClass.getName());
+    }
+
+    public static <T> T getOrNull(Class<T> beanClass, String key) {
+        return getSupplierOptionalOrCache(beanClass, key).map(Supplier::get).orElse(null);
+    }
+
     public static <T> Mono<T> getMono(Class<T> beanClass) {
         return getMono(beanClass, CLASS_PREFIX + beanClass.getName());
     }
@@ -101,6 +109,14 @@ public class BeanContext {
 
     public static <T> Provider<T> getProvider(Class<T> beanClass, String name) {
         return getSupplier(beanClass, name)::get;
+    }
+
+    public static <T> Provider<T> getProviderOrNull(Class<T> beanClass) {
+        return getProviderOrNull(beanClass, CLASS_PREFIX + beanClass.getName());
+    }
+
+    public static <T> Provider<T> getProviderOrNull(Class<T> beanClass, String name) {
+        return getSupplierOptionalOrCache(beanClass, name).<Provider<T>>map(supplier -> supplier::get).orElse(null);
     }
 
     public static <T> Provider<Mono<T>> getMonoProvider(Class<T> beanClass) {
@@ -191,6 +207,16 @@ public class BeanContext {
     private static <T> Supplier<Mono<T>> getMonoSupplier(Class<T> beanClass, String key) {
         return getMonoSupplierOptional(beanClass, key)
                 .orElseGet(() -> getAndCacheMonoSupplier(beanClass, key).orElse(null));
+    }
+
+    private static <T> Optional<Supplier<T>> getSupplierOptionalOrCache(Class<T> beanClass, String key) {
+        return getSupplierOptional(beanClass, key)
+                .or(() -> getAndCacheSupplier(beanClass, key));
+    }
+
+    private static <T> Optional<Supplier<Mono<T>>> getMonoSupplierOptionalOrCache(Class<T> beanClass, String key) {
+        return getMonoSupplierOptional(beanClass, key)
+                .or(() -> getAndCacheMonoSupplier(beanClass, key));
     }
 
     @SuppressWarnings("unchecked")
