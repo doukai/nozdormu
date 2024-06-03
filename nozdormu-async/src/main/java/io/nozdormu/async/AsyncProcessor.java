@@ -58,6 +58,8 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                                                                         .map(parameter -> {
                                                                                                     if (parameter.getType().isPrimitiveType()) {
                                                                                                         return parameter.getType().asPrimitiveType().toBoxedType().getNameAsString();
+                                                                                                    } else if (parameter.getType().isClassOrInterfaceType()) {
+                                                                                                        return parameter.getType().asClassOrInterfaceType().getNameAsString();
                                                                                                     } else {
                                                                                                         return parameter.getTypeAsString();
                                                                                                     }
@@ -70,6 +72,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                                                         .setParameters(methodDeclaration.getParameters())
                                                                         .setType(new ClassOrInterfaceType().setName(Mono.class.getSimpleName()).setTypeArguments(methodDeclaration.getType()));
                                                                 componentProxyClassDeclaration.addMember(asyncMethodDeclaration);
+                                                                methodDeclaration.getTypeParameters().forEach(asyncMethodDeclaration::addTypeParameter);
 
                                                                 String defaultIfEmpty = methodDeclaration.getAnnotationByClass(Async.class)
                                                                         .filter((Expression::isNormalAnnotationExpr))
@@ -914,6 +917,8 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                                                                     .map(parameter -> {
                                                                                                 if (parameter.getType().isPrimitiveType()) {
                                                                                                     return parameter.getType().asPrimitiveType().toBoxedType().getNameAsString();
+                                                                                                } else if (parameter.getType().isClassOrInterfaceType()) {
+                                                                                                    return parameter.getType().asClassOrInterfaceType().getNameAsString();
                                                                                                 } else {
                                                                                                     return parameter.getTypeAsString();
                                                                                                 }
