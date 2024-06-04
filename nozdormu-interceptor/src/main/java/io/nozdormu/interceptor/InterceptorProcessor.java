@@ -6,6 +6,7 @@ import com.github.javaparser.ast.NodeList;
 import com.github.javaparser.ast.body.*;
 import com.github.javaparser.ast.expr.*;
 import com.github.javaparser.ast.stmt.*;
+import com.github.javaparser.ast.type.TypeParameter;
 import com.google.auto.service.AutoService;
 import com.google.common.base.CaseFormat;
 import io.nozdormu.common.ProcessorManager;
@@ -109,10 +110,14 @@ public class InterceptorProcessor implements ComponentProxyProcessor {
                                         .addImport(BeanContext.class);
 
                                 MethodDeclaration overrideMethodDeclaration = componentProxyClassDeclaration.addMethod(methodDeclaration.getNameAsString())
-                                        .setModifiers(methodDeclaration.getModifiers())
-                                        .setParameters(methodDeclaration.getParameters())
-                                        .setType(methodDeclaration.getType())
+                                        .setModifiers(methodDeclaration.getModifiers().stream().map(Modifier::clone).collect(Collectors.toCollection(NodeList::new)))
+                                        .setParameters(methodDeclaration.getParameters().stream().map(Parameter::clone).collect(Collectors.toCollection(NodeList::new)))
+                                        .setType(methodDeclaration.getType().clone())
                                         .addAnnotation(Override.class);
+
+                                methodDeclaration.getTypeParameters().stream()
+                                        .map(TypeParameter::clone)
+                                        .forEach(overrideMethodDeclaration::addTypeParameter);
 
                                 String proxyMethodName = methodDeclaration.getNameAsString() +
                                         "_" +
@@ -122,8 +127,12 @@ public class InterceptorProcessor implements ComponentProxyProcessor {
                                         "_Proxy";
 
                                 MethodDeclaration proxyMethodDeclaration = componentProxyClassDeclaration.addMethod(proxyMethodName)
-                                        .setModifiers(methodDeclaration.getModifiers())
+                                        .setModifiers(methodDeclaration.getModifiers().stream().map(Modifier::clone).collect(Collectors.toCollection(NodeList::new)))
                                         .addParameter(InvocationContext.class, "invocationContext");
+
+                                methodDeclaration.getTypeParameters().stream()
+                                        .map(TypeParameter::clone)
+                                        .forEach(proxyMethodDeclaration::addTypeParameter);
 
                                 VariableDeclarationExpr invocationContextProxyVariable = new VariableDeclarationExpr()
                                         .addVariable(new VariableDeclarator()
@@ -136,9 +145,10 @@ public class InterceptorProcessor implements ComponentProxyProcessor {
                                         );
 
                                 MethodCallExpr superMethodCallExpr = new MethodCallExpr()
-                                        .setName(methodDeclaration.getName())
+                                        .setName(methodDeclaration.getName().clone())
                                         .setArguments(
                                                 methodDeclaration.getParameters().stream()
+                                                        .map(Parameter::clone)
                                                         .map(parameter ->
                                                                 new CastExpr()
                                                                         .setType(parameter.getType())
@@ -154,7 +164,7 @@ public class InterceptorProcessor implements ComponentProxyProcessor {
 
                                 if (methodDeclaration.getType().isVoidType()) {
                                     proxyMethodDeclaration
-                                            .setType(methodDeclaration.getType())
+                                            .setType(methodDeclaration.getType().clone())
                                             .createBody()
                                             .addStatement(
                                                     new TryStmt()
@@ -351,6 +361,7 @@ public class InterceptorProcessor implements ComponentProxyProcessor {
                                                                             .addArgument(methodParameterTypeNames)
                                                                             .setScope(
                                                                                     methodDeclaration.getParameters().stream()
+                                                                                            .map(Parameter::clone)
                                                                                             .map(parameter -> (Expression) parameter.getNameAsExpression())
                                                                                             .reduce(statement.asExpressionStmt().getExpression(), (left, right) ->
                                                                                                     new MethodCallExpr("addParameterValue")
@@ -368,7 +379,7 @@ public class InterceptorProcessor implements ComponentProxyProcessor {
                                 blockStmt.addStatement(
                                         new ReturnStmt(
                                                 new CastExpr()
-                                                        .setType(methodDeclaration.getType())
+                                                        .setType(methodDeclaration.getType().clone())
                                                         .setExpression(
                                                                 new MethodCallExpr()
                                                                         .setName(nextTuple3.getT3().getNameAsString())
