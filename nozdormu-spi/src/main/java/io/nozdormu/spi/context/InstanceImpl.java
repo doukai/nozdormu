@@ -3,6 +3,7 @@ package io.nozdormu.spi.context;
 import jakarta.enterprise.inject.Instance;
 import jakarta.enterprise.util.TypeLiteral;
 import jakarta.inject.Provider;
+import reactor.util.annotation.NonNull;
 
 import java.lang.annotation.Annotation;
 import java.util.Iterator;
@@ -55,6 +56,7 @@ public class InstanceImpl<T> implements Instance<T> {
     }
 
     @Override
+    @NonNull
     public Iterator<T> iterator() {
         return providerList.stream().map(Provider::get).iterator();
     }

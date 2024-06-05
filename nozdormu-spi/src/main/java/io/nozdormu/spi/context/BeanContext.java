@@ -68,7 +68,11 @@ public class BeanContext {
     }
 
     public static <T> T get(Class<T> beanClass, String name) {
-        return getSupplier(beanClass, name).get();
+        Supplier<T> supplier = getSupplier(beanClass, name);
+        if (supplier == null) {
+            return null;
+        }
+        return supplier.get();
     }
 
     public static <T> T getOrNull(Class<T> beanClass) {
@@ -108,7 +112,11 @@ public class BeanContext {
     }
 
     public static <T> Provider<T> getProvider(Class<T> beanClass, String name) {
-        return getSupplier(beanClass, name)::get;
+        Supplier<T> supplier = getSupplier(beanClass, name);
+        if (supplier == null) {
+            return null;
+        }
+        return supplier::get;
     }
 
     public static <T> Provider<T> getProviderOrNull(Class<T> beanClass) {
