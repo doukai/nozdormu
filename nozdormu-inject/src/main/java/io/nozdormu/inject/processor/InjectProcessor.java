@@ -32,6 +32,7 @@ import jakarta.enterprise.context.Dependent;
 import jakarta.enterprise.context.RequestScoped;
 import jakarta.enterprise.context.SessionScoped;
 import jakarta.enterprise.inject.Default;
+import jakarta.enterprise.inject.Instance;
 import jakarta.enterprise.inject.Produces;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
@@ -694,6 +695,21 @@ public class InjectProcessor extends AbstractProcessor {
                         .addArgument(new ClassExpr().setType(processorManager.getQualifiedName(type)));
             }
             compilationUnit.addImport(Provider.class);
+        } else if (qualifiedName.equals(Instance.class.getName())) {
+            Type type = classOrInterfaceType.getTypeArguments().orElseThrow(() -> new InjectionProcessException(PROVIDER_TYPE_NOT_EXIST)).get(0);
+            if (type.isClassOrInterfaceType() && processorManager.getQualifiedName(type).equals(Mono.class.getName())) {
+                methodCallExpr = new MethodCallExpr()
+                        .setName("getMonoInstance")
+                        .setScope(new NameExpr().setName("BeanContext"))
+                        .addArgument(new ClassExpr().setType(processorManager.getQualifiedName(type.asClassOrInterfaceType().getTypeArguments().orElseThrow(() -> new InjectionProcessException(INSTANCE_TYPE_NOT_EXIST)).get(0))));
+
+            } else {
+                methodCallExpr = new MethodCallExpr()
+                        .setName("getInstance")
+                        .setScope(new NameExpr().setName("BeanContext"))
+                        .addArgument(new ClassExpr().setType(processorManager.getQualifiedName(type)));
+            }
+            compilationUnit.addImport(Instance.class);
         } else {
             if (qualifiedName.equals(Mono.class.getName())) {
                 methodCallExpr = new MethodCallExpr()

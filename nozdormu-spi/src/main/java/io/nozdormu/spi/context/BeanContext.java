@@ -1,7 +1,7 @@
 package io.nozdormu.spi.context;
 
+import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Provider;
-import org.tinylog.Logger;
 import reactor.core.publisher.Mono;
 
 import java.util.*;
@@ -51,8 +51,8 @@ public class BeanContext {
         put(beanClass, PRIORITY_PREFIX + Optional.ofNullable(priority).orElse(Integer.MAX_VALUE) + ":" + name, supplier);
     }
 
-    public static void put(Class<?> beanClass, String key, Supplier<?> supplier) {
-        CONTEXT.get(beanClass).put(key, supplier);
+    public static void put(Class<?> beanClass, String name, Supplier<?> supplier) {
+        CONTEXT.get(beanClass).put(name, supplier);
     }
 
     public static <T> T get(Class<T> beanClass) {
@@ -67,16 +67,16 @@ public class BeanContext {
         return get(beanClass, NAME_PREFIX + name);
     }
 
-    public static <T> T get(Class<T> beanClass, String key) {
-        return getSupplier(beanClass, key).get();
+    public static <T> T get(Class<T> beanClass, String name) {
+        return getSupplier(beanClass, name).get();
     }
 
     public static <T> T getOrNull(Class<T> beanClass) {
         return getOrNull(beanClass, CLASS_PREFIX + beanClass.getName());
     }
 
-    public static <T> T getOrNull(Class<T> beanClass, String key) {
-        return getSupplierOptionalOrCache(beanClass, key).map(Supplier::get).orElse(null);
+    public static <T> T getOrNull(Class<T> beanClass, String name) {
+        return getSupplierOptionalOrCache(beanClass, name).map(Supplier::get).orElse(null);
     }
 
     public static <T> Mono<T> getMono(Class<T> beanClass) {
@@ -91,8 +91,8 @@ public class BeanContext {
         return getMono(beanClass, NAME_PREFIX + name);
     }
 
-    public static <T> Mono<T> getMono(Class<T> beanClass, String key) {
-        return getMonoSupplier(beanClass, key).get();
+    public static <T> Mono<T> getMono(Class<T> beanClass, String name) {
+        return getMonoSupplier(beanClass, name).get();
     }
 
     public static <T> Provider<T> getProvider(Class<T> beanClass) {
@@ -131,8 +131,24 @@ public class BeanContext {
         return getMonoProvider(beanClass, NAME_PREFIX + name);
     }
 
-    public static <T> Provider<Mono<T>> getMonoProvider(Class<T> beanClass, String key) {
-        return getMonoSupplier(beanClass, key)::get;
+    public static <T> Provider<Mono<T>> getMonoProvider(Class<T> beanClass, String name) {
+        return getMonoSupplier(beanClass, name)::get;
+    }
+
+    public static <T> Instance<T> getInstance(Class<T> beanClass) {
+        return new InstanceImpl<>(getPriorityProviderList(beanClass));
+    }
+
+    public static <T> Instance<T> getInstance(Class<T> beanClass, String name) {
+        return new InstanceImpl<>(Collections.singletonList(getProvider(beanClass, name)));
+    }
+
+    public static <T> Instance<Mono<T>> getMonoInstance(Class<T> beanClass) {
+        return new InstanceImpl<>(getPriorityMonoProviderList(beanClass));
+    }
+
+    public static <T> Instance<Mono<T>> getMonoInstance(Class<T> beanClass, String name) {
+        return new InstanceImpl<>(Collections.singletonList(getMonoProvider(beanClass, name)));
     }
 
     public static <T> Optional<T> getOptional(Class<T> beanClass) {
@@ -147,8 +163,8 @@ public class BeanContext {
         return getOptional(beanClass, NAME_PREFIX + name);
     }
 
-    public static <T> Optional<T> getOptional(Class<T> beanClass, String key) {
-        return getSupplierOptional(beanClass, key).map(Supplier::get);
+    public static <T> Optional<T> getOptional(Class<T> beanClass, String name) {
+        return getSupplierOptional(beanClass, name).map(Supplier::get);
     }
 
     public static <T> Optional<Mono<T>> getMonoOptional(Class<T> beanClass) {
@@ -163,8 +179,8 @@ public class BeanContext {
         return getMonoOptional(beanClass, NAME_PREFIX + name);
     }
 
-    public static <T> Optional<Mono<T>> getMonoOptional(Class<T> beanClass, String key) {
-        return getMonoSupplierOptional(beanClass, key).map(Supplier::get);
+    public static <T> Optional<Mono<T>> getMonoOptional(Class<T> beanClass, String name) {
+        return getMonoSupplierOptional(beanClass, name).map(Supplier::get);
     }
 
     public static <T> Optional<Provider<T>> getProviderOptional(Class<T> beanClass) {
@@ -179,8 +195,8 @@ public class BeanContext {
         return getProviderOptional(beanClass, NAME_PREFIX + name);
     }
 
-    public static <T> Optional<Provider<T>> getProviderOptional(Class<T> beanClass, String key) {
-        return getSupplierOptional(beanClass, key).map(supplier -> supplier::get);
+    public static <T> Optional<Provider<T>> getProviderOptional(Class<T> beanClass, String name) {
+        return getSupplierOptional(beanClass, name).map(supplier -> supplier::get);
     }
 
     public static <T> Optional<Provider<Mono<T>>> getMonoProviderOptional(Class<T> beanClass) {
@@ -195,56 +211,53 @@ public class BeanContext {
         return getMonoProviderOptional(beanClass, NAME_PREFIX + name);
     }
 
-    public static <T> Optional<Provider<Mono<T>>> getMonoProviderOptional(Class<T> beanClass, String key) {
-        return getMonoSupplierOptional(beanClass, key).map(supplier -> supplier::get);
+    public static <T> Optional<Provider<Mono<T>>> getMonoProviderOptional(Class<T> beanClass, String name) {
+        return getMonoSupplierOptional(beanClass, name).map(supplier -> supplier::get);
     }
 
-    private static <T> Supplier<T> getSupplier(Class<T> beanClass, String key) {
-        return getSupplierOptional(beanClass, key)
-                .orElseGet(() -> getAndCacheSupplier(beanClass, key).orElse(null));
+    private static <T> Supplier<T> getSupplier(Class<T> beanClass, String name) {
+        return getSupplierOptional(beanClass, name)
+                .orElseGet(() -> getAndCacheSupplier(beanClass, name).orElse(null));
     }
 
-    private static <T> Supplier<Mono<T>> getMonoSupplier(Class<T> beanClass, String key) {
-        return getMonoSupplierOptional(beanClass, key)
-                .orElseGet(() -> getAndCacheMonoSupplier(beanClass, key).orElse(null));
+    private static <T> Supplier<Mono<T>> getMonoSupplier(Class<T> beanClass, String name) {
+        return getMonoSupplierOptional(beanClass, name)
+                .orElseGet(() -> getAndCacheMonoSupplier(beanClass, name).orElse(null));
     }
 
-    private static <T> Optional<Supplier<T>> getSupplierOptionalOrCache(Class<T> beanClass, String key) {
-        return getSupplierOptional(beanClass, key)
-                .or(() -> getAndCacheSupplier(beanClass, key));
+    private static <T> Optional<Supplier<T>> getSupplierOptionalOrCache(Class<T> beanClass, String name) {
+        return getSupplierOptional(beanClass, name)
+                .or(() -> getAndCacheSupplier(beanClass, name));
     }
 
-    private static <T> Optional<Supplier<Mono<T>>> getMonoSupplierOptionalOrCache(Class<T> beanClass, String key) {
-        return getMonoSupplierOptional(beanClass, key)
-                .or(() -> getAndCacheMonoSupplier(beanClass, key));
+    private static <T> Optional<Supplier<Mono<T>>> getMonoSupplierOptionalOrCache(Class<T> beanClass, String name) {
+        return getMonoSupplierOptional(beanClass, name)
+                .or(() -> getAndCacheMonoSupplier(beanClass, name));
     }
 
     @SuppressWarnings("unchecked")
-    private static <T> Optional<Supplier<T>> getSupplierOptional(Class<T> beanClass, String key) {
-        Supplier<?> supplier = CONTEXT.get(beanClass).get(key);
+    private static <T> Optional<Supplier<T>> getSupplierOptional(Class<T> beanClass, String name) {
+        Supplier<?> supplier = CONTEXT.get(beanClass).get(name);
         return Optional.ofNullable((Supplier<T>) supplier);
     }
 
     @SuppressWarnings("unchecked")
-    private static <T> Optional<Supplier<Mono<T>>> getMonoSupplierOptional(Class<T> beanClass, String key) {
-        Supplier<?> supplier = CONTEXT.get(beanClass).get(key);
+    private static <T> Optional<Supplier<Mono<T>>> getMonoSupplierOptional(Class<T> beanClass, String name) {
+        Supplier<?> supplier = CONTEXT.get(beanClass).get(name);
         return Optional.ofNullable((Supplier<Mono<T>>) supplier);
     }
 
     @SuppressWarnings("unchecked")
-    private static <T> Optional<Supplier<T>> getAndCacheSupplier(Class<T> beanClass, String key) {
-        Logger.debug("search bean instance for class {} key {}", beanClass.getName(), key);
-        return Optional.ofNullable((Supplier<T>) CONTEXT.get(beanClass).get(key));
+    private static <T> Optional<Supplier<T>> getAndCacheSupplier(Class<T> beanClass, String name) {
+        return Optional.ofNullable((Supplier<T>) CONTEXT.get(beanClass).get(name));
     }
 
     @SuppressWarnings("unchecked")
-    private static <T> Optional<Supplier<Mono<T>>> getAndCacheMonoSupplier(Class<T> beanClass, String key) {
-        Logger.debug("search bean instance for class {} key {}", beanClass.getName(), key);
-        return Optional.ofNullable((Supplier<Mono<T>>) CONTEXT.get(beanClass).get(key));
+    private static <T> Optional<Supplier<Mono<T>>> getAndCacheMonoSupplier(Class<T> beanClass, String name) {
+        return Optional.ofNullable((Supplier<Mono<T>>) CONTEXT.get(beanClass).get(name));
     }
 
     public static <T> Stream<Map.Entry<String, Supplier<?>>> getImplEntryStream(Class<T> beanClass) {
-        Logger.debug("search bean map for class {}", beanClass.getName());
         return Stream.ofNullable(CONTEXT.get(beanClass))
                 .flatMap(map -> map.entrySet().stream())
                 .filter(entry -> entry.getKey().startsWith(IMPL_PREFIX))
@@ -261,7 +274,6 @@ public class BeanContext {
     }
 
     public static <T> Stream<Map.Entry<String, Supplier<?>>> getPriorityEntryStream(Class<T> beanClass) {
-        Logger.debug("search bean map for class {}", beanClass.getName());
         return Stream.ofNullable(CONTEXT.get(beanClass))
                 .flatMap(map -> map.entrySet().stream())
                 .filter(entry -> entry.getKey().startsWith(PRIORITY_PREFIX))
@@ -284,7 +296,6 @@ public class BeanContext {
     }
 
     public static <T> Stream<Map.Entry<String, Supplier<?>>> getNameEntryStream(Class<T> beanClass) {
-        Logger.debug("search bean map for class {}", beanClass.getName());
         return Stream.ofNullable(CONTEXT.get(beanClass))
                 .flatMap(map -> map.entrySet().stream())
                 .filter(entry -> entry.getKey().startsWith(NAME_PREFIX))
@@ -302,7 +313,6 @@ public class BeanContext {
 
     @SuppressWarnings("unchecked")
     public static <T> Map<String, T> getMap(Class<T> beanClass) {
-        Logger.debug("search bean map for class {}", beanClass.getName());
         return getNameEntryStream(beanClass)
                 .map(entry -> new AbstractMap.SimpleEntry<>(entry.getKey().replaceFirst(NAME_PREFIX, ""), (T) entry.getValue().get()))
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
@@ -310,7 +320,6 @@ public class BeanContext {
 
     @SuppressWarnings("unchecked")
     public static <T> Map<String, Mono<T>> getMonoMap(Class<T> beanClass) {
-        Logger.debug("search bean map for class {}", beanClass.getName());
         return getNameEntryStream(beanClass)
                 .map(entry -> new AbstractMap.SimpleEntry<>(entry.getKey().replaceFirst(NAME_PREFIX, ""), (Mono<T>) entry.getValue().get()))
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
@@ -318,7 +327,6 @@ public class BeanContext {
 
     @SuppressWarnings("unchecked")
     public static <T> Map<String, Provider<T>> getProviderMap(Class<T> beanClass) {
-        Logger.debug("search bean map for class {}", beanClass.getName());
         return getNameEntryStream(beanClass)
                 .map(entry -> {
                             Provider<T> provider = ((Supplier<T>) entry.getValue())::get;
@@ -330,7 +338,6 @@ public class BeanContext {
 
     @SuppressWarnings("unchecked")
     public static <T> Map<String, Provider<Mono<T>>> getMonoProviderMap(Class<T> beanClass) {
-        Logger.debug("search bean map for class {}", beanClass.getName());
         return getNameEntryStream(beanClass)
                 .map(entry -> {
                             Provider<Mono<T>> provider = ((Supplier<Mono<T>>) entry.getValue())::get;
@@ -342,7 +349,6 @@ public class BeanContext {
 
     @SuppressWarnings("unchecked")
     public static <T> Map<Class<? extends T>, T> getClassMap(Class<T> beanClass) {
-        Logger.debug("search bean map for class {}", beanClass.getName());
         return getImplEntryStream(beanClass)
                 .map(entry -> {
                             try {
@@ -358,7 +364,6 @@ public class BeanContext {
 
     @SuppressWarnings("unchecked")
     public static <T> Map<Class<? extends T>, Mono<T>> getClassMonoMap(Class<T> beanClass) {
-        Logger.debug("search bean map for class {}", beanClass.getName());
         return getImplEntryStream(beanClass)
                 .map(entry -> {
                             try {
@@ -374,7 +379,6 @@ public class BeanContext {
 
     @SuppressWarnings("unchecked")
     public static <T> Map<Class<? extends T>, Provider<T>> getClassProviderMap(Class<T> beanClass) {
-        Logger.debug("search bean map for class {}", beanClass.getName());
         return getImplEntryStream(beanClass)
                 .map(entry -> {
                             try {
@@ -391,7 +395,6 @@ public class BeanContext {
 
     @SuppressWarnings("unchecked")
     public static <T> Map<Class<? extends T>, Provider<Mono<T>>> getClassMonoProviderMap(Class<T> beanClass) {
-        Logger.debug("search bean map for class {}", beanClass.getName());
         return getImplEntryStream(beanClass)
                 .map(entry -> {
                             try {
@@ -408,7 +411,6 @@ public class BeanContext {
 
     @SuppressWarnings("unchecked")
     public static <T> List<T> getList(Class<T> beanClass) {
-        Logger.debug("search bean map for class {}", beanClass.getName());
         return getImplEntryStream(beanClass)
                 .map(entry -> (T) entry.getValue().get())
                 .collect(Collectors.toList());
@@ -416,7 +418,6 @@ public class BeanContext {
 
     @SuppressWarnings("unchecked")
     public static <T> List<Mono<T>> getMonoList(Class<T> beanClass) {
-        Logger.debug("search bean map for class {}", beanClass.getName());
         return getImplEntryStream(beanClass)
                 .map(entry -> (Mono<T>) entry.getValue().get())
                 .collect(Collectors.toList());
@@ -424,7 +425,6 @@ public class BeanContext {
 
     @SuppressWarnings("unchecked")
     public static <T> List<Provider<T>> getProviderList(Class<T> beanClass) {
-        Logger.debug("search bean map for class {}", beanClass.getName());
         return getImplEntryStream(beanClass)
                 .map(entry -> (Provider<T>) ((Supplier<T>) entry.getValue())::get)
                 .collect(Collectors.toList());
@@ -432,7 +432,6 @@ public class BeanContext {
 
     @SuppressWarnings("unchecked")
     public static <T> List<Provider<Mono<T>>> getMonoProviderList(Class<T> beanClass) {
-        Logger.debug("search bean map for class {}", beanClass.getName());
         return getImplEntryStream(beanClass)
                 .map(entry -> (Provider<Mono<T>>) ((Supplier<Mono<T>>) entry.getValue())::get)
                 .collect(Collectors.toList());
@@ -440,7 +439,6 @@ public class BeanContext {
 
     @SuppressWarnings("unchecked")
     public static <T> List<T> getPriorityList(Class<T> beanClass) {
-        Logger.debug("search bean map for class {}", beanClass.getName());
         return getPriorityEntryStream(beanClass)
                 .map(entry -> (T) entry.getValue().get())
                 .collect(Collectors.toList());
@@ -448,7 +446,6 @@ public class BeanContext {
 
     @SuppressWarnings("unchecked")
     public static <T> List<Mono<T>> getPriorityMonoList(Class<T> beanClass) {
-        Logger.debug("search bean map for class {}", beanClass.getName());
         return getPriorityEntryStream(beanClass)
                 .map(entry -> (Mono<T>) entry.getValue().get())
                 .collect(Collectors.toList());
@@ -456,7 +453,6 @@ public class BeanContext {
 
     @SuppressWarnings("unchecked")
     public static <T> List<Provider<T>> getPriorityProviderList(Class<T> beanClass) {
-        Logger.debug("search bean map for class {}", beanClass.getName());
         return getPriorityEntryStream(beanClass)
                 .map(entry -> (Provider<T>) ((Supplier<T>) entry.getValue())::get)
                 .collect(Collectors.toList());
@@ -464,7 +460,6 @@ public class BeanContext {
 
     @SuppressWarnings("unchecked")
     public static <T> List<Provider<Mono<T>>> getPriorityMonoProviderList(Class<T> beanClass) {
-        Logger.debug("search bean map for class {}", beanClass.getName());
         return getPriorityEntryStream(beanClass)
                 .map(entry -> (Provider<Mono<T>>) ((Supplier<Mono<T>>) entry.getValue())::get)
                 .collect(Collectors.toList());
