@@ -159,6 +159,14 @@ public class BeanContext {
         return new InstanceImpl<>(Collections.singletonList(getMonoProvider(beanClass, name)));
     }
 
+    public static <T> Instance<T> getDefaultInstance(Class<T> beanClass) {
+        return new InstanceImpl<>(Collections.singletonList(getDefaultProvider(beanClass)));
+    }
+
+    public static <T> Instance<Mono<T>> getDefaultMonoInstance(Class<T> beanClass) {
+        return new InstanceImpl<>(Collections.singletonList(getDefaultMonoProvider(beanClass)));
+    }
+
     public static <T> Optional<T> getOptional(Class<T> beanClass) {
         return getOptional(beanClass, CLASS_PREFIX + beanClass.getName());
     }
@@ -303,10 +311,11 @@ public class BeanContext {
                 .map(entry -> new AbstractMap.SimpleEntry<>(entry.getKey(), entry.getValue()));
     }
 
-    public static <T> Stream<Map.Entry<String, Supplier<?>>> getNameEntryStream(Class<T> beanClass) {
+    public static <T> Stream<Map.Entry<String, Supplier<?>>> getNameEntryStream(Class<T> beanClass, String... names) {
         return Stream.ofNullable(CONTEXT.get(beanClass))
                 .flatMap(map -> map.entrySet().stream())
                 .filter(entry -> entry.getKey().startsWith(NAME_PREFIX))
+                .filter(entry -> names == null || names.length == 0 || Arrays.stream(names).allMatch(name -> entry.getKey().replaceFirst(NAME_PREFIX, "").equals(name)))
                 .collect(
                         Collectors.toMap(
                                 Map.Entry::getKey,
@@ -441,6 +450,34 @@ public class BeanContext {
     @SuppressWarnings("unchecked")
     public static <T> List<Provider<Mono<T>>> getMonoProviderList(Class<T> beanClass) {
         return getImplEntryStream(beanClass)
+                .map(entry -> (Provider<Mono<T>>) ((Supplier<Mono<T>>) entry.getValue())::get)
+                .collect(Collectors.toList());
+    }
+
+    @SuppressWarnings("unchecked")
+    public static <T> List<T> getNameList(Class<T> beanClass, String... names) {
+        return getNameEntryStream(beanClass, names)
+                .map(entry -> (T) entry.getValue().get())
+                .collect(Collectors.toList());
+    }
+
+    @SuppressWarnings("unchecked")
+    public static <T> List<Mono<T>> getNameMonoList(Class<T> beanClass, String... names) {
+        return getNameEntryStream(beanClass, names)
+                .map(entry -> (Mono<T>) entry.getValue().get())
+                .collect(Collectors.toList());
+    }
+
+    @SuppressWarnings("unchecked")
+    public static <T> List<Provider<T>> getNameProviderList(Class<T> beanClass, String... names) {
+        return getNameEntryStream(beanClass, names)
+                .map(entry -> (Provider<T>) ((Supplier<T>) entry.getValue())::get)
+                .collect(Collectors.toList());
+    }
+
+    @SuppressWarnings("unchecked")
+    public static <T> List<Provider<Mono<T>>> getNameMonoProviderList(Class<T> beanClass, String... names) {
+        return getNameEntryStream(beanClass, names)
                 .map(entry -> (Provider<Mono<T>>) ((Supplier<Mono<T>>) entry.getValue())::get)
                 .collect(Collectors.toList());
     }
