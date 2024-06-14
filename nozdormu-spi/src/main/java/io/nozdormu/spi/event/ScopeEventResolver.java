@@ -14,7 +14,7 @@ import java.util.Map;
 
 public class ScopeEventResolver {
 
-    private static final List<ScopeEvent> scopeEventList = BeanContext.getPriorityList(ScopeEvent.class);
+    private static final List<ScopeEvent> scopeEventList = BeanContext.getList(ScopeEvent.class);
 
     public static Mono<Void> initialized(Class<? extends Annotation> scope) {
         return initialized(new HashMap<>(), scope);

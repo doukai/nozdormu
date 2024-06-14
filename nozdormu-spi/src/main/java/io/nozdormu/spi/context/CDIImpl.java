@@ -28,20 +28,18 @@ public class CDIImpl<T> extends CDI<T> {
             if (annotations[0] instanceof NamedLiteral) {
                 return BeanContext.getInstance(beanClass, ((NamedLiteral) annotations[0]).value());
             } else if (annotations[0] instanceof Default.Literal) {
-                return BeanContext.getDefaultInstance(beanClass);
+                return BeanContext.getInstance(beanClass, Default.class.getCanonicalName());
             }
         } else if (annotations.length > 1) {
-            return new InstanceImpl<>(
-                    BeanContext.getNameProviderList(
-                            beanClass,
-                            Arrays.stream(annotations)
-                                    .filter(annotation -> annotation instanceof NamedLiteral)
-                                    .map(annotation -> ((NamedLiteral) annotation).value())
-                                    .toArray(String[]::new)
-                    )
+            return BeanContext.getInstance(
+                    beanClass,
+                    Arrays.stream(annotations)
+                            .filter(annotation -> annotation instanceof NamedLiteral)
+                            .map(annotation -> ((NamedLiteral) annotation).value())
+                            .toArray(String[]::new)
             );
         }
-        return new InstanceImpl<>(BeanContext.getPriorityProviderList(beanClass));
+        return new InstanceImpl<>(BeanContext.getProviderList(beanClass));
     }
 
     @Override
