@@ -59,7 +59,7 @@ public class BeanContext {
         CONTEXT.get(beanClass).put(name, supplier);
         IMPL_CONTEXT.get(beanClass).put(priority, supplier);
         if (isDefault) {
-            CONTEXT.get(beanClass).put(Default.class.getCanonicalName(), supplier);
+            CONTEXT.get(beanClass).put(Default.class.getName(), supplier);
         }
     }
 

@@ -351,7 +351,7 @@ public class InjectProcessor extends AbstractProcessor {
                                             );
 
                                     Optional<StringLiteralExpr> defaultExpr = classOrInterfaceDeclaration.getAnnotationByClass(Default.class)
-                                            .map(annotationExpr -> new StringLiteralExpr(Default.class.getCanonicalName()));
+                                            .map(annotationExpr -> new StringLiteralExpr(Default.class.getName()));
 
                                     Optional<Expression> priorityExpr = classOrInterfaceDeclaration.getAnnotationByClass(Priority.class)
                                             .flatMap(processorManager::findAnnotationValue)
@@ -621,7 +621,7 @@ public class InjectProcessor extends AbstractProcessor {
 
     private MethodCallExpr getBeanGetMethodCallExpr(NodeWithAnnotations<?> nodeWithAnnotations, CompilationUnit compilationUnit, ClassOrInterfaceType classOrInterfaceType) {
         Optional<Expression> nameExpr = nodeWithAnnotations.getAnnotationByClass(Default.class)
-                .map(annotationExpr -> (Expression) new StringLiteralExpr(Default.class.getCanonicalName()))
+                .map(annotationExpr -> (Expression) new StringLiteralExpr(Default.class.getName()))
                 .or(() ->
                         nodeWithAnnotations.getAnnotationByClass(Named.class)
                                 .flatMap(processorManager::findAnnotationValue)
@@ -778,7 +778,7 @@ public class InjectProcessor extends AbstractProcessor {
                                                         );
 
                                                 Optional<StringLiteralExpr> defaultExpr = producesMethodDeclaration.getAnnotationByClass(Default.class)
-                                                        .map(annotationExpr -> new StringLiteralExpr(Default.class.getCanonicalName()));
+                                                        .map(annotationExpr -> new StringLiteralExpr(Default.class.getName()));
 
                                                 Optional<Expression> priorityExpr = classOrInterfaceDeclaration.getAnnotationByClass(Priority.class)
                                                         .flatMap(processorManager::findAnnotationValue)
