@@ -28,19 +28,19 @@ public class BeanContext {
     }
 
     public static void put(Class<?> beanClass, Supplier<?> supplier) {
-        put(beanClass, beanClass.getName(), Integer.MAX_VALUE, false, supplier);
+        put(beanClass, null, null, false, supplier);
     }
 
     public static void put(Class<?> beanClass, String name, Supplier<?> supplier) {
-        put(beanClass, name, Integer.MAX_VALUE, false, supplier);
+        put(beanClass, name, null, false, supplier);
     }
 
     public static void put(Class<?> beanClass, boolean isDefault, Supplier<?> supplier) {
-        put(beanClass, beanClass.getName(), Integer.MAX_VALUE, isDefault, supplier);
+        put(beanClass, null, null, isDefault, supplier);
     }
 
     public static void put(Class<?> beanClass, Integer priority, Supplier<?> supplier) {
-        put(beanClass, beanClass.getName(), priority, false, supplier);
+        put(beanClass, priority, false, supplier);
     }
 
     public static void put(Class<?> beanClass, String name, Integer priority, Supplier<?> supplier) {
@@ -48,16 +48,19 @@ public class BeanContext {
     }
 
     public static void put(Class<?> beanClass, String name, boolean isDefault, Supplier<?> supplier) {
-        put(beanClass, name, Integer.MAX_VALUE, isDefault, supplier);
+        put(beanClass, name, null, isDefault, supplier);
     }
 
     public static void put(Class<?> beanClass, Integer priority, boolean isDefault, Supplier<?> supplier) {
-        put(beanClass, beanClass.getName(), priority, isDefault, supplier);
+        put(beanClass, null, priority, isDefault, supplier);
     }
 
     public static void put(Class<?> beanClass, String name, Integer priority, boolean isDefault, Supplier<?> supplier) {
-        CONTEXT.get(beanClass).put(name, supplier);
-        IMPL_CONTEXT.get(beanClass).put(priority, supplier);
+        CONTEXT.get(beanClass).put(beanClass.getName(), supplier);
+        if (name != null) {
+            CONTEXT.get(beanClass).put(name, supplier);
+        }
+        IMPL_CONTEXT.put(beanClass, Objects.requireNonNullElse(priority, Integer.MAX_VALUE), supplier);
         if (isDefault) {
             CONTEXT.get(beanClass).put(Default.class.getName(), supplier);
         }
