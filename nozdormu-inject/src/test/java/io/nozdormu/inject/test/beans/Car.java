@@ -12,7 +12,7 @@ public class Car {
     private Gearbox gearbox;
     @Inject
     private Owner owner;
-    private final Driver driver;
+    private final Provider<Driver> driver;
     @Inject
     private Wheel wheel;
     @Inject
@@ -42,7 +42,7 @@ public class Car {
     }
 
     @Inject
-    public Car(Engine engine, Driver driver) {
+    public Car(Engine engine, Provider<Driver> driver) {
         this.engine = engine;
         this.driver = driver;
     }
@@ -60,7 +60,7 @@ public class Car {
     }
 
     public Driver getDriver() {
-        return driver;
+        return driver.get();
     }
 
     public Wheel getWheel() {
