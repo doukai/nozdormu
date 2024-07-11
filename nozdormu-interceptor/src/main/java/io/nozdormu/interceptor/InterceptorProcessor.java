@@ -5,6 +5,7 @@ import com.github.javaparser.ast.Modifier;
 import com.github.javaparser.ast.NodeList;
 import com.github.javaparser.ast.body.*;
 import com.github.javaparser.ast.expr.*;
+import com.github.javaparser.ast.nodeTypes.NodeWithSimpleName;
 import com.github.javaparser.ast.stmt.*;
 import com.github.javaparser.ast.type.TypeParameter;
 import com.google.auto.service.AutoService;
@@ -375,26 +376,40 @@ public class InterceptorProcessor implements ComponentProxyProcessor {
                                                 }
                                         );
 
-                                assert nextTuple3 != null;
-                                blockStmt.addStatement(
-                                        new ReturnStmt(
-                                                new CastExpr()
-                                                        .setType(methodDeclaration.getType().clone())
-                                                        .setExpression(
-                                                                new MethodCallExpr()
-                                                                        .setName(nextTuple3.getT3().getNameAsString())
-                                                                        .addArgument(new NameExpr(nextContextName))
-                                                                        .setScope(
-                                                                                new MethodCallExpr("get")
-                                                                                        .setScope(
-                                                                                                new MethodCallExpr("getProvider")
-                                                                                                        .setScope(new NameExpr("BeanContext"))
-                                                                                                        .addArgument(new ClassExpr().setType(nextTuple3.getT2().getNameAsString()))
-                                                                                        )
-                                                                        )
-                                                        )
-                                        )
-                                );
+                                if (nextTuple3 != null) {
+                                    blockStmt.addStatement(
+                                            new ReturnStmt(
+                                                    new CastExpr()
+                                                            .setType(methodDeclaration.getType().clone())
+                                                            .setExpression(
+                                                                    new MethodCallExpr()
+                                                                            .setName(nextTuple3.getT3().getNameAsString())
+                                                                            .addArgument(new NameExpr(nextContextName))
+                                                                            .setScope(
+                                                                                    new MethodCallExpr("get")
+                                                                                            .setScope(
+                                                                                                    new MethodCallExpr("getProvider")
+                                                                                                            .setScope(new NameExpr("BeanContext"))
+                                                                                                            .addArgument(new ClassExpr().setType(nextTuple3.getT2().getNameAsString()))
+                                                                                            )
+                                                                            )
+                                                            )
+                                            )
+                                    );
+                                } else {
+                                    blockStmt.addStatement(
+                                            new ReturnStmt(
+                                                    new MethodCallExpr()
+                                                            .setName(methodDeclaration.getNameAsString())
+                                                            .setArguments(
+                                                                    methodDeclaration.getParameters().stream()
+                                                                            .map(NodeWithSimpleName::getNameAsExpression)
+                                                                            .collect(Collectors.toCollection(NodeList::new))
+                                                            )
+                                                            .setScope(new SuperExpr())
+                                            )
+                                    );
+                                }
                             }
                         }
                 );
@@ -615,26 +630,39 @@ public class InterceptorProcessor implements ComponentProxyProcessor {
                                                 }
                                         );
 
-                                assert nextTuple3 != null;
-                                blockStmt.addStatement(
-                                        new ReturnStmt(
-                                                new CastExpr()
-                                                        .setType(componentProxyClassDeclaration.getNameAsString())
-                                                        .setExpression(
-                                                                new MethodCallExpr()
-                                                                        .setName(nextTuple3.getT3().getNameAsString())
-                                                                        .addArgument(new NameExpr(nextContextName))
-                                                                        .setScope(
-                                                                                new MethodCallExpr("get")
-                                                                                        .setScope(
-                                                                                                new MethodCallExpr("getProvider")
-                                                                                                        .setScope(new NameExpr("BeanContext"))
-                                                                                                        .addArgument(new ClassExpr().setType(nextTuple3.getT2().getNameAsString()))
-                                                                                        )
-                                                                        )
-                                                        )
-                                        )
-                                );
+                                if (nextTuple3 != null) {
+                                    blockStmt.addStatement(
+                                            new ReturnStmt(
+                                                    new CastExpr()
+                                                            .setType(componentProxyClassDeclaration.getNameAsString())
+                                                            .setExpression(
+                                                                    new MethodCallExpr()
+                                                                            .setName(nextTuple3.getT3().getNameAsString())
+                                                                            .addArgument(new NameExpr(nextContextName))
+                                                                            .setScope(
+                                                                                    new MethodCallExpr("get")
+                                                                                            .setScope(
+                                                                                                    new MethodCallExpr("getProvider")
+                                                                                                            .setScope(new NameExpr("BeanContext"))
+                                                                                                            .addArgument(new ClassExpr().setType(nextTuple3.getT2().getNameAsString()))
+                                                                                            )
+                                                                            )
+                                                            )
+                                            )
+                                    );
+                                } else {
+                                    blockStmt.addStatement(
+                                            new ReturnStmt(
+                                                    new ObjectCreationExpr()
+                                                            .setType(componentProxyClassDeclaration.getNameAsString())
+                                                            .setArguments(
+                                                                    constructorDeclaration.getParameters().stream()
+                                                                            .map(NodeWithSimpleName::getNameAsExpression)
+                                                                            .collect(Collectors.toCollection(NodeList::new))
+                                                            )
+                                            )
+                                    );
+                                }
                             }
                         }
                 );
