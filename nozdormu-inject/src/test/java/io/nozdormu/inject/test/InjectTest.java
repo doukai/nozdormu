@@ -1,6 +1,7 @@
 package io.nozdormu.inject.test;
 
 import io.nozdormu.inject.test.beans.Car;
+import io.nozdormu.inject.test.beans.RepairShop;
 import io.nozdormu.spi.context.BeanContext;
 import org.junit.jupiter.api.Test;
 import reactor.test.StepVerifier;
@@ -31,5 +32,13 @@ public class InjectTest {
                 .assertNext(navigation -> assertEquals(navigation.getName(), "Google"))
                 .expectComplete()
                 .verify();
+
+        RepairShop repairShop = BeanContext.get(RepairShop.class);
+        assertEquals(repairShop.getDefaultEngine().getName(), "V8 Engine");
+        assertEquals(repairShop.getV12Engine().getName(), "V12 Engine");
+        assertAll(
+                () -> assertEquals(repairShop.getEngineList().get(0).getName(), "V8 Engine"),
+                () -> assertEquals(repairShop.getEngineList().get(1).getName(), "V12 Engine")
+        );
     }
 }

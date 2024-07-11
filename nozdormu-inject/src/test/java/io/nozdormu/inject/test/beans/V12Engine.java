@@ -2,14 +2,14 @@ package io.nozdormu.inject.test.beans;
 
 import jakarta.annotation.Priority;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.enterprise.inject.Default;
+import jakarta.inject.Named;
 
 @ApplicationScoped
-@Default
-@Priority(1)
-public class Engine implements IEngine {
+@Named("v12")
+@Priority(2)
+public class V12Engine implements IEngine {
 
     public String getName() {
-        return "V8 Engine";
+        return "V12 Engine";
     }
 }
