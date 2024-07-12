@@ -53,7 +53,7 @@ public class InterceptorProcessor implements ComponentProxyProcessor {
         processorManager.getCompilationUnitListWithAnnotationClass(Interceptor.class).stream()
                 .flatMap(compilationUnit -> {
                             ClassOrInterfaceDeclaration classOrInterfaceDeclaration = processorManager.getPublicClassOrInterfaceDeclarationOrError(compilationUnit);
-                            return getAspectAnnotationNameList(compilationUnit).stream().map(annotationName -> Tuples.of(annotationName, processorManager.getQualifiedName(classOrInterfaceDeclaration)));
+                            return getAspectAnnotationNameList(compilationUnit, true).stream().map(annotationName -> Tuples.of(annotationName, processorManager.getQualifiedName(classOrInterfaceDeclaration)));
                         }
                 )
                 .collect(Collectors.groupingBy(Tuple2::getT1, Collectors.mapping(Tuple2::getT2, Collectors.toSet())))
@@ -82,7 +82,7 @@ public class InterceptorProcessor implements ComponentProxyProcessor {
         this.interceptorAnnotationMap = processorManager.getCompilationUnitListWithAnnotationClass(Interceptor.class).stream()
                 .flatMap(compilationUnit -> {
                             ClassOrInterfaceDeclaration classOrInterfaceDeclaration = processorManager.getPublicClassOrInterfaceDeclarationOrError(compilationUnit);
-                            return getAspectAnnotationNameList(compilationUnit).stream().map(annotationName -> Tuples.of(annotationName, processorManager.getQualifiedName(classOrInterfaceDeclaration)));
+                            return getAspectAnnotationNameList(compilationUnit, true).stream().map(annotationName -> Tuples.of(annotationName, processorManager.getQualifiedName(classOrInterfaceDeclaration)));
                         }
                 )
                 .collect(Collectors.groupingBy(Tuple2::getT1, Collectors.mapping(Tuple2::getT2, Collectors.toSet())));
@@ -91,7 +91,7 @@ public class InterceptorProcessor implements ComponentProxyProcessor {
         Set<String> annotationNameList = this.interceptorAnnotationMap.values().stream()
                 .flatMap(Collection::stream)
                 .map(className -> processorManager.getCompilationUnitOrError(className))
-                .flatMap(compilationUnit -> getAspectAnnotationNameList(compilationUnit).stream())
+                .flatMap(compilationUnit -> getAspectAnnotationNameList(compilationUnit, false).stream())
                 .collect(Collectors.toSet());
 
         buildMethod(annotationNameList, componentClassDeclaration, componentProxyCompilationUnit, componentProxyClassDeclaration);
@@ -669,7 +669,7 @@ public class InterceptorProcessor implements ComponentProxyProcessor {
     }
 
 
-    private List<String> getAspectAnnotationNameList(CompilationUnit compilationUnit) {
+    private List<String> getAspectAnnotationNameList(CompilationUnit compilationUnit, boolean includeInterceptorBinding) {
         ClassOrInterfaceDeclaration classOrInterfaceDeclaration = processorManager.getPublicClassOrInterfaceDeclarationOrError(compilationUnit);
 
         List<String> annotationExprList = classOrInterfaceDeclaration.getAnnotations().stream()
@@ -677,7 +677,7 @@ public class InterceptorProcessor implements ComponentProxyProcessor {
                             CompilationUnit annotationCompilationUnit = processorManager.getCompilationUnitOrError(annotationExpr);
                             AnnotationDeclaration annotationDeclaration = processorManager.getPublicAnnotationDeclarationOrError(annotationCompilationUnit);
                             return annotationDeclaration.getAnnotations().stream()
-                                    .anyMatch(subAnnotationExpr -> processorManager.getQualifiedName(subAnnotationExpr).equals(InterceptorBinding.class.getName()));
+                                    .anyMatch(subAnnotationExpr -> !includeInterceptorBinding || processorManager.getQualifiedName(subAnnotationExpr).equals(InterceptorBinding.class.getName()));
                         }
                 )
                 .map(annotationExpr -> processorManager.getQualifiedName(annotationExpr))

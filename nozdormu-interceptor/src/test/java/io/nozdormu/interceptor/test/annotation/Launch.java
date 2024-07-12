@@ -1,6 +1,5 @@
 package io.nozdormu.interceptor.test.annotation;
 
-
 import jakarta.interceptor.InterceptorBinding;
 
 import java.lang.annotation.ElementType;
