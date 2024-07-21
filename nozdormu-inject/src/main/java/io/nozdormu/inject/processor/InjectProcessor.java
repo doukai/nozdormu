@@ -67,6 +67,7 @@ public class InjectProcessor extends AbstractProcessor {
     private final Set<ComponentProxyProcessor> componentProxyProcessors = new HashSet<>();
     private ProcessorManager processorManager;
     private final List<String> processed = new ArrayList<>();
+    private int index = 0;
 
     @Override
     public synchronized void init(ProcessingEnvironment processingEnv) {
@@ -131,7 +132,8 @@ public class InjectProcessor extends AbstractProcessor {
                 typeElements.stream()
                         .flatMap(typeElement -> processorManager.getCompilationUnit(typeElement).stream())
                         .collect(Collectors.toList()),
-                componentProxyCompilationUnits
+                componentProxyCompilationUnits,
+                index++
         );
         processorManager.writeToFiler(moduleContextCompilationUnit);
         Logger.debug("module context class build success");
@@ -281,10 +283,10 @@ public class InjectProcessor extends AbstractProcessor {
         return proxyCompilationUnit;
     }
 
-    private CompilationUnit buildModuleContext(List<CompilationUnit> componentCompilationUnits, List<CompilationUnit> componentProxyCompilationUnits) {
+    private CompilationUnit buildModuleContext(List<CompilationUnit> componentCompilationUnits, List<CompilationUnit> componentProxyCompilationUnits, int index) {
         ClassOrInterfaceDeclaration contextClassDeclaration = new ClassOrInterfaceDeclaration()
                 .setPublic(true)
-                .setName(processorManager.getRootPackageName().replaceAll("\\.", "_") + "_Context")
+                .setName(processorManager.getRootPackageName().replaceAll("\\.", "_") + (index == 0 ? "" : index) + "_Context")
                 .addAnnotation(
                         new SingleMemberAnnotationExpr()
                                 .setMemberValue(new ClassExpr().setType(BeanContextLoader.class))

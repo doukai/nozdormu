@@ -156,6 +156,7 @@ public class ProcessorManager {
                                                 element.getKind().equals(ElementKind.ANNOTATION_TYPE)
                                 )
                                 .map(elements::getPackageOf)
+                                .filter(packageElement -> !packageElement.isUnnamed())
                                 .reduce((left, right) -> left.getQualifiedName().toString().split("\\.").length < right.getQualifiedName().toString().split("\\.").length ? left : right)
                                 .map(packageElement -> packageElement.getQualifiedName().toString())
                                 .orElseThrow(() -> new InjectionProcessException(InjectionProcessErrorType.ROOT_PACKAGE_NOT_EXIST))
