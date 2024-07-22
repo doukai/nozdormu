@@ -3,9 +3,7 @@ package io.nozdormu.interceptor;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.Modifier;
 import com.github.javaparser.ast.PackageDeclaration;
-import com.github.javaparser.ast.body.AnnotationDeclaration;
-import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
-import com.github.javaparser.ast.body.MethodDeclaration;
+import com.github.javaparser.ast.body.*;
 import com.github.javaparser.ast.expr.*;
 import com.github.javaparser.ast.stmt.BlockStmt;
 import com.github.javaparser.ast.stmt.ReturnStmt;
@@ -13,6 +11,7 @@ import com.google.auto.service.AutoService;
 import io.nozdormu.common.ProcessorManager;
 import io.nozdormu.inject.processor.InjectProcessor;
 import io.nozdormu.spi.context.BeanContext;
+import jakarta.annotation.Priority;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Named;
 import jakarta.interceptor.*;
@@ -89,10 +88,11 @@ public class InterceptorProcessor extends AbstractProcessor {
                                             interceptorClassDeclaration.getMethods().stream()
                                                     .filter(methodDeclaration -> methodDeclaration.isAnnotationPresent(AroundInvoke.class))
                                                     .map(methodDeclaration -> {
+                                                                String name = interceptorClassDeclaration.getNameAsString() + annotationExpr.getNameAsString() + "_" + methodDeclaration.getNameAsString() + interceptorClassDeclaration.getMethods().indexOf(methodDeclaration) + "InvokeInterceptor";
                                                                 ClassOrInterfaceDeclaration invokeInterceptorDeclaration = new ClassOrInterfaceDeclaration()
                                                                         .addModifier(Modifier.Keyword.PUBLIC)
                                                                         .addImplementedType(InvokeInterceptor.class)
-                                                                        .setName(interceptorClassDeclaration.getNameAsString() + annotationExpr.getNameAsString() + "_" + methodDeclaration.getNameAsString() + interceptorClassDeclaration.getMethods().indexOf(methodDeclaration) + "InvokeInterceptor")
+                                                                        .setName(name)
                                                                         .addAnnotation(ApplicationScoped.class)
                                                                         .addAnnotation(new NormalAnnotationExpr().addPair("value", new StringLiteralExpr(processorManager.getQualifiedName(annotationExpr))).setName(Named.class.getSimpleName()));
 
@@ -104,6 +104,13 @@ public class InterceptorProcessor extends AbstractProcessor {
                                                                         .addImport(processorManager.getQualifiedName(interceptorClassDeclaration))
                                                                         .addImport(Named.class);
 
+                                                                interceptorClassDeclaration.getAnnotationByClass(Priority.class)
+                                                                        .ifPresent(priority -> {
+                                                                                    invokeInterceptorDeclaration.addAnnotation(priority.clone());
+                                                                                    invokeInterceptorCompilationUnit.addImport(Priority.class);
+                                                                                }
+                                                                        );
+
                                                                 compilationUnit.getPackageDeclaration()
                                                                         .map(PackageDeclaration::clone)
                                                                         .ifPresent(invokeInterceptorCompilationUnit::setPackageDeclaration);
@@ -111,8 +118,23 @@ public class InterceptorProcessor extends AbstractProcessor {
                                                                 invokeInterceptorDeclaration.setParentNode(invokeInterceptorCompilationUnit);
                                                                 processorManager.importAllClassOrInterfaceType(invokeInterceptorDeclaration, interceptorClassDeclaration);
 
-                                                                MethodDeclaration buildContext = new MethodDeclaration()
-                                                                        .setName("buildContext")
+                                                                FieldDeclaration invocationContext = new FieldDeclaration()
+                                                                        .setModifiers(Modifier.Keyword.PRIVATE)
+                                                                        .addVariable(
+                                                                                new VariableDeclarator()
+                                                                                        .setName("invocationContext")
+                                                                                        .setType(InvocationContext.class)
+                                                                                        .setInitializer(
+                                                                                                new MethodCallExpr()
+                                                                                                        .setName("setOwner")
+                                                                                                        .addArgument(new ClassExpr().setType(annotationExpr.getName().getIdentifier()))
+                                                                                                        .setScope(new ObjectCreationExpr().setType(InvocationContextProxy.class))
+                                                                                        )
+                                                                        );
+                                                                invokeInterceptorDeclaration.addMember(invocationContext);
+
+                                                                MethodDeclaration getContext = new MethodDeclaration()
+                                                                        .setName("getContext")
                                                                         .setModifiers(Modifier.Keyword.PUBLIC)
                                                                         .setType(InvocationContext.class)
                                                                         .setBody(
@@ -120,14 +142,11 @@ public class InterceptorProcessor extends AbstractProcessor {
                                                                                         .addStatement(
                                                                                                 new ReturnStmt()
                                                                                                         .setExpression(
-                                                                                                                new MethodCallExpr()
-                                                                                                                        .setName("setOwner")
-                                                                                                                        .addArgument(new ClassExpr().setType(annotationExpr.getName().getIdentifier()))
-                                                                                                                        .setScope(new ObjectCreationExpr().setType(InvocationContextProxy.class))
+                                                                                                                new NameExpr("invocationContext")
                                                                                                         )
                                                                                         )
                                                                         );
-                                                                invokeInterceptorDeclaration.addMember(buildContext);
+                                                                invokeInterceptorDeclaration.addMember(getContext);
 
                                                                 MethodDeclaration aroundInvoke = new MethodDeclaration()
                                                                         .setName("aroundInvoke")
@@ -181,10 +200,11 @@ public class InterceptorProcessor extends AbstractProcessor {
                                             interceptorClassDeclaration.getMethods().stream()
                                                     .filter(methodDeclaration -> methodDeclaration.isAnnotationPresent(AroundConstruct.class))
                                                     .map(methodDeclaration -> {
+                                                                String name = interceptorClassDeclaration.getNameAsString() + annotationExpr.getNameAsString() + "_" + methodDeclaration.getNameAsString() + interceptorClassDeclaration.getMethods().indexOf(methodDeclaration) + "ConstructInterceptor";
                                                                 ClassOrInterfaceDeclaration constructInterceptorDeclaration = new ClassOrInterfaceDeclaration()
                                                                         .addModifier(Modifier.Keyword.PUBLIC)
                                                                         .addImplementedType(ConstructInterceptor.class)
-                                                                        .setName(interceptorClassDeclaration.getNameAsString() + annotationExpr.getNameAsString() + "_" + methodDeclaration.getNameAsString() + interceptorClassDeclaration.getMethods().indexOf(methodDeclaration) + "ConstructInterceptor")
+                                                                        .setName(name)
                                                                         .addAnnotation(ApplicationScoped.class)
                                                                         .addAnnotation(new NormalAnnotationExpr().addPair("value", new StringLiteralExpr(processorManager.getQualifiedName(annotationExpr))).setName(Named.class.getSimpleName()));
 
@@ -196,6 +216,13 @@ public class InterceptorProcessor extends AbstractProcessor {
                                                                         .addImport(processorManager.getQualifiedName(interceptorClassDeclaration))
                                                                         .addImport(Named.class);
 
+                                                                interceptorClassDeclaration.getAnnotationByClass(Priority.class)
+                                                                        .ifPresent(priority -> {
+                                                                                    constructInterceptorDeclaration.addAnnotation(priority.clone());
+                                                                                    constructInterceptorCompilationUnit.addImport(Priority.class);
+                                                                                }
+                                                                        );
+
                                                                 compilationUnit.getPackageDeclaration()
                                                                         .map(PackageDeclaration::clone)
                                                                         .ifPresent(constructInterceptorCompilationUnit::setPackageDeclaration);
@@ -203,8 +230,23 @@ public class InterceptorProcessor extends AbstractProcessor {
                                                                 constructInterceptorDeclaration.setParentNode(constructInterceptorCompilationUnit);
                                                                 processorManager.importAllClassOrInterfaceType(constructInterceptorDeclaration, interceptorClassDeclaration);
 
-                                                                MethodDeclaration buildContext = new MethodDeclaration()
-                                                                        .setName("buildContext")
+                                                                FieldDeclaration invocationContext = new FieldDeclaration()
+                                                                        .setModifiers(Modifier.Keyword.PRIVATE)
+                                                                        .addVariable(
+                                                                                new VariableDeclarator()
+                                                                                        .setName("invocationContext")
+                                                                                        .setType(InvocationContext.class)
+                                                                                        .setInitializer(
+                                                                                                new MethodCallExpr()
+                                                                                                        .setName("setOwner")
+                                                                                                        .addArgument(new ClassExpr().setType(annotationExpr.getName().getIdentifier()))
+                                                                                                        .setScope(new ObjectCreationExpr().setType(InvocationContextProxy.class))
+                                                                                        )
+                                                                        );
+                                                                constructInterceptorDeclaration.addMember(invocationContext);
+
+                                                                MethodDeclaration getContext = new MethodDeclaration()
+                                                                        .setName("getContext")
                                                                         .setModifiers(Modifier.Keyword.PUBLIC)
                                                                         .setType(InvocationContext.class)
                                                                         .setBody(
@@ -212,14 +254,11 @@ public class InterceptorProcessor extends AbstractProcessor {
                                                                                         .addStatement(
                                                                                                 new ReturnStmt()
                                                                                                         .setExpression(
-                                                                                                                new MethodCallExpr()
-                                                                                                                        .setName("setOwner")
-                                                                                                                        .addArgument(new ClassExpr().setType(annotationExpr.getName().getIdentifier()))
-                                                                                                                        .setScope(new ObjectCreationExpr().setType(InvocationContextProxy.class))
+                                                                                                                new NameExpr("invocationContext")
                                                                                                         )
                                                                                         )
                                                                         );
-                                                                constructInterceptorDeclaration.addMember(buildContext);
+                                                                constructInterceptorDeclaration.addMember(getContext);
 
                                                                 MethodDeclaration aroundConstruct = new MethodDeclaration()
                                                                         .setName("aroundConstruct")

@@ -2,8 +2,11 @@ package io.nozdormu.spi.context;
 
 import jakarta.enterprise.inject.Default;
 import jakarta.enterprise.inject.Instance;
+import jakarta.inject.Named;
 import jakarta.inject.Provider;
 import reactor.core.publisher.Mono;
+import reactor.util.function.Tuple2;
+import reactor.util.function.Tuples;
 
 import java.util.*;
 import java.util.function.Supplier;
@@ -14,6 +17,8 @@ public class BeanContext {
     private static final BeanProviders CONTEXT = new BeanProviders();
 
     private static final BeanImplProviders IMPL_CONTEXT = new BeanImplProviders();
+
+    private static final BeanImplMeta IMPL_META = new BeanImplMeta();
 
     static {
         load(BeanContext.class.getClassLoader());
@@ -28,15 +33,27 @@ public class BeanContext {
     }
 
     public static void put(Class<?> beanClass, Supplier<?> supplier) {
-        put(beanClass, null, null, false, supplier);
+        put(beanClass, null, null, false, supplier, Map.of());
+    }
+
+    public static void put(Class<?> beanClass, Supplier<?> supplier, Map<String, Object> meta) {
+        put(beanClass, null, null, false, supplier, meta);
     }
 
     public static void put(Class<?> beanClass, String name, Supplier<?> supplier) {
-        put(beanClass, name, null, false, supplier);
+        put(beanClass, name, null, false, supplier, Map.of(Named.class.getName(), name));
+    }
+
+    public static void put(Class<?> beanClass, String name, Supplier<?> supplier, Map<String, Object> meta) {
+        put(beanClass, name, null, false, supplier, meta);
     }
 
     public static void put(Class<?> beanClass, boolean isDefault, Supplier<?> supplier) {
-        put(beanClass, null, null, isDefault, supplier);
+        put(beanClass, null, null, isDefault, supplier, Map.of(Default.class.getName(), isDefault));
+    }
+
+    public static void put(Class<?> beanClass, boolean isDefault, Supplier<?> supplier, Map<String, Object> meta) {
+        put(beanClass, null, null, isDefault, supplier, meta);
     }
 
     public static void put(Class<?> beanClass, Integer priority, Supplier<?> supplier) {
@@ -44,23 +61,38 @@ public class BeanContext {
     }
 
     public static void put(Class<?> beanClass, String name, Integer priority, Supplier<?> supplier) {
-        put(beanClass, name, priority, false, supplier);
+        put(beanClass, name, priority, false, supplier, Map.of(Named.class.getName(), name));
+    }
+
+    public static void put(Class<?> beanClass, String name, Integer priority, Supplier<?> supplier, Map<String, Object> meta) {
+        put(beanClass, name, priority, false, supplier, meta);
     }
 
     public static void put(Class<?> beanClass, String name, boolean isDefault, Supplier<?> supplier) {
-        put(beanClass, name, null, isDefault, supplier);
+        put(beanClass, name, null, isDefault, supplier, Map.of(Named.class.getName(), name, Default.class.getName(), isDefault));
+    }
+
+    public static void put(Class<?> beanClass, String name, boolean isDefault, Supplier<?> supplier, Map<String, Object> meta) {
+        put(beanClass, name, null, isDefault, supplier, meta);
     }
 
     public static void put(Class<?> beanClass, Integer priority, boolean isDefault, Supplier<?> supplier) {
-        put(beanClass, null, priority, isDefault, supplier);
+        put(beanClass, null, priority, isDefault, supplier, Map.of(Default.class.getName(), isDefault));
     }
 
-    public static void put(Class<?> beanClass, String name, Integer priority, boolean isDefault, Supplier<?> supplier) {
+    public static void put(Class<?> beanClass, Integer priority, boolean isDefault, Supplier<?> supplier, Map<String, Object> meta) {
+        put(beanClass, null, priority, isDefault, supplier, meta);
+    }
+
+    public static void put(Class<?> beanClass, String name, Integer priority, boolean isDefault, Supplier<?> supplier, Map<String, Object> meta) {
         CONTEXT.get(beanClass).put(beanClass.getName(), supplier);
         if (name != null) {
             CONTEXT.get(beanClass).put(name, supplier);
         }
-        IMPL_CONTEXT.put(beanClass, Objects.requireNonNullElse(priority, Integer.MAX_VALUE), supplier);
+        Integer indexedPriority = IMPL_CONTEXT.put(beanClass, Objects.requireNonNullElse(priority, Integer.MAX_VALUE), supplier);
+        if (meta != null) {
+            IMPL_META.get(beanClass).put(indexedPriority, meta);
+        }
         if (isDefault) {
             CONTEXT.get(beanClass).put(Default.class.getName(), supplier);
         }
@@ -151,23 +183,11 @@ public class BeanContext {
     }
 
     private static <T> Supplier<T> getSupplier(Class<T> beanClass, String name) {
-        return getSupplierOptional(beanClass, name)
-                .orElseGet(() -> getAndCacheSupplier(beanClass, name).orElse(null));
+        return getSupplierOptional(beanClass, name).orElse(null);
     }
 
     private static <T> Supplier<Mono<T>> getMonoSupplier(Class<T> beanClass, String name) {
-        return getMonoSupplierOptional(beanClass, name)
-                .orElseGet(() -> getAndCacheMonoSupplier(beanClass, name).orElse(null));
-    }
-
-    private static <T> Optional<Supplier<T>> getSupplierOptionalOrCache(Class<T> beanClass, String name) {
-        return getSupplierOptional(beanClass, name)
-                .or(() -> getAndCacheSupplier(beanClass, name));
-    }
-
-    private static <T> Optional<Supplier<Mono<T>>> getMonoSupplierOptionalOrCache(Class<T> beanClass, String name) {
-        return getMonoSupplierOptional(beanClass, name)
-                .or(() -> getAndCacheMonoSupplier(beanClass, name));
+        return getMonoSupplierOptional(beanClass, name).orElse(null);
     }
 
     @SuppressWarnings("unchecked")
@@ -180,16 +200,6 @@ public class BeanContext {
     private static <T> Optional<Supplier<Mono<T>>> getMonoSupplierOptional(Class<T> beanClass, String name) {
         Supplier<?> supplier = CONTEXT.get(beanClass).get(name);
         return Optional.ofNullable((Supplier<Mono<T>>) supplier);
-    }
-
-    @SuppressWarnings("unchecked")
-    private static <T> Optional<Supplier<T>> getAndCacheSupplier(Class<T> beanClass, String name) {
-        return Optional.ofNullable((Supplier<T>) CONTEXT.get(beanClass).get(name));
-    }
-
-    @SuppressWarnings("unchecked")
-    private static <T> Optional<Supplier<Mono<T>>> getAndCacheMonoSupplier(Class<T> beanClass, String name) {
-        return Optional.ofNullable((Supplier<Mono<T>>) CONTEXT.get(beanClass).get(name));
     }
 
     @SuppressWarnings("unchecked")
@@ -241,6 +251,27 @@ public class BeanContext {
         }
         return IMPL_CONTEXT.get(beanClass).values().stream()
                 .map(supplier -> (Provider<Mono<T>>) ((Supplier<Mono<T>>) supplier)::get)
+                .collect(Collectors.toList());
+    }
+
+    @SuppressWarnings("unchecked")
+    public static <T> List<Tuple2<Map<String, Object>, T>> getListWithMeta(Class<T> beanClass) {
+        return IMPL_CONTEXT.get(beanClass).entrySet().stream()
+                .map(entry -> Tuples.of(IMPL_META.get(beanClass).get(entry.getKey()), (T) entry.getValue().get()))
+                .collect(Collectors.toList());
+    }
+
+    @SuppressWarnings("unchecked")
+    public static <T> List<Tuple2<Map<String, Object>, Provider<T>>> getProviderListWithMeta(Class<T> beanClass) {
+        return IMPL_CONTEXT.get(beanClass).entrySet().stream()
+                .map(entry -> Tuples.of(IMPL_META.get(beanClass).get(entry.getKey()), (Provider<T>) ((Supplier<T>) entry.getValue())::get))
+                .collect(Collectors.toList());
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T> List<Tuple2<Map<String, Object>, Supplier<T>>> getSupplierListWithMeta(Class<T> beanClass) {
+        return IMPL_CONTEXT.get(beanClass).entrySet().stream()
+                .map(entry -> Tuples.of(IMPL_META.get(beanClass).get(entry.getKey()), (Supplier<T>) entry.getValue()))
                 .collect(Collectors.toList());
     }
 }
