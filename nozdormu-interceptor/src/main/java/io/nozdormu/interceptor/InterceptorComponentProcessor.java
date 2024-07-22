@@ -246,6 +246,34 @@ public class InterceptorComponentProcessor implements ComponentProxyProcessor {
                                         .filter(annotationExpr -> annotationNameList.contains(processorManager.getQualifiedName(annotationExpr)))
                                         .collect(Collectors.toList());
 
+                                componentProxyClassDeclaration
+                                        .addMember(
+                                                new FieldDeclaration()
+                                                        .setModifiers(Modifier.Keyword.PRIVATE, Modifier.Keyword.FINAL)
+                                                        .addVariable(
+                                                                new VariableDeclarator()
+                                                                        .setType(
+                                                                                new ClassOrInterfaceType()
+                                                                                        .setName("List")
+                                                                                        .setTypeArguments(
+                                                                                                new ClassOrInterfaceType()
+                                                                                                        .setName("InvokeInterceptor")
+                                                                                        )
+                                                                        )
+                                                                        .setName(methodDeclaration.getNameAsString() + "InvokeInterceptorList")
+                                                                        .setInitializer(
+                                                                                new MethodCallExpr()
+                                                                                        .setName("getInvokeInterceptorList")
+                                                                                        .setArguments(
+                                                                                                annotationExprList.stream()
+                                                                                                        .map(annotationExpr -> (Expression) new StringLiteralExpr(processorManager.getQualifiedName(annotationExpr)))
+                                                                                                        .collect(Collectors.toCollection(NodeList::new))
+                                                                                        )
+                                                                                        .setScope(new NameExpr("InvokeInterceptor"))
+                                                                        )
+                                                        )
+                                        );
+
                                 VariableDeclarator ownerValueMap = new VariableDeclarator()
                                         .setType(
                                                 new ClassOrInterfaceType()
@@ -484,16 +512,7 @@ public class InterceptorComponentProcessor implements ComponentProxyProcessor {
                                                                                                                         .setScope(
                                                                                                                                 new MethodCallExpr()
                                                                                                                                         .setName("stream")
-                                                                                                                                        .setScope(
-                                                                                                                                                new MethodCallExpr()
-                                                                                                                                                        .setName("getInvokeInterceptorList")
-                                                                                                                                                        .setArguments(
-                                                                                                                                                                annotationExprList.stream()
-                                                                                                                                                                        .map(annotationExpr -> (Expression) new StringLiteralExpr(processorManager.getQualifiedName(annotationExpr)))
-                                                                                                                                                                        .collect(Collectors.toCollection(NodeList::new))
-                                                                                                                                                        )
-                                                                                                                                                        .setScope(new NameExpr("InvokeInterceptor"))
-                                                                                                                                        )
+                                                                                                                                        .setScope(new NameExpr(methodDeclaration.getNameAsString() + "InvokeInterceptorList"))
                                                                                                                         )
                                                                                                         )
                                                                                                         .setScope(new NameExpr("Optional"))
@@ -589,12 +608,40 @@ public class InterceptorComponentProcessor implements ComponentProxyProcessor {
                                                                 )
                                                         )
                                         );
-                                
+
                                 BlockStmt body = creatorMethod.getBody().orElseGet(creatorMethod::createBody);
 
                                 List<AnnotationExpr> annotationExprList = constructorDeclaration.getAnnotations().stream()
                                         .filter(annotationExpr -> annotationNameList.contains(processorManager.getQualifiedName(annotationExpr)))
                                         .collect(Collectors.toList());
+
+                                componentProxyClassDeclaration
+                                        .addMember(
+                                                new FieldDeclaration()
+                                                        .setModifiers(Modifier.Keyword.PRIVATE, Modifier.Keyword.STATIC, Modifier.Keyword.FINAL)
+                                                        .addVariable(
+                                                                new VariableDeclarator()
+                                                                        .setType(
+                                                                                new ClassOrInterfaceType()
+                                                                                        .setName("List")
+                                                                                        .setTypeArguments(
+                                                                                                new ClassOrInterfaceType()
+                                                                                                        .setName("ConstructInterceptor")
+                                                                                        )
+                                                                        )
+                                                                        .setName("create" + componentProxyClassDeclaration.getNameAsString() + "ConstructInterceptorList")
+                                                                        .setInitializer(
+                                                                                new MethodCallExpr()
+                                                                                        .setName("getConstructInterceptorList")
+                                                                                        .setArguments(
+                                                                                                annotationExprList.stream()
+                                                                                                        .map(annotationExpr -> (Expression) new StringLiteralExpr(processorManager.getQualifiedName(annotationExpr)))
+                                                                                                        .collect(Collectors.toCollection(NodeList::new))
+                                                                                        )
+                                                                                        .setScope(new NameExpr("ConstructInterceptor"))
+                                                                        )
+                                                        )
+                                        );
 
                                 VariableDeclarator ownerValueMap = new VariableDeclarator()
                                         .setType(
@@ -806,16 +853,7 @@ public class InterceptorComponentProcessor implements ComponentProxyProcessor {
                                                                                                                         .setScope(
                                                                                                                                 new MethodCallExpr()
                                                                                                                                         .setName("stream")
-                                                                                                                                        .setScope(
-                                                                                                                                                new MethodCallExpr()
-                                                                                                                                                        .setName("getConstructInterceptorList")
-                                                                                                                                                        .setArguments(
-                                                                                                                                                                annotationExprList.stream()
-                                                                                                                                                                        .map(annotationExpr -> (Expression) new StringLiteralExpr(processorManager.getQualifiedName(annotationExpr)))
-                                                                                                                                                                        .collect(Collectors.toCollection(NodeList::new))
-                                                                                                                                                        )
-                                                                                                                                                        .setScope(new NameExpr("ConstructInterceptor"))
-                                                                                                                                        )
+                                                                                                                                        .setScope(new NameExpr("create" + componentProxyClassDeclaration.getNameAsString() + "ConstructInterceptorList"))
                                                                                                                         )
                                                                                                         )
                                                                                                         .setScope(new NameExpr("Optional"))
