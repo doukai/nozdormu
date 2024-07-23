@@ -220,9 +220,7 @@ public class InvocationContextProxy implements InvocationContext {
             } else {
                 ((InvocationContextProxy) this.nextInvocationContext)
                         .setParameterMap(this.parameterMap)
-                        .setContextData(this.contextData)
-                        .setMethod(this.method)
-                        .setConstructor(this.constructor);
+                        .setContextData(this.contextData);
                 return this.nextProceed.apply(this.nextInvocationContext);
             }
         } catch (Throwable throwable) {

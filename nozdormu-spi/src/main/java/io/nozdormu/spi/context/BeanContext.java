@@ -2,12 +2,14 @@ package io.nozdormu.spi.context;
 
 import jakarta.enterprise.inject.Default;
 import jakarta.enterprise.inject.Instance;
+import jakarta.enterprise.inject.literal.NamedLiteral;
 import jakarta.inject.Named;
 import jakarta.inject.Provider;
 import reactor.core.publisher.Mono;
 import reactor.util.function.Tuple2;
 import reactor.util.function.Tuples;
 
+import java.lang.annotation.Annotation;
 import java.util.*;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -135,19 +137,19 @@ public class BeanContext {
     }
 
     public static <T> Instance<T> getInstance(Class<T> beanClass, String... names) {
-        return new InstanceImpl<>(getProviderList(beanClass, names));
+        return new InstanceImpl<>(getProviderListWithMeta(beanClass)).select(Arrays.stream(names).map(NamedLiteral::of).toArray(Annotation[]::new));
     }
 
     public static <T> Instance<T> getInstance(Class<T> beanClass, String name) {
-        return new InstanceImpl<>(Collections.singletonList(getProvider(beanClass, name)));
+        return new SingletonInstanceImpl<>(getProvider(beanClass, name));
     }
 
     public static <T> Instance<Mono<T>> getMonoInstance(Class<T> beanClass, String... names) {
-        return new InstanceImpl<>(getMonoProviderList(beanClass, names));
+        return new InstanceImpl<>(getMonoProviderListWithMeta(beanClass)).select(Arrays.stream(names).map(NamedLiteral::of).toArray(Annotation[]::new));
     }
 
     public static <T> Instance<Mono<T>> getMonoInstance(Class<T> beanClass, String name) {
-        return new InstanceImpl<>(Collections.singletonList(getMonoProvider(beanClass, name)));
+        return new SingletonInstanceImpl<>(getMonoProvider(beanClass, name));
     }
 
     public static <T> Optional<T> getOptional(Class<T> beanClass) {
@@ -205,9 +207,15 @@ public class BeanContext {
     @SuppressWarnings("unchecked")
     public static <T> List<T> getList(Class<T> beanClass, String... names) {
         if (names != null && names.length > 0) {
-            return CONTEXT.get(beanClass).entrySet().stream()
-                    .filter(entry -> Arrays.stream(names).allMatch(name -> entry.getKey().equals(name)))
-                    .map(entry -> (T) entry.getValue().get())
+            return getListWithMeta(beanClass).stream()
+                    .filter(tuple2 ->
+                            Arrays.stream(names)
+                                    .anyMatch(name ->
+                                            tuple2.getT1().containsKey(Named.class.getName()) &&
+                                                    tuple2.getT1().get(Named.class.getName()).equals(name)
+                                    )
+                    )
+                    .map(Tuple2::getT2)
                     .collect(Collectors.toList());
         }
         return IMPL_CONTEXT.get(beanClass).values().stream()
@@ -218,9 +226,15 @@ public class BeanContext {
     @SuppressWarnings("unchecked")
     public static <T> List<Mono<T>> getMonoList(Class<T> beanClass, String... names) {
         if (names != null && names.length > 0) {
-            return CONTEXT.get(beanClass).entrySet().stream()
-                    .filter(entry -> Arrays.stream(names).allMatch(name -> entry.getKey().equals(name)))
-                    .map(entry -> (Mono<T>) entry.getValue().get())
+            return getMonoListWithMeta(beanClass).stream()
+                    .filter(tuple2 ->
+                            Arrays.stream(names)
+                                    .anyMatch(name ->
+                                            tuple2.getT1().containsKey(Named.class.getName()) &&
+                                                    tuple2.getT1().get(Named.class.getName()).equals(name)
+                                    )
+                    )
+                    .map(Tuple2::getT2)
                     .collect(Collectors.toList());
         }
         return IMPL_CONTEXT.get(beanClass).values().stream()
@@ -231,9 +245,15 @@ public class BeanContext {
     @SuppressWarnings("unchecked")
     public static <T> List<Provider<T>> getProviderList(Class<T> beanClass, String... names) {
         if (names != null && names.length > 0) {
-            return CONTEXT.get(beanClass).entrySet().stream()
-                    .filter(entry -> Arrays.stream(names).allMatch(name -> entry.getKey().equals(name)))
-                    .map(entry -> (Provider<T>) ((Supplier<T>) entry.getValue())::get)
+            return getProviderListWithMeta(beanClass).stream()
+                    .filter(tuple2 ->
+                            Arrays.stream(names)
+                                    .anyMatch(name ->
+                                            tuple2.getT1().containsKey(Named.class.getName()) &&
+                                                    tuple2.getT1().get(Named.class.getName()).equals(name)
+                                    )
+                    )
+                    .map(Tuple2::getT2)
                     .collect(Collectors.toList());
         }
         return IMPL_CONTEXT.get(beanClass).values().stream()
@@ -244,9 +264,15 @@ public class BeanContext {
     @SuppressWarnings("unchecked")
     public static <T> List<Provider<Mono<T>>> getMonoProviderList(Class<T> beanClass, String... names) {
         if (names != null && names.length > 0) {
-            return CONTEXT.get(beanClass).entrySet().stream()
-                    .filter(entry -> Arrays.stream(names).allMatch(name -> entry.getKey().equals(name)))
-                    .map(entry -> (Provider<Mono<T>>) ((Supplier<Mono<T>>) entry.getValue())::get)
+            return getMonoProviderListWithMeta(beanClass).stream()
+                    .filter(tuple2 ->
+                            Arrays.stream(names)
+                                    .anyMatch(name ->
+                                            tuple2.getT1().containsKey(Named.class.getName()) &&
+                                                    tuple2.getT1().get(Named.class.getName()).equals(name)
+                                    )
+                    )
+                    .map(Tuple2::getT2)
                     .collect(Collectors.toList());
         }
         return IMPL_CONTEXT.get(beanClass).values().stream()
@@ -272,6 +298,27 @@ public class BeanContext {
     private static <T> List<Tuple2<Map<String, Object>, Supplier<T>>> getSupplierListWithMeta(Class<T> beanClass) {
         return IMPL_CONTEXT.get(beanClass).entrySet().stream()
                 .map(entry -> Tuples.of(IMPL_META.get(beanClass).get(entry.getKey()), (Supplier<T>) entry.getValue()))
+                .collect(Collectors.toList());
+    }
+
+    @SuppressWarnings("unchecked")
+    public static <T> List<Tuple2<Map<String, Object>, Mono<T>>> getMonoListWithMeta(Class<T> beanClass) {
+        return IMPL_CONTEXT.get(beanClass).entrySet().stream()
+                .map(entry -> Tuples.of(IMPL_META.get(beanClass).get(entry.getKey()), (Mono<T>) entry.getValue().get()))
+                .collect(Collectors.toList());
+    }
+
+    @SuppressWarnings("unchecked")
+    public static <T> List<Tuple2<Map<String, Object>, Provider<Mono<T>>>> getMonoProviderListWithMeta(Class<T> beanClass) {
+        return IMPL_CONTEXT.get(beanClass).entrySet().stream()
+                .map(entry -> Tuples.of(IMPL_META.get(beanClass).get(entry.getKey()), (Provider<Mono<T>>) ((Supplier<Mono<T>>) entry.getValue())::get))
+                .collect(Collectors.toList());
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T> List<Tuple2<Map<String, Object>, Supplier<Mono<T>>>> getMonoSupplierListWithMeta(Class<T> beanClass) {
+        return IMPL_CONTEXT.get(beanClass).entrySet().stream()
+                .map(entry -> Tuples.of(IMPL_META.get(beanClass).get(entry.getKey()), (Supplier<Mono<T>>) entry.getValue()))
                 .collect(Collectors.toList());
     }
 }
