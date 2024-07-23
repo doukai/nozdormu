@@ -13,8 +13,13 @@ import io.nozdormu.inject.processor.InjectProcessor;
 import io.nozdormu.spi.context.BeanContext;
 import jakarta.annotation.Priority;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.context.Dependent;
+import jakarta.enterprise.context.RequestScoped;
+import jakarta.enterprise.context.SessionScoped;
 import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 import jakarta.interceptor.*;
+import jakarta.transaction.TransactionScoped;
 
 import javax.annotation.processing.*;
 import javax.lang.model.element.ElementKind;
@@ -93,7 +98,6 @@ public class InterceptorProcessor extends AbstractProcessor {
                                                                         .addModifier(Modifier.Keyword.PUBLIC)
                                                                         .addImplementedType(InvokeInterceptor.class)
                                                                         .setName(name)
-                                                                        .addAnnotation(ApplicationScoped.class)
                                                                         .addAnnotation(new NormalAnnotationExpr().addPair("value", new StringLiteralExpr(processorManager.getQualifiedName(annotationExpr))).setName(Named.class.getSimpleName()));
 
                                                                 CompilationUnit invokeInterceptorCompilationUnit = new CompilationUnit()
@@ -104,11 +108,15 @@ public class InterceptorProcessor extends AbstractProcessor {
                                                                         .addImport(processorManager.getQualifiedName(interceptorClassDeclaration))
                                                                         .addImport(Named.class);
 
-                                                                interceptorClassDeclaration.getAnnotationByClass(Priority.class)
-                                                                        .ifPresent(priority -> {
-                                                                                    invokeInterceptorDeclaration.addAnnotation(priority.clone());
-                                                                                    invokeInterceptorCompilationUnit.addImport(Priority.class);
-                                                                                }
+                                                                Stream.of(Singleton.class, Dependent.class, ApplicationScoped.class, RequestScoped.class, SessionScoped.class, TransactionScoped.class, Priority.class)
+                                                                        .forEach(aClass ->
+                                                                                interceptorClassDeclaration.getAnnotationByClass(aClass)
+                                                                                        .ifPresent(aExpr -> {
+                                                                                                    invokeInterceptorDeclaration.addAnnotation(aExpr.clone());
+                                                                                                    invokeInterceptorCompilationUnit.addImport(aClass);
+                                                                                                }
+                                                                                        )
+
                                                                         );
 
                                                                 compilationUnit.getPackageDeclaration()
@@ -205,7 +213,6 @@ public class InterceptorProcessor extends AbstractProcessor {
                                                                         .addModifier(Modifier.Keyword.PUBLIC)
                                                                         .addImplementedType(ConstructInterceptor.class)
                                                                         .setName(name)
-                                                                        .addAnnotation(ApplicationScoped.class)
                                                                         .addAnnotation(new NormalAnnotationExpr().addPair("value", new StringLiteralExpr(processorManager.getQualifiedName(annotationExpr))).setName(Named.class.getSimpleName()));
 
                                                                 CompilationUnit constructInterceptorCompilationUnit = new CompilationUnit()
@@ -216,11 +223,15 @@ public class InterceptorProcessor extends AbstractProcessor {
                                                                         .addImport(processorManager.getQualifiedName(interceptorClassDeclaration))
                                                                         .addImport(Named.class);
 
-                                                                interceptorClassDeclaration.getAnnotationByClass(Priority.class)
-                                                                        .ifPresent(priority -> {
-                                                                                    constructInterceptorDeclaration.addAnnotation(priority.clone());
-                                                                                    constructInterceptorCompilationUnit.addImport(Priority.class);
-                                                                                }
+                                                                Stream.of(Singleton.class, Dependent.class, ApplicationScoped.class, RequestScoped.class, SessionScoped.class, TransactionScoped.class, Priority.class)
+                                                                        .forEach(aClass ->
+                                                                                interceptorClassDeclaration.getAnnotationByClass(aClass)
+                                                                                        .ifPresent(aExpr -> {
+                                                                                                    constructInterceptorDeclaration.addAnnotation(aExpr.clone());
+                                                                                                    constructInterceptorCompilationUnit.addImport(aClass);
+                                                                                                }
+                                                                                        )
+
                                                                         );
 
                                                                 compilationUnit.getPackageDeclaration()
