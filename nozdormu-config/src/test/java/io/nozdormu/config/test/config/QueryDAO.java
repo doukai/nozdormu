@@ -16,4 +16,8 @@ public class QueryDAO {
     public String getDBInfo() {
         return dbConfig.toString();
     }
+
+    public DBConfig getDbConfig() {
+        return dbConfig;
+    }
 }
