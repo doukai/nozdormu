@@ -12,14 +12,9 @@ import io.nozdormu.common.ProcessorManager;
 import io.nozdormu.inject.processor.InjectProcessor;
 import io.nozdormu.spi.context.BeanContext;
 import jakarta.annotation.Priority;
-import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.context.Dependent;
-import jakarta.enterprise.context.RequestScoped;
-import jakarta.enterprise.context.SessionScoped;
 import jakarta.inject.Named;
-import jakarta.inject.Singleton;
 import jakarta.interceptor.*;
-import jakarta.transaction.TransactionScoped;
 
 import javax.annotation.processing.*;
 import javax.lang.model.element.ElementKind;
@@ -98,6 +93,7 @@ public class InterceptorProcessor extends AbstractProcessor {
                                                                         .addModifier(Modifier.Keyword.PUBLIC)
                                                                         .addImplementedType(InvokeInterceptor.class)
                                                                         .setName(name)
+                                                                        .addAnnotation(Dependent.class)
                                                                         .addAnnotation(new NormalAnnotationExpr().addPair("value", new StringLiteralExpr(processorManager.getQualifiedName(annotationExpr))).setName(Named.class.getSimpleName()));
 
                                                                 CompilationUnit invokeInterceptorCompilationUnit = new CompilationUnit()
@@ -106,9 +102,10 @@ public class InterceptorProcessor extends AbstractProcessor {
                                                                         .addImport(BeanContext.class)
                                                                         .addImport(InvocationContextProxy.class)
                                                                         .addImport(processorManager.getQualifiedName(interceptorClassDeclaration))
+                                                                        .addImport(Dependent.class)
                                                                         .addImport(Named.class);
 
-                                                                Stream.of(Singleton.class, Dependent.class, ApplicationScoped.class, RequestScoped.class, SessionScoped.class, TransactionScoped.class, Priority.class)
+                                                                Stream.of(Priority.class)
                                                                         .forEach(aClass ->
                                                                                 interceptorClassDeclaration.getAnnotationByClass(aClass)
                                                                                         .ifPresent(aExpr -> {
@@ -213,6 +210,7 @@ public class InterceptorProcessor extends AbstractProcessor {
                                                                         .addModifier(Modifier.Keyword.PUBLIC)
                                                                         .addImplementedType(ConstructInterceptor.class)
                                                                         .setName(name)
+                                                                        .addAnnotation(Dependent.class)
                                                                         .addAnnotation(new NormalAnnotationExpr().addPair("value", new StringLiteralExpr(processorManager.getQualifiedName(annotationExpr))).setName(Named.class.getSimpleName()));
 
                                                                 CompilationUnit constructInterceptorCompilationUnit = new CompilationUnit()
@@ -221,9 +219,10 @@ public class InterceptorProcessor extends AbstractProcessor {
                                                                         .addImport(BeanContext.class)
                                                                         .addImport(InvocationContextProxy.class)
                                                                         .addImport(processorManager.getQualifiedName(interceptorClassDeclaration))
+                                                                        .addImport(Dependent.class)
                                                                         .addImport(Named.class);
 
-                                                                Stream.of(Singleton.class, Dependent.class, ApplicationScoped.class, RequestScoped.class, SessionScoped.class, TransactionScoped.class, Priority.class)
+                                                                Stream.of(Priority.class)
                                                                         .forEach(aClass ->
                                                                                 interceptorClassDeclaration.getAnnotationByClass(aClass)
                                                                                         .ifPresent(aExpr -> {
