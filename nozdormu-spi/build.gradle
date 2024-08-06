@@ -1,6 +1,7 @@
 plugins {
-    id 'java'
+    id 'java-library'
     id 'maven-publish'
+    id 'org.jreleaser' version '1.13.1'
 }
 
 group 'io.nozdormu'
@@ -8,19 +9,23 @@ version '0.1.0'
 
 repositories {
     mavenCentral()
-    mavenLocal()
+}
+
+java {
+    withJavadocJar()
+    withSourcesJar()
 }
 
 dependencies {
     implementation 'com.google.auto.service:auto-service:1.0.1'
 
-    compile 'io.projectreactor:reactor-core:3.4.16'
-    compile 'jakarta.annotation:jakarta.annotation-api:2.0.0'
-    compile 'jakarta.inject:jakarta.inject-api:2.0.1'
-    compile 'jakarta.enterprise:jakarta.enterprise.cdi-api:3.0.1'
-    compile 'jakarta.transaction:jakarta.transaction-api:2.0.1'
-    compile 'org.eclipse.microprofile.config:microprofile-config-api:3.0.1'
-    compile 'org.tinylog:tinylog-api:2.4.1'
+    api 'io.projectreactor:reactor-core:3.4.16'
+    api 'jakarta.annotation:jakarta.annotation-api:2.0.0'
+    api 'jakarta.inject:jakarta.inject-api:2.0.1'
+    api 'jakarta.enterprise:jakarta.enterprise.cdi-api:3.0.1'
+    api 'jakarta.transaction:jakarta.transaction-api:2.0.1'
+    api 'org.eclipse.microprofile.config:microprofile-config-api:3.0.1'
+    api 'org.tinylog:tinylog-api:2.4.1'
 
     annotationProcessor 'com.google.auto.service:auto-service:1.0.1'
 
@@ -32,10 +37,86 @@ test {
     useJUnitPlatform()
 }
 
-publishing {
-    publications {
-        maven(MavenPublication) {
-            from components.java
+//ext.isReleaseVersion = !version.endsWith("SNAPSHOT")
+//
+//publishing {
+//    repositories {
+//        maven {
+//            def releaseRepo = "https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/"
+//            def snapshotRepo = "https://s01.oss.sonatype.org/content/repositories/snapshots/"
+//
+//            name = "ossrh"
+//            url = "https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/"
+//
+//            credentials {
+//                username = "9uKYQvzo"
+//                password = "Lq3Vx0GMJrcY+Ll4ZsQebzcIbFL+V1ygTgvF3XGDi7+s"
+//            }
+//        }
+//    }
+//
+//    publications {
+//        mavenJava(MavenPublication) {
+//            from components.java
+//
+//            pom {
+//                groupId = 'io.nozdormu'
+//                name = 'nozdormu-spi'
+//                description = 'nozdormu-spi'
+//                url = 'https://github.com/doukai/nozdormu'
+//                packaging = 'jar'
+//
+//                licenses {
+//                    license {
+//                        name = 'The MIT License'
+//                        url = 'https://opensource.org/license/mit/'
+//                    }
+//                }
+//
+//                scm {
+//                    url = 'https://github.com/doukai/nozdormu'
+//                    connection = 'scm:git://github.com:doukai/nozdormu.git'
+//                    developerConnection = 'scm:git://github.com:doukai/nozdormu.git'
+//                }
+//
+//                developers {
+//                    developer {
+//                        id = 'doukai'
+//                        name = 'Dou Kai'
+//                        email = 'doukai@outlook.com'
+//                        organizationUrl = 'https://graphoenix.org/'
+//                    }
+//                }
+//            }
+//        }
+//    }
+//}
+//
+//signing {
+//    sign publishing.publications.mavenJava
+//}
+//
+//tasks.withType(Sign) {
+//    onlyIf { isReleaseVersion }
+//}
+
+jreleaser {
+    signing {
+        active = 'ALWAYS'
+        armored = true
+        mode = 'FILE'
+        publicKey = '~/.gnupg/public.pgp'
+        secretKey = '~/.gnupg/private.pgp'
+    }
+    deploy {
+        maven {
+            mavenCentral {
+                sonatype {
+                    active = 'ALWAYS'
+                    url = 'https://central.sonatype.com/api/v1/publisher'
+                    stagingRepository('target/staging-deploy')
+                }
+            }
         }
     }
 }

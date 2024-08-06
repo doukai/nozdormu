@@ -1,5 +1,5 @@
 plugins {
-    id 'java'
+    id 'java-library'
     id 'maven-publish'
 }
 
@@ -13,7 +13,7 @@ repositories {
 }
 
 dependencies {
-    compile 'com.typesafe:config:1.4.2'
+    api 'com.typesafe:config:1.4.2'
 
     implementation project(':nozdormu-common')
     implementation project(':nozdormu-inject')
