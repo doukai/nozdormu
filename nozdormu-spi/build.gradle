@@ -100,6 +100,47 @@ test {
 //    onlyIf { isReleaseVersion }
 //}
 
+publishing {
+    publications {
+        maven(MavenPublication) {
+            groupId = 'io.nozdormu'
+            artifactId = 'nozdormu-spi'
+
+            from components.java
+
+            pom {
+                name = 'nozdormu-spi'
+                description = 'nozdormu-spi'
+                url = 'https://github.com/doukai/nozdormu'
+                inceptionYear = '2023'
+                licenses {
+                    license {
+                        name = 'MIT'
+                        url = 'https://spdx.org/licenses/MIT.html'
+                    }
+                }
+                developers {
+                    developer {
+                        id = 'doukai'
+                        name = 'Dou Kai'
+                    }
+                }
+                scm {
+                    url = 'https://github.com/doukai/nozdormu'
+                    connection = 'scm:git://github.com:doukai/nozdormu.git'
+                    developerConnection = 'scm:git://github.com:doukai/nozdormu.git'
+                }
+            }
+        }
+    }
+
+    repositories {
+        maven {
+            url = layout.buildDirectory.dir('staging-deploy')
+        }
+    }
+}
+
 jreleaser {
     signing {
         active = 'ALWAYS'
