@@ -1,15 +1,20 @@
 plugins {
     id 'java-library'
     id 'maven-publish'
+    id 'org.jreleaser' version '1.13.1'
 }
 
-group 'io.nozdormu'
+group 'org.graphoenix'
 version '0.1.0'
 
 repositories {
     mavenCentral()
     jcenter()
-    mavenLocal()
+}
+
+java {
+    withJavadocJar()
+    withSourcesJar()
 }
 
 dependencies {
@@ -29,7 +34,63 @@ test {
 publishing {
     publications {
         maven(MavenPublication) {
+            groupId = 'org.graphoenix'
+            artifactId = 'nozdormu-common'
+
             from components.java
+
+            pom {
+                name = 'nozdormu-common'
+                description = 'nozdormu-common'
+                url = 'https://github.com/doukai/nozdormu'
+                inceptionYear = '2023'
+                licenses {
+                    license {
+                        name = 'MIT'
+                        url = 'https://spdx.org/licenses/MIT.html'
+                    }
+                }
+                developers {
+                    developer {
+                        id = 'doukai'
+                        name = 'Dou Kai'
+                    }
+                }
+                scm {
+                    url = 'https://github.com/doukai/nozdormu'
+                    connection = 'scm:git://github.com:doukai/nozdormu.git'
+                    developerConnection = 'scm:git://github.com:doukai/nozdormu.git'
+                }
+            }
+        }
+    }
+
+    repositories {
+        maven {
+            url = layout.buildDirectory.dir('staging-deploy')
+        }
+    }
+}
+
+tasks.build.doFirst {
+    mkdir "$buildDir/jreleaser"
+}
+
+jreleaser {
+    gitRootSearch = true
+    signing {
+        active = 'ALWAYS'
+        armored = true
+    }
+    deploy {
+        maven {
+            mavenCentral {
+                sonatype {
+                    active = 'ALWAYS'
+                    url = 'https://central.sonatype.com/api/v1/publisher'
+                    stagingRepository('build/staging-deploy')
+                }
+            }
         }
     }
 }

@@ -4,7 +4,7 @@ plugins {
     id 'org.jreleaser' version '1.13.1'
 }
 
-group 'io.nozdormu'
+group 'org.graphoenix'
 version '0.1.0'
 
 repositories {
@@ -37,73 +37,10 @@ test {
     useJUnitPlatform()
 }
 
-//ext.isReleaseVersion = !version.endsWith("SNAPSHOT")
-//
-//publishing {
-//    repositories {
-//        maven {
-//            def releaseRepo = "https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/"
-//            def snapshotRepo = "https://s01.oss.sonatype.org/content/repositories/snapshots/"
-//
-//            name = "ossrh"
-//            url = "https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/"
-//
-//            credentials {
-//                username = "9uKYQvzo"
-//                password = "Lq3Vx0GMJrcY+Ll4ZsQebzcIbFL+V1ygTgvF3XGDi7+s"
-//            }
-//        }
-//    }
-//
-//    publications {
-//        mavenJava(MavenPublication) {
-//            from components.java
-//
-//            pom {
-//                groupId = 'io.nozdormu'
-//                name = 'nozdormu-spi'
-//                description = 'nozdormu-spi'
-//                url = 'https://github.com/doukai/nozdormu'
-//                packaging = 'jar'
-//
-//                licenses {
-//                    license {
-//                        name = 'The MIT License'
-//                        url = 'https://opensource.org/license/mit/'
-//                    }
-//                }
-//
-//                scm {
-//                    url = 'https://github.com/doukai/nozdormu'
-//                    connection = 'scm:git://github.com:doukai/nozdormu.git'
-//                    developerConnection = 'scm:git://github.com:doukai/nozdormu.git'
-//                }
-//
-//                developers {
-//                    developer {
-//                        id = 'doukai'
-//                        name = 'Dou Kai'
-//                        email = 'doukai@outlook.com'
-//                        organizationUrl = 'https://graphoenix.org/'
-//                    }
-//                }
-//            }
-//        }
-//    }
-//}
-//
-//signing {
-//    sign publishing.publications.mavenJava
-//}
-//
-//tasks.withType(Sign) {
-//    onlyIf { isReleaseVersion }
-//}
-
 publishing {
     publications {
         maven(MavenPublication) {
-            groupId = 'io.nozdormu'
+            groupId = 'org.graphoenix'
             artifactId = 'nozdormu-spi'
 
             from components.java
@@ -141,13 +78,15 @@ publishing {
     }
 }
 
+tasks.build.doFirst {
+    mkdir "$buildDir/jreleaser"
+}
+
 jreleaser {
+    gitRootSearch = true
     signing {
         active = 'ALWAYS'
         armored = true
-        mode = 'FILE'
-        publicKey = '~/.gnupg/public.pgp'
-        secretKey = '~/.gnupg/private.pgp'
     }
     deploy {
         maven {
@@ -155,7 +94,7 @@ jreleaser {
                 sonatype {
                     active = 'ALWAYS'
                     url = 'https://central.sonatype.com/api/v1/publisher'
-                    stagingRepository('target/staging-deploy')
+                    stagingRepository('build/staging-deploy')
                 }
             }
         }
