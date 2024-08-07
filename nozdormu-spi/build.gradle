@@ -1,9 +1,9 @@
 plugins {
-    id 'java'
+    id 'java-library'
     id 'maven-publish'
 }
 
-group 'io.nozdormu'
+group 'org.graphoenix'
 version '0.1.0-SNAPSHOT'
 
 repositories {
@@ -14,13 +14,13 @@ repositories {
 dependencies {
     implementation 'com.google.auto.service:auto-service:1.0.1'
 
-    compile 'io.projectreactor:reactor-core:3.4.16'
-    compile 'jakarta.annotation:jakarta.annotation-api:2.0.0'
-    compile 'jakarta.inject:jakarta.inject-api:2.0.1'
-    compile 'jakarta.enterprise:jakarta.enterprise.cdi-api:3.0.1'
-    compile 'jakarta.transaction:jakarta.transaction-api:2.0.1'
-    compile 'org.eclipse.microprofile.config:microprofile-config-api:3.0.1'
-    compile 'org.tinylog:tinylog-api:2.4.1'
+    api 'io.projectreactor:reactor-core:3.4.16'
+    api 'jakarta.annotation:jakarta.annotation-api:2.0.0'
+    api 'jakarta.inject:jakarta.inject-api:2.0.1'
+    api 'jakarta.enterprise:jakarta.enterprise.cdi-api:3.0.1'
+    api 'jakarta.transaction:jakarta.transaction-api:2.0.1'
+    api 'org.eclipse.microprofile.config:microprofile-config-api:3.0.1'
+    api 'org.tinylog:tinylog-api:2.4.1'
 
     annotationProcessor 'com.google.auto.service:auto-service:1.0.1'
 
