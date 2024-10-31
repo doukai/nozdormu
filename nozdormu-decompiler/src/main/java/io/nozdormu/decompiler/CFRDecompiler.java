@@ -14,6 +14,8 @@ import java.security.CodeSource;
 import java.util.*;
 import java.util.stream.Collectors;
 
+import static org.benf.cfr.reader.util.getopt.OptionsImpl.*;
+
 public class CFRDecompiler implements TypeElementDecompiler {
 
     private final ClassLoader classLoader;
@@ -113,6 +115,7 @@ public class CFRDecompiler implements TypeElementDecompiler {
         };
 
         Map<String, String> options = new HashMap<>();  // 设置 CFR 的反编译选项
+        options.put(REMOVE_DEAD_CONDITIONALS.getName(), "true");
         CfrDriver cfrDriver = new CfrDriver.Builder()
                 .withOptions(options)
                 .withOutputSink(sinkFactory)
