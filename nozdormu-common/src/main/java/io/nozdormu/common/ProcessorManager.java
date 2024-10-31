@@ -256,7 +256,12 @@ public class ProcessorManager {
     public Optional<ClassOrInterfaceDeclaration> getClassOrInterfaceDeclaration(String qualifiedName) {
         return getCompilationUnit(qualifiedName)
                 .flatMap(compilationUnit ->
-                        compilationUnit.getTypes().stream()
+                        Stream
+                                .concat(
+                                        compilationUnit.getTypes().stream(),
+                                        compilationUnit.getTypes().stream()
+                                                .flatMap(typeDeclaration -> typeDeclaration.getMembers().stream())
+                                )
                                 .filter(BodyDeclaration::isClassOrInterfaceDeclaration)
                                 .map(BodyDeclaration::asClassOrInterfaceDeclaration)
                                 .filter(classOrInterfaceDeclaration ->

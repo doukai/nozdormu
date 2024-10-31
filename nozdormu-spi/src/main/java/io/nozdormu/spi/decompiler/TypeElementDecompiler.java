@@ -9,5 +9,10 @@ public interface TypeElementDecompiler {
 
     String decompile(TypeElement typeElement);
 
-    Optional<String> decompileOrEmpty(TypeElement typeElement);
+    default Optional<String> decompileOrEmpty(TypeElement typeElement) {
+        if (canLoad(typeElement)) {
+            return Optional.of(decompile(typeElement));
+        }
+        return Optional.empty();
+    }
 }

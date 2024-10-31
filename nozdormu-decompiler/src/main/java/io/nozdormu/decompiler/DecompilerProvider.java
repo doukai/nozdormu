@@ -5,9 +5,9 @@ import io.nozdormu.spi.decompiler.TypeElementDecompiler;
 import io.nozdormu.spi.decompiler.TypeElementDecompilerProvider;
 
 @AutoService(TypeElementDecompilerProvider.class)
-public class JDDecompilerProvider implements TypeElementDecompilerProvider {
+public class DecompilerProvider implements TypeElementDecompilerProvider {
     @Override
     public TypeElementDecompiler create(ClassLoader classLoader) {
-        return new JDDecompiler(classLoader);
+        return new CFRDecompiler(classLoader);
     }
 }
