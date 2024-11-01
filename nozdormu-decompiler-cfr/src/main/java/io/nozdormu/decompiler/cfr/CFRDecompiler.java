@@ -1,4 +1,4 @@
-package io.nozdormu.decompiler;
+package io.nozdormu.decompiler.cfr;
 
 import com.google.common.base.Strings;
 import io.nozdormu.spi.decompiler.TypeElementDecompiler;
@@ -9,18 +9,19 @@ import org.benf.cfr.reader.api.SinkReturns;
 import javax.lang.model.element.TypeElement;
 import java.io.StringWriter;
 import java.net.URISyntaxException;
-import java.nio.file.*;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.security.CodeSource;
 import java.util.*;
 import java.util.stream.Collectors;
 
-import static org.benf.cfr.reader.util.getopt.OptionsImpl.*;
+import static io.nozdormu.spi.utils.DecompileUtil.getDecompileClassName;
 
 public class CFRDecompiler implements TypeElementDecompiler {
 
     private final ClassLoader classLoader;
 
-    public static final Map<String, String> DECOMPILED_CACHE = new HashMap<>();
+    private static final Map<String, String> DECOMPILED_CACHE = new HashMap<>();
 
     public CFRDecompiler(ClassLoader classLoader) {
         this.classLoader = classLoader;
@@ -28,7 +29,7 @@ public class CFRDecompiler implements TypeElementDecompiler {
 
     @Override
     public boolean canLoad(TypeElement typeElement) {
-        String decompileClassName = getDecompileClassName(typeElement.getQualifiedName().toString());
+        String decompileClassName = getDecompileClassName(typeElement.getQualifiedName().toString(), classLoader);
         try {
             Class.forName(decompileClassName, false, classLoader);
             return DECOMPILED_CACHE.containsKey(decompileClassName) || decompileAndCache(decompileClassName);
@@ -39,7 +40,7 @@ public class CFRDecompiler implements TypeElementDecompiler {
 
     @Override
     public String decompile(TypeElement typeElement) {
-        String decompileClassName = getDecompileClassName(typeElement.getQualifiedName().toString());
+        String decompileClassName = getDecompileClassName(typeElement.getQualifiedName().toString(), classLoader);
         if (DECOMPILED_CACHE.containsKey(decompileClassName) || decompileAndCache(decompileClassName)) {
             return DECOMPILED_CACHE.get(decompileClassName);
         }
@@ -115,7 +116,6 @@ public class CFRDecompiler implements TypeElementDecompiler {
         };
 
         Map<String, String> options = new HashMap<>();  // 设置 CFR 的反编译选项
-        options.put(REMOVE_DEAD_CONDITIONALS.getName(), "true");
         CfrDriver cfrDriver = new CfrDriver.Builder()
                 .withOptions(options)
                 .withOutputSink(sinkFactory)
@@ -146,16 +146,6 @@ public class CFRDecompiler implements TypeElementDecompiler {
             return DECOMPILED_CACHE.containsKey(decompileClassName);
         } catch (ClassNotFoundException | URISyntaxException e) {
             throw new RuntimeException(e);
-        }
-    }
-
-    private String getDecompileClassName(String className) {
-        try {
-            return Class.forName(className, false, classLoader).getName();
-        } catch (ClassNotFoundException e) {
-            int i = className.lastIndexOf(".");
-            String nestedClassName = className.substring(0, i);
-            return getDecompileClassName(nestedClassName);
         }
     }
 }

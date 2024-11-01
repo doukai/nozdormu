@@ -8,7 +8,7 @@ import java.util.ServiceLoader;
 
 public interface TypeElementDecompilerProvider {
 
-    String DEFAULT_PROVIDER = "io.nozdormu.decompiler.CFRDecompiler";
+    String DEFAULT_PROVIDER = "io.nozdormu.decompiler.VineflowerDecompiler";
 
     TypeElementDecompiler create(ClassLoader classLoader);
 
