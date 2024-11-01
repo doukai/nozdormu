@@ -54,10 +54,7 @@ import java.lang.annotation.Annotation;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.Collections;
-import java.util.List;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
@@ -711,20 +708,13 @@ public class ProcessorManager {
                         classOrInterfaceDeclaration.getExtendedTypes().stream()
                                 .flatMap(this::getExtendedTypes)
                 )
-                .filter(name -> !name.startsWith("java."))
                 .distinct();
     }
 
     public Stream<String> getExtendedTypes(ClassOrInterfaceType classOrInterfaceType) {
-        return getResolvedType(classOrInterfaceType).asReferenceType().getTypeDeclaration()
-                .flatMap(resolvedReferenceTypeDeclaration -> getClassOrInterfaceDeclaration(resolvedReferenceTypeDeclaration.getQualifiedName()))
-                .stream()
-                .flatMap(classOrInterfaceDeclaration ->
-                        Stream.concat(
-                                getExtendedTypes(classOrInterfaceDeclaration),
-                                getImplementedTypes(classOrInterfaceDeclaration)
-                        )
-                );
+        return getResolvedType(classOrInterfaceType).asReferenceType().getTypeDeclaration().stream()
+                .flatMap(resolvedReferenceTypeDeclaration -> resolvedReferenceTypeDeclaration.getAllAncestors().stream())
+                .map(ResolvedReferenceType::getQualifiedName);
     }
 
     public Stream<String> getImplementedTypes(ClassOrInterfaceDeclaration classOrInterfaceDeclaration) {
@@ -735,14 +725,12 @@ public class ProcessorManager {
                         classOrInterfaceDeclaration.getImplementedTypes().stream()
                                 .flatMap(this::getImplementedTypes)
                 )
-                .filter(name -> !name.startsWith("java."))
                 .distinct();
     }
 
     public Stream<String> getImplementedTypes(ClassOrInterfaceType classOrInterfaceType) {
-        return getResolvedType(classOrInterfaceType).asReferenceType().getTypeDeclaration()
-                .flatMap(resolvedReferenceTypeDeclaration -> getClassOrInterfaceDeclaration(resolvedReferenceTypeDeclaration.getQualifiedName()))
-                .stream()
-                .flatMap(this::getExtendedTypes);
+        return getResolvedType(classOrInterfaceType).asReferenceType().getTypeDeclaration().stream()
+                .flatMap(resolvedReferenceTypeDeclaration -> resolvedReferenceTypeDeclaration.getAllAncestors().stream())
+                .map(ResolvedReferenceType::getQualifiedName);
     }
 }

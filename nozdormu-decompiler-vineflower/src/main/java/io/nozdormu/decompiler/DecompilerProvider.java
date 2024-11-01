@@ -8,6 +8,6 @@ import io.nozdormu.spi.decompiler.TypeElementDecompilerProvider;
 public class DecompilerProvider implements TypeElementDecompilerProvider {
     @Override
     public TypeElementDecompiler create(ClassLoader classLoader) {
-        return new ProcyonDecompiler(classLoader);
+        return new VineflowerDecompiler(classLoader);
     }
 }

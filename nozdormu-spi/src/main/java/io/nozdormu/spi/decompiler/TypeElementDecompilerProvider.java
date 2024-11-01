@@ -8,7 +8,7 @@ import java.util.ServiceLoader;
 
 public interface TypeElementDecompilerProvider {
 
-    String DEFAULT_PROVIDER = "io.nozdormu.decompiler.VineflowerDecompiler";
+    String DEFAULT_PROVIDER = "io.nozdormu.decompiler.ProcyonDecompiler";
 
     TypeElementDecompiler create(ClassLoader classLoader);
 
