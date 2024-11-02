@@ -124,11 +124,12 @@ public class CFRDecompiler implements TypeElementDecompiler {
         try {
             Class<?> decompileClass = Class.forName(decompileClassName, false, classLoader);
             CodeSource codeSource = decompileClass.getProtectionDomain().getCodeSource();
-            if (codeSource == null) {
-                return false;
+            if (codeSource != null) {
+                Path path = Paths.get(codeSource.getLocation().toURI());
+                cfrDriver.analyse(List.of(path.toAbsolutePath().toString()));
+            } else {
+                cfrDriver.analyse(List.of(decompileClass.getName()));
             }
-            Path path = Paths.get(codeSource.getLocation().toURI());
-            cfrDriver.analyse(List.of(path.toAbsolutePath().toString()));
             if (!Strings.isNullOrEmpty(exceptionsOutput.toString())) {
                 throw new RuntimeException(exceptionsOutput.toString());
             }
@@ -138,7 +139,6 @@ public class CFRDecompiler implements TypeElementDecompiler {
                                     new AbstractMap.SimpleEntry<>(
                                             decompiledMultiVer.getPackageName() + "." + decompiledMultiVer.getClassName(),
                                             decompiledMultiVer.getJava()
-
                                     )
                             )
                             .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue))

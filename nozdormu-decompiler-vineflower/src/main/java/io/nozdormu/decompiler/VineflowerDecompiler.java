@@ -6,11 +6,17 @@ import org.jetbrains.java.decompiler.main.extern.IResultSaver;
 
 import javax.lang.model.element.TypeElement;
 import java.io.File;
+import java.io.IOException;
+import java.net.URI;
 import java.net.URISyntaxException;
-import java.nio.file.Paths;
+import java.net.URL;
+import java.net.URLClassLoader;
+import java.nio.file.*;
 import java.security.CodeSource;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.jar.Manifest;
 
 import static io.nozdormu.spi.utils.DecompileUtil.getDecompileClassName;
@@ -18,6 +24,8 @@ import static io.nozdormu.spi.utils.DecompileUtil.getDecompileClassName;
 public class VineflowerDecompiler implements TypeElementDecompiler {
 
     private final ClassLoader classLoader;
+
+    private final Path jrtPath = Paths.get(URI.create("jrt:/")).resolve("/modules").resolve("lib").resolve("jrt-fs.jar");
 
     private static final Map<String, String> DECOMPILED_CACHE = new HashMap<>();
 
@@ -86,10 +94,20 @@ public class VineflowerDecompiler implements TypeElementDecompiler {
         try {
             Class<?> decompileClass = Class.forName(decompileClassName, false, classLoader);
             CodeSource codeSource = decompileClass.getProtectionDomain().getCodeSource();
-            if (codeSource == null) {
-                return false;
+            File file;
+            if (codeSource != null) {
+                file = Paths.get(codeSource.getLocation().toURI()).toFile();
+            } else {
+                try (URLClassLoader loader = new URLClassLoader(new URL[]{jrtPath.toUri().toURL()});
+                     FileSystem fs = FileSystems.newFileSystem(URI.create("jrt:/"), Collections.emptyMap(), loader)) {
+                    byte[] bytes = Files.readAllBytes(fs.getPath("/modules/" + Objects.requireNonNull(classLoader.getResource(decompileClass.getName().replace(".", "/") + ".class")).getPath()));
+                    file = File.createTempFile(decompileClass.getName(), ".class");
+                    file.deleteOnExit();
+                    Files.write(file.toPath(), bytes);
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
             }
-            File file = Paths.get(codeSource.getLocation().toURI()).toFile();
 
             Decompiler decompiler = Decompiler
                     .builder()
