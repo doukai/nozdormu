@@ -1,6 +1,8 @@
 package io.nozdormu.common;
 
 import com.github.javaparser.JavaParser;
+import com.github.javaparser.ParseResult;
+import com.github.javaparser.Problem;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.Modifier;
 import com.github.javaparser.ast.Node;
@@ -47,6 +49,7 @@ import javax.lang.model.util.Elements;
 import javax.tools.Diagnostic;
 import javax.tools.FileObject;
 import javax.tools.StandardLocation;
+import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.Writer;
@@ -208,11 +211,29 @@ public class ProcessorManager {
                 .flatMap(Node::findCompilationUnit)
                 .or(() ->
                         Optional.ofNullable(trees.getPath(typeElement))
-                                .flatMap(treePath -> javaParser.parse(treePath.getCompilationUnit().toString()).getResult())
+                                .flatMap(treePath -> {
+                                            ParseResult<CompilationUnit> parseResult = javaParser.parse(treePath.getCompilationUnit().toString());
+                                            if (!parseResult.getProblems().isEmpty()) {
+                                                throw new RuntimeException(parseResult.getProblems().stream()
+                                                        .map(Problem::getMessage)
+                                                        .collect(Collectors.joining(System.lineSeparator())));
+                                            }
+                                            return parseResult.getResult();
+                                        }
+                                )
                                 .or(() -> {
                                             try {
                                                 return typeElementDecompiler.decompileOrEmpty(typeElement)
-                                                        .flatMap(source -> javaParser.parse(source).getResult());
+                                                        .flatMap(source -> {
+                                                                    ParseResult<CompilationUnit> parseResult = javaParser.parse(source);
+                                                                    if (!parseResult.getProblems().isEmpty()) {
+                                                                        throw new RuntimeException(parseResult.getProblems().stream()
+                                                                                .map(Problem::getMessage)
+                                                                                .collect(Collectors.joining(System.lineSeparator())));
+                                                                    }
+                                                                    return parseResult.getResult();
+                                                                }
+                                                        );
                                             } catch (Exception e) {
                                                 throw new RuntimeException(e);
                                             }
