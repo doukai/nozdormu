@@ -49,7 +49,6 @@ import javax.lang.model.util.Elements;
 import javax.tools.Diagnostic;
 import javax.tools.FileObject;
 import javax.tools.StandardLocation;
-import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.Writer;
