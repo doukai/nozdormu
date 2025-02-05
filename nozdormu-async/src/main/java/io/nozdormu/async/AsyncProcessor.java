@@ -593,6 +593,9 @@ public class AsyncProcessor implements ComponentProxyProcessor {
             } else if (statement.isIfStmt()) {
                 buildIfStmt(statementNodeList, i, statement.asIfStmt(), defaultIfEmpty);
                 asyncStatements.add(statement.clone());
+                if (ifStmtLastIsElse(statement.asIfStmt())) {
+                    break;
+                }
             } else if (statement.isForStmt()) {
                 if (statement.asForStmt().getBody().isBlockStmt()) {
                     if (hasAwait(statement.asForStmt().getBody().asBlockStmt().getStatements()) && !hasReturnStmt(statement.asForStmt().getBody().asBlockStmt().getStatements())) {
@@ -817,6 +820,17 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                 return hasAwait(ifStmt.getElseStmt().get().asBlockStmt().getStatements());
             } else if (ifStmt.getElseStmt().get().isIfStmt()) {
                 return ifStmtHasAwait(ifStmt.getElseStmt().get().asIfStmt());
+            }
+        }
+        return false;
+    }
+
+    private boolean ifStmtLastIsElse(IfStmt ifStmt) {
+        if (ifStmt.getElseStmt().isPresent()) {
+            if (ifStmt.getElseStmt().get().isBlockStmt()) {
+                return true;
+            } else {
+                return ifStmtLastIsElse(ifStmt.getElseStmt().get().asIfStmt());
             }
         }
         return false;
