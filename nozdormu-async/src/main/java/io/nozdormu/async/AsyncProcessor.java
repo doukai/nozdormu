@@ -381,9 +381,13 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                         if (hasCheckAwaitIsNull) {
                             flatMap = new MethodCallExpr("switchIfEmpty")
                                     .addArgument(
-                                            new LambdaExpr()
-                                                    .setEnclosingParameters(true)
-                                                    .setBody(new BlockStmt(buildAsyncStatements(getAwaitIsNullStatementList(variableDeclarator.getNameAsString(), lastStatementList), defaultIfEmpty)))
+                                            new MethodCallExpr("defer")
+                                                    .addArgument(
+                                                            new LambdaExpr()
+                                                                    .setEnclosingParameters(true)
+                                                                    .setBody(new BlockStmt(buildAsyncStatements(getAwaitIsNullStatementList(variableDeclarator.getNameAsString(), lastStatementList), defaultIfEmpty)))
+                                                    )
+                                                    .setScope(new NameExpr(Mono.class.getSimpleName()))
                                     )
                                     .setScope(
                                             new MethodCallExpr("flatMap")
@@ -416,9 +420,13 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                         if (hasCheckAwaitIsNull) {
                             flatMap = new MethodCallExpr("switchIfEmpty")
                                     .addArgument(
-                                            new LambdaExpr()
-                                                    .setEnclosingParameters(true)
-                                                    .setBody(new BlockStmt(buildAsyncStatements(getAwaitIsNullStatementList(variableDeclarator.getNameAsString(), lastStatementList), defaultIfEmpty)))
+                                            new MethodCallExpr("defer")
+                                                    .addArgument(
+                                                            new LambdaExpr()
+                                                                    .setEnclosingParameters(true)
+                                                                    .setBody(new BlockStmt(buildAsyncStatements(getAwaitIsNullStatementList(variableDeclarator.getNameAsString(), lastStatementList), defaultIfEmpty)))
+                                                    )
+                                                    .setScope(new NameExpr(Mono.class.getSimpleName()))
                                     )
                                     .setScope(
                                             new MethodCallExpr("flatMap")
@@ -452,9 +460,13 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                         if (hasCheckAwaitIsNull) {
                             doOnSuccess = new MethodCallExpr("switchIfEmpty")
                                     .addArgument(
-                                            new LambdaExpr()
-                                                    .setEnclosingParameters(true)
-                                                    .setBody(new BlockStmt(buildAsyncStatements(getAwaitIsNullStatementList(variableDeclarator.getNameAsString(), lastStatementList), defaultIfEmpty)))
+                                            new MethodCallExpr("defer")
+                                                    .addArgument(
+                                                            new LambdaExpr()
+                                                                    .setEnclosingParameters(true)
+                                                                    .setBody(new BlockStmt(buildAsyncStatements(getAwaitIsNullStatementList(variableDeclarator.getNameAsString(), lastStatementList), defaultIfEmpty)))
+                                                    )
+                                                    .setScope(new NameExpr(Mono.class.getSimpleName()))
                                     )
                                     .setScope(
                                             new MethodCallExpr("doOnSuccess")
@@ -492,9 +504,13 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                         if (hasCheckAwaitIsNull) {
                             flatMap = new MethodCallExpr("switchIfEmpty")
                                     .addArgument(
-                                            new LambdaExpr()
-                                                    .setEnclosingParameters(true)
-                                                    .setBody(new BlockStmt(buildAsyncStatements(getAwaitIsNullStatementList(variableDeclarator.getNameAsString(), lastStatementList), defaultIfEmpty)))
+                                            new MethodCallExpr("defer")
+                                                    .addArgument(
+                                                            new LambdaExpr()
+                                                                    .setEnclosingParameters(true)
+                                                                    .setBody(new BlockStmt(buildAsyncStatements(getAwaitIsNullStatementList(variableDeclarator.getNameAsString(), lastStatementList), defaultIfEmpty)))
+                                                    )
+                                                    .setScope(new NameExpr(Mono.class.getSimpleName()))
                                     )
                                     .setScope(
                                             new MethodCallExpr("flatMap")
@@ -533,9 +549,13 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                         if (hasCheckAwaitIsNull) {
                             flatMap = new MethodCallExpr("switchIfEmpty")
                                     .addArgument(
-                                            new LambdaExpr()
-                                                    .setEnclosingParameters(true)
-                                                    .setBody(new BlockStmt(buildAsyncStatements(getAwaitIsNullStatementList(variableDeclarator.getNameAsString(), lastStatementList), defaultIfEmpty)))
+                                            new MethodCallExpr("defer")
+                                                    .addArgument(
+                                                            new LambdaExpr()
+                                                                    .setEnclosingParameters(true)
+                                                                    .setBody(new BlockStmt(buildAsyncStatements(getAwaitIsNullStatementList(variableDeclarator.getNameAsString(), lastStatementList), defaultIfEmpty)))
+                                                    )
+                                                    .setScope(new NameExpr(Mono.class.getSimpleName()))
                                     )
                                     .setScope(
                                             new MethodCallExpr("flatMap")
@@ -575,9 +595,13 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                         if (hasCheckAwaitIsNull) {
                             doOnSuccess = new MethodCallExpr("switchIfEmpty")
                                     .addArgument(
-                                            new LambdaExpr()
-                                                    .setEnclosingParameters(true)
-                                                    .setBody(new BlockStmt(buildAsyncStatements(getAwaitIsNullStatementList(variableDeclarator.getNameAsString(), lastStatementList), defaultIfEmpty)))
+                                            new MethodCallExpr("defer")
+                                                    .addArgument(
+                                                            new LambdaExpr()
+                                                                    .setEnclosingParameters(true)
+                                                                    .setBody(new BlockStmt(buildAsyncStatements(getAwaitIsNullStatementList(variableDeclarator.getNameAsString(), lastStatementList), defaultIfEmpty)))
+                                                    )
+                                                    .setScope(new NameExpr(Mono.class.getSimpleName()))
                                     )
                                     .setScope(
                                             new MethodCallExpr("doOnSuccess")
@@ -639,9 +663,13 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                         if (hasCheckAwaitIsNull) {
                             flatMap = new MethodCallExpr("switchIfEmpty")
                                     .addArgument(
-                                            new LambdaExpr()
-                                                    .setEnclosingParameters(true)
-                                                    .setBody(new BlockStmt(buildAsyncStatements(getAwaitIsNullStatementList(variableDeclarator.getNameAsString(), lastStatementList), defaultIfEmpty)))
+                                            new MethodCallExpr("defer")
+                                                    .addArgument(
+                                                            new LambdaExpr()
+                                                                    .setEnclosingParameters(true)
+                                                                    .setBody(new BlockStmt(buildAsyncStatements(getAwaitIsNullStatementList(variableDeclarator.getNameAsString(), lastStatementList), defaultIfEmpty)))
+                                                    )
+                                                    .setScope(new NameExpr(Mono.class.getSimpleName()))
                                     )
                                     .setScope(
                                             new MethodCallExpr("flatMap")
@@ -690,9 +718,13 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                         if (hasCheckAwaitIsNull) {
                             flatMap = new MethodCallExpr("switchIfEmpty")
                                     .addArgument(
-                                            new LambdaExpr()
-                                                    .setEnclosingParameters(true)
-                                                    .setBody(new BlockStmt(buildAsyncStatements(getAwaitIsNullStatementList(variableDeclarator.getNameAsString(), lastStatementList), defaultIfEmpty)))
+                                            new MethodCallExpr("defer")
+                                                    .addArgument(
+                                                            new LambdaExpr()
+                                                                    .setEnclosingParameters(true)
+                                                                    .setBody(new BlockStmt(buildAsyncStatements(getAwaitIsNullStatementList(variableDeclarator.getNameAsString(), lastStatementList), defaultIfEmpty)))
+                                                    )
+                                                    .setScope(new NameExpr(Mono.class.getSimpleName()))
                                     )
                                     .setScope(
                                             new MethodCallExpr("flatMap")
@@ -742,9 +774,13 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                         if (hasCheckAwaitIsNull) {
                             doOnSuccess = new MethodCallExpr("switchIfEmpty")
                                     .addArgument(
-                                            new LambdaExpr()
-                                                    .setEnclosingParameters(true)
-                                                    .setBody(new BlockStmt(buildAsyncStatements(getAwaitIsNullStatementList(variableDeclarator.getNameAsString(), lastStatementList), defaultIfEmpty)))
+                                            new MethodCallExpr("defer")
+                                                    .addArgument(
+                                                            new LambdaExpr()
+                                                                    .setEnclosingParameters(true)
+                                                                    .setBody(new BlockStmt(buildAsyncStatements(getAwaitIsNullStatementList(variableDeclarator.getNameAsString(), lastStatementList), defaultIfEmpty)))
+                                                    )
+                                                    .setScope(new NameExpr(Mono.class.getSimpleName()))
                                     )
                                     .setScope(
                                             new MethodCallExpr("doOnSuccess")
@@ -1024,7 +1060,6 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                             statement.asIfStmt().getCondition().asBinaryExpr().getRight().asNameExpr().getNameAsString().equals(variableName) ||
                                             statement.asIfStmt().getCondition().asBinaryExpr().getLeft().isNameExpr() &&
                                                     statement.asIfStmt().getCondition().asBinaryExpr().getLeft().asNameExpr().getNameAsString().equals(variableName))) {
-
                                 if (statement.asIfStmt().getCondition().asBinaryExpr().getOperator().equals(EQUALS)) {
                                     return statement.asIfStmt().getThenStmt().asBlockStmt().getStatements().stream();
                                 } else {
