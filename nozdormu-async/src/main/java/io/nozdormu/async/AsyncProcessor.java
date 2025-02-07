@@ -104,9 +104,17 @@ public class AsyncProcessor implements ComponentProxyProcessor {
             List<Statement> lastStatementList = statementNodeList.subList(i + 1, statementNodeList.size());
             if (statement.isExpressionStmt() &&
                     statement.asExpressionStmt().getExpression().isMethodCallExpr() &&
-                    statement.asExpressionStmt().getExpression().asMethodCallExpr().getNameAsString().equals("await")
+                    (statement.asExpressionStmt().getExpression().asMethodCallExpr().getNameAsString().equals("await") ||
+                            processorManager.getMethodDeclaration(statement.asExpressionStmt().getExpression().asMethodCallExpr()).isPresent() &&
+                                    processorManager.getMethodDeclaration(statement.asExpressionStmt().getExpression().asMethodCallExpr()).get().isAnnotationPresent(Async.class))
             ) {
-                MethodCallExpr methodCallExpr = statement.asExpressionStmt().getExpression().asMethodCallExpr().getArgument(0).asMethodCallExpr();
+                MethodCallExpr methodCallExpr;
+                if (statement.asExpressionStmt().getExpression().asMethodCallExpr().getNameAsString().equals("await")) {
+                    methodCallExpr = statement.asExpressionStmt().getExpression().asMethodCallExpr().getArgument(0).asMethodCallExpr();
+                } else {
+                    methodCallExpr = statement.asExpressionStmt().getExpression().asMethodCallExpr();
+                }
+
                 String methodDeclarationReturnTypeName = processorManager.resolveMethodDeclarationReturnTypeQualifiedName(methodCallExpr);
                 if (methodCallExpr.getScope().isPresent() && processorManager.calculateType(methodCallExpr.getScope().get()).asReferenceType().getQualifiedName().equals(Provider.class.getCanonicalName()) ||
                         methodDeclarationReturnTypeName.equals(Mono.class.getCanonicalName())) {
@@ -289,6 +297,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                             );
 
                     methodCallExpr.getScope().ifPresent(asyncMethodCallExpr::setScope);
+
                     if (lastStatementList.isEmpty()) {
                         MethodCallExpr then = new MethodCallExpr("then")
                                 .setScope(asyncMethodCallExpr);
@@ -368,11 +377,20 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                     statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariables().size() == 1 &&
                     statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariable(0).getInitializer().isPresent() &&
                     statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariable(0).getInitializer().get().isMethodCallExpr() &&
-                    statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariable(0).getInitializer().get().asMethodCallExpr().getNameAsString().equals("await")
+                    (statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariable(0).getInitializer().get().asMethodCallExpr().getNameAsString().equals("await") ||
+                            processorManager.getMethodDeclaration(statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariable(0).getInitializer().get().asMethodCallExpr()).isPresent() &&
+                                    processorManager.getMethodDeclaration(statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariable(0).getInitializer().get().asMethodCallExpr()).get().isAnnotationPresent(Async.class))
             ) {
                 VariableDeclarator variableDeclarator = statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariable(0);
                 boolean hasCheckAwaitIsNull = hasCheckAwaitIsNull(variableDeclarator.getNameAsString(), lastStatementList);
-                MethodCallExpr methodCallExpr = variableDeclarator.getInitializer().get().asMethodCallExpr().getArgument(0).asMethodCallExpr();
+
+                MethodCallExpr methodCallExpr;
+                if (variableDeclarator.getInitializer().get().asMethodCallExpr().getNameAsString().equals("await")) {
+                    methodCallExpr = variableDeclarator.getInitializer().get().asMethodCallExpr().getArgument(0).asMethodCallExpr();
+                } else {
+                    methodCallExpr = variableDeclarator.getInitializer().get().asMethodCallExpr();
+                }
+
                 String methodDeclarationReturnTypeName = processorManager.resolveMethodDeclarationReturnTypeQualifiedName(methodCallExpr);
                 if (methodCallExpr.getScope().isPresent() && processorManager.calculateType(methodCallExpr.getScope().get()).asReferenceType().getQualifiedName().equals(Provider.class.getCanonicalName()) ||
                         methodDeclarationReturnTypeName.equals(Mono.class.getCanonicalName())) {
@@ -655,7 +673,6 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                             )
                                             .collect(Collectors.toCollection(NodeList::new))
                             );
-
                     methodCallExpr.getScope().ifPresent(asyncMethodCallExpr::setScope);
 
                     if (hasReturnStmt) {
@@ -954,10 +971,6 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                     }
                 }
                 asyncStatements.add(statement.clone());
-            } else if (statement.isReturnStmt()) {
-                buildAsyncReturnExpression(statement.asReturnStmt())
-                        .ifPresent(expression -> statement.asReturnStmt().setExpression(expression));
-                asyncStatements.add(statement.clone());
             } else if (statement.isThrowStmt()) {
                 asyncStatements.add(
                         new ReturnStmt(
@@ -968,6 +981,11 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                         .setScope(new NameExpr(Mono.class.getSimpleName()))
                         )
                 );
+                break;
+            } else if (statement.isReturnStmt()) {
+                buildAsyncReturnExpression(statement.asReturnStmt())
+                        .ifPresent(expression -> statement.asReturnStmt().setExpression(expression));
+                asyncStatements.add(statement.clone());
             } else {
                 asyncStatements.add(statement.clone());
             }
@@ -1006,13 +1024,16 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                             if (statement.isExpressionStmt() &&
                                     (
                                             statement.asExpressionStmt().getExpression().isMethodCallExpr() &&
-                                                    statement.asExpressionStmt().getExpression().asMethodCallExpr().getNameAsString().equals("await") ||
+                                                    (statement.asExpressionStmt().getExpression().asMethodCallExpr().getNameAsString().equals("await") ||
+                                                            processorManager.getMethodDeclaration(statement.asExpressionStmt().getExpression().asMethodCallExpr()).isPresent() &&
+                                                                    processorManager.getMethodDeclaration(statement.asExpressionStmt().getExpression().asMethodCallExpr()).get().isAnnotationPresent(Async.class)) ||
                                                     statement.asExpressionStmt().getExpression().isVariableDeclarationExpr() &&
                                                             statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariables().size() == 1 &&
                                                             statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariable(0).getInitializer().isPresent() &&
                                                             statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariable(0).getInitializer().get().isMethodCallExpr() &&
-                                                            statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariable(0).getInitializer().get().asMethodCallExpr().getNameAsString().equals("await")
-                                    )
+                                                            (statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariable(0).getInitializer().get().asMethodCallExpr().getNameAsString().equals("await") ||
+                                                                    processorManager.getMethodDeclaration(statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariable(0).getInitializer().get().asMethodCallExpr()).isPresent() &&
+                                                                            processorManager.getMethodDeclaration(statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariable(0).getInitializer().get().asMethodCallExpr()).get().isAnnotationPresent(Async.class)))
                             ) {
                                 return true;
                             } else if (statement.isBlockStmt()) {
@@ -1109,7 +1130,9 @@ public class AsyncProcessor implements ComponentProxyProcessor {
         return returnStmt.getExpression().stream()
                 .anyMatch(expression ->
                         expression.isMethodCallExpr() &&
-                                expression.asMethodCallExpr().getNameAsString().equals("await")
+                                (expression.asMethodCallExpr().getNameAsString().equals("await") ||
+                                        processorManager.getMethodDeclaration(expression.asMethodCallExpr()).isPresent() &&
+                                                processorManager.getMethodDeclaration(expression.asMethodCallExpr()).get().isAnnotationPresent(Async.class))
                 );
     }
 
@@ -1217,8 +1240,35 @@ public class AsyncProcessor implements ComponentProxyProcessor {
         return returnStmt.getExpression()
                 .map(expression -> {
                             if (expression.isMethodCallExpr()) {
-                                if (expression.asMethodCallExpr().getNameAsString().equals("await")) {
-                                    return expression.asMethodCallExpr().getArgument(0).clone();
+                                if (expression.asMethodCallExpr().getNameAsString().equals("await") ||
+                                        processorManager.getMethodDeclaration(expression.asMethodCallExpr()).isPresent() &&
+                                                processorManager.getMethodDeclaration(expression.asMethodCallExpr()).get().isAnnotationPresent(Async.class)) {
+
+                                    MethodCallExpr methodCallExpr;
+                                    if (expression.asMethodCallExpr().getNameAsString().equals("await")) {
+                                        methodCallExpr = expression.asMethodCallExpr().getArgument(0).asMethodCallExpr().clone();
+                                    } else {
+                                        methodCallExpr = expression.asMethodCallExpr().clone();
+                                    }
+
+                                    String asyncMethodName = Stream
+                                            .concat(
+                                                    Stream.of(methodCallExpr.getNameAsString() + ASYNC_METHOD_NAME_SUFFIX),
+                                                    processorManager.resolveMethodDeclarationParameterTypeNames(methodCallExpr)
+                                            )
+                                            .collect(Collectors.joining("_"));
+
+                                    MethodCallExpr asyncMethodCallExpr = new MethodCallExpr("async")
+                                            .setArguments(
+                                                    Stream
+                                                            .concat(
+                                                                    Stream.of(new StringLiteralExpr(asyncMethodName)),
+                                                                    methodCallExpr.getArguments().stream()
+                                                            )
+                                                            .collect(Collectors.toCollection(NodeList::new))
+                                            );
+                                    methodCallExpr.getScope().ifPresent(asyncMethodCallExpr::setScope);
+                                    return asyncMethodCallExpr;
                                 }
                                 String methodDeclarationReturnTypeName = processorManager.resolveMethodDeclarationReturnTypeQualifiedName(expression.asMethodCallExpr());
                                 if (methodDeclarationReturnTypeName.equals(Mono.class.getCanonicalName())) {

@@ -397,12 +397,59 @@ public class ProcessorManager {
     public ResolvedType calculateType(Expression expression) {
         try {
             return javaSymbolSolver.calculateType(expression);
-        } catch (UnsolvedSymbolException | IllegalArgumentException e) {
+        } catch (UnsolvedSymbolException | IllegalArgumentException | IllegalStateException e) {
             try {
                 return findResolvedType(expression);
-            } catch (UnsupportedOperationException | IllegalArgumentException ignored) {
+            } catch (UnsupportedOperationException | IllegalArgumentException | IllegalStateException ignored) {
             }
             throw e;
+        }
+    }
+
+    public Optional<ResolvedType> tryCalculateType(Expression expression) {
+        try {
+            return Optional.of(javaSymbolSolver.calculateType(expression));
+        } catch (UnsolvedSymbolException | IllegalArgumentException | IllegalStateException e) {
+            try {
+                return Optional.of(findResolvedType(expression));
+            } catch (UnsupportedOperationException | IllegalArgumentException | IllegalStateException ignored) {
+            }
+        }
+        return Optional.empty();
+    }
+
+    public Optional<MethodDeclaration> getMethodDeclaration(MethodCallExpr methodCallExpr) {
+        if (methodCallExpr.hasScope() && !methodCallExpr.getScope().get().isThisExpr()) {
+            return tryCalculateType(methodCallExpr.getScope().get()).stream()
+                    .flatMap(resolvedType -> resolvedType.asReferenceType().getAllMethods().stream())
+                    .filter(resolvedMethodDeclaration -> resolvedMethodDeclaration.getName().equals(methodCallExpr.getNameAsString()))
+                    .filter(resolvedMethodDeclaration -> resolvedMethodDeclaration.getNumberOfParams() == methodCallExpr.getArguments().size())
+                    .findFirst()
+                    .flatMap(resolvedMethodDeclaration -> resolvedMethodDeclaration.toAst(MethodDeclaration.class));
+        } else {
+            return methodCallExpr.findCompilationUnit()
+                    .flatMap(this::getPublicClassOrInterfaceDeclaration).stream()
+                    .flatMap(classOrInterfaceDeclaration -> classOrInterfaceDeclaration.getMethods().stream())
+                    .filter(methodDeclaration -> methodDeclaration.getNameAsString().equals(methodCallExpr.getNameAsString()))
+                    .filter(methodDeclaration -> methodDeclaration.getParameters().size() == methodCallExpr.getArguments().size())
+                    .filter(methodDeclaration ->
+                            IntStream.range(0, methodCallExpr.getArguments().size())
+                                    .allMatch(index -> {
+                                                try {
+                                                    ResolvedType resolvedType = calculateType(methodCallExpr.getArgument(index));
+                                                    if (resolvedType.isPrimitive() && methodDeclaration.getParameter(index).getType().isPrimitiveType()) {
+                                                        return resolvedType.asPrimitive().name().toLowerCase().equals(methodDeclaration.getParameter(index).getType().asString());
+                                                    } else if (resolvedType.isReferenceType() && methodDeclaration.getParameter(index).getType().isReferenceType()) {
+                                                        return getResolvedType(methodDeclaration.getParameter(index).getType()).isAssignableBy(resolvedType.asReferenceType());
+                                                    }
+                                                    return true;
+                                                } catch (UnsolvedSymbolException | IllegalArgumentException e1) {
+                                                    return true;
+                                                }
+                                            }
+                                    )
+                    )
+                    .findFirst();
         }
     }
 
