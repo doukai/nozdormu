@@ -370,8 +370,7 @@ public class ProcessorManager {
         try {
             ResolvedReferenceType resolvedReferenceType = getResolvedType(type).asReferenceType();
             return resolvedReferenceType.getQualifiedName();
-        } catch (UnsolvedSymbolException | UnsupportedOperationException | IllegalArgumentException |
-                 IllegalStateException e) {
+        } catch (RuntimeException e) {
             return type.getNameAsString();
         }
     }
@@ -387,8 +386,7 @@ public class ProcessorManager {
     public ResolvedType getResolvedType(Type type) {
         try {
             return javaSymbolSolver.toResolvedType(type, ResolvedReferenceType.class);
-        } catch (UnsolvedSymbolException | UnsupportedOperationException | IllegalArgumentException |
-                 IllegalStateException e) {
+        } catch (RuntimeException e) {
             if (type.isClassOrInterfaceType() && type.hasScope()) {
                 return getResolvedInnerType(type.asClassOrInterfaceType());
             }
@@ -399,12 +397,10 @@ public class ProcessorManager {
     public ResolvedType calculateType(Expression expression) {
         try {
             return javaSymbolSolver.calculateType(expression);
-        } catch (UnsolvedSymbolException | UnsupportedOperationException | IllegalArgumentException |
-                 IllegalStateException e) {
+        } catch (RuntimeException e) {
             try {
                 return findResolvedType(expression);
-            } catch (UnsolvedSymbolException | UnsupportedOperationException | IllegalArgumentException |
-                     IllegalStateException ignored) {
+            } catch (RuntimeException ignored) {
             }
             throw e;
         }
@@ -412,8 +408,11 @@ public class ProcessorManager {
 
     public Optional<MethodDeclaration> getMethodDeclaration(MethodCallExpr methodCallExpr) {
         if (methodCallExpr.hasScope() && !methodCallExpr.getScope().get().isThisExpr()) {
-            return calculateType(methodCallExpr.getScope().get()).asReferenceType().getAllMethods().stream()
-                    .flatMap(resolvedMethodDeclaration -> resolvedMethodDeclaration.toAst(MethodDeclaration.class).stream())
+            ResolvedReferenceType referenceType = calculateType(methodCallExpr.getScope().get()).asReferenceType();
+            ClassOrInterfaceDeclaration classOrInterfaceDeclaration = referenceType.getTypeDeclaration()
+                    .flatMap(resolvedReferenceTypeDeclaration -> resolvedReferenceTypeDeclaration.toAst(ClassOrInterfaceDeclaration.class))
+                    .orElseGet(() -> getPublicClassOrInterfaceDeclarationOrError(getCompilationUnitOrError(referenceType.getQualifiedName())));
+            return classOrInterfaceDeclaration.getMethods().stream()
                     .filter(methodDeclaration -> methodDeclaration.getNameAsString().equals(methodCallExpr.getNameAsString()))
                     .filter(methodDeclaration -> methodDeclaration.getParameters().size() == methodCallExpr.getArguments().size())
                     .filter(methodDeclaration ->
@@ -427,9 +426,7 @@ public class ProcessorManager {
                                                         return getResolvedType(methodDeclaration.getParameter(index).getType()).isAssignableBy(resolvedType.asReferenceType());
                                                     }
                                                     return true;
-                                                } catch (UnsolvedSymbolException | UnsupportedOperationException |
-                                                         IllegalArgumentException |
-                                                         IllegalStateException e) {
+                                                } catch (RuntimeException e) {
                                                     return true;
                                                 }
                                             }
@@ -453,9 +450,7 @@ public class ProcessorManager {
                                                         return getResolvedType(methodDeclaration.getParameter(index).getType()).isAssignableBy(resolvedType.asReferenceType());
                                                     }
                                                     return true;
-                                                } catch (UnsolvedSymbolException | UnsupportedOperationException |
-                                                         IllegalArgumentException |
-                                                         IllegalStateException e) {
+                                                } catch (RuntimeException e) {
                                                     return true;
                                                 }
                                             }
@@ -506,8 +501,7 @@ public class ProcessorManager {
     public String resolveMethodDeclarationReturnTypeQualifiedName(MethodCallExpr methodCallExpr) {
         try {
             return getQualifiedName(calculateType(methodCallExpr));
-        } catch (UnsolvedSymbolException | UnsupportedOperationException | IllegalArgumentException |
-                 IllegalStateException e) {
+        } catch (RuntimeException e) {
             return getMethodDeclaration(methodCallExpr)
                     .map(methodDeclaration -> getQualifiedName(methodDeclaration.getType()))
                     .orElseThrow(() -> new UnsolvedSymbolException(methodCallExpr.toString()));

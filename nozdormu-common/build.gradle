@@ -13,7 +13,7 @@ repositories {
 
 dependencies {
     api project(':nozdormu-decompiler')
-    api 'com.github.javaparser:javaparser-symbol-solver-core:3.25.3'
+    api 'com.github.javaparser:javaparser-symbol-solver-core:3.26.3'
 
     implementation project(':nozdormu-spi')
 
