@@ -1247,7 +1247,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                             if (expression.isMethodCallExpr()) {
                                 if (expression.asMethodCallExpr().getNameAsString().equals("await") &&
                                         expression.asMethodCallExpr().getArgument(0).isMethodCallExpr() ||
-                                        processorManager.getMethodDeclaration(expression.asMethodCallExpr()).isPresent() &&
+                                         processorManager.getMethodDeclaration(expression.asMethodCallExpr()).isPresent() &&
                                                 processorManager.getMethodDeclaration(expression.asMethodCallExpr()).get().isAnnotationPresent(Async.class)) {
 
                                     MethodCallExpr methodCallExpr;
@@ -1275,6 +1275,8 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                             );
                                     methodCallExpr.getScope().ifPresent(asyncMethodCallExpr::setScope);
                                     return asyncMethodCallExpr;
+                                } else if (expression.asMethodCallExpr().getNameAsString().equals("await") && expression.asMethodCallExpr().getArgument(0).isNameExpr()) {
+                                    return expression.asMethodCallExpr().getArgument(0).clone();
                                 }
                                 String methodDeclarationReturnTypeName = processorManager.resolveMethodDeclarationReturnTypeQualifiedName(expression.asMethodCallExpr());
                                 if (methodDeclarationReturnTypeName.equals(Mono.class.getCanonicalName())) {
