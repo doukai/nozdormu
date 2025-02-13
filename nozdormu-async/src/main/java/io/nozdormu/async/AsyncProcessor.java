@@ -88,7 +88,35 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                                                         )
                                                                         .map(memberValuePair -> memberValuePair.getValue().asStringLiteralExpr().asString())
                                                                         .orElse(null);
-                                                                asyncMethodDeclaration.createBody().setStatements(buildAsyncStatements(methodBody.getStatements(), defaultIfEmpty));
+                                                                NodeList<Statement> statements = buildAsyncStatements(methodBody.getStatements(), defaultIfEmpty);
+                                                                if (methodDeclaration.getType().isVoidType()) {
+                                                                    asyncMethodDeclaration.createBody().setStatements(statements);
+                                                                } else {
+                                                                    asyncMethodDeclaration.createBody().setStatements(
+                                                                            statements.stream()
+                                                                                    .map(statement -> {
+                                                                                                if (statement.isReturnStmt()) {
+                                                                                                    return statement.asReturnStmt().getExpression()
+                                                                                                            .map(expression ->
+                                                                                                                    (Statement) new ReturnStmt(
+                                                                                                                            new MethodCallExpr("map")
+                                                                                                                                    .addArgument(
+                                                                                                                                            new LambdaExpr()
+                                                                                                                                                    .addParameter(new Parameter(new UnknownType(), "object"))
+                                                                                                                                                    .setBody(new ExpressionStmt(new CastExpr().setType(methodDeclaration.getType()).setExpression(new NameExpr("object"))))
+                                                                                                                                    )
+                                                                                                                                    .setScope(expression)
+                                                                                                                    )
+                                                                                                            )
+                                                                                                            .orElse(statement);
+                                                                                                } else {
+                                                                                                    return statement;
+                                                                                                }
+                                                                                            }
+                                                                                    )
+                                                                                    .collect(Collectors.toCollection(NodeList::new))
+                                                                    );
+                                                                }
                                                             }
                                                     )
                                     );
