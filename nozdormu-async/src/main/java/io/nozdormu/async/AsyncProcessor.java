@@ -72,10 +72,11 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                                                                         )
                                                                         )
                                                                         .collect(Collectors.joining("_"));
+
                                                                 MethodDeclaration asyncMethodDeclaration = new MethodDeclaration().setName(asyncMethodName)
                                                                         .setModifiers(methodDeclaration.getModifiers())
                                                                         .setParameters(methodDeclaration.getParameters())
-                                                                        .setType(new ClassOrInterfaceType().setName(Mono.class.getSimpleName()).setTypeArguments(methodDeclaration.getType()));
+                                                                        .setType(new ClassOrInterfaceType().setName(Mono.class.getSimpleName()).setTypeArguments(methodDeclaration.getType().isPrimitiveType() ? methodDeclaration.getType().asPrimitiveType().toBoxedType() : methodDeclaration.getType()));
                                                                 componentProxyClassDeclaration.addMember(asyncMethodDeclaration);
                                                                 methodDeclaration.getTypeParameters().forEach(asyncMethodDeclaration::addTypeParameter);
 
@@ -103,7 +104,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                                                                                                                     .addArgument(
                                                                                                                                             new LambdaExpr()
                                                                                                                                                     .addParameter(new Parameter(new UnknownType(), "object"))
-                                                                                                                                                    .setBody(new ExpressionStmt(new CastExpr().setType(methodDeclaration.getType()).setExpression(new NameExpr("object"))))
+                                                                                                                                                    .setBody(new ExpressionStmt(new CastExpr().setType(methodDeclaration.getType().isPrimitiveType() ? methodDeclaration.getType().asPrimitiveType().toBoxedType() : methodDeclaration.getType()).setExpression(new NameExpr("object"))))
                                                                                                                                     )
                                                                                                                                     .setScope(expression)
                                                                                                                     )
@@ -153,21 +154,17 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                         MethodCallExpr then = new MethodCallExpr("then")
                                 .setScope(methodCallExpr);
                         statement.getParentNode()
-                                .flatMap(this::getParentReturnOrThrowStatement)
-                                .ifPresent(parentStatement -> {
-                                            if (parentStatement.isThrowStmt()) {
-                                                then.addArgument(
-                                                        new MethodCallExpr("error")
-                                                                .addArgument(
-                                                                        statement.asThrowStmt().getExpression()
-                                                                )
-                                                                .setScope(new NameExpr(Mono.class.getSimpleName()))
-                                                );
-                                            } else {
-                                                buildAsyncReturnExpression(parentStatement.asReturnStmt())
-                                                        .ifPresent(then::addArgument);
-                                            }
-                                        }
+                                .flatMap(node -> getParentReturnOrThrowStatementList(node, defaultIfEmpty))
+                                .ifPresent(nodeList ->
+                                        then.addArgument(
+                                                new MethodCallExpr("defer")
+                                                        .addArgument(
+                                                                new LambdaExpr()
+                                                                        .setEnclosingParameters(true)
+                                                                        .setBody(new BlockStmt(nodeList))
+                                                        )
+                                                        .setScope(new NameExpr(Mono.class.getSimpleName()))
+                                        )
                                 );
                         if (defaultIfEmpty != null) {
                             MethodCallExpr defaultIfEmptyMethod = new MethodCallExpr("defaultIfEmpty")
@@ -248,21 +245,17 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                                 .setScope(methodCallExpr)
                                 );
                         statement.getParentNode()
-                                .flatMap(this::getParentReturnOrThrowStatement)
-                                .ifPresent(parentStatement -> {
-                                            if (parentStatement.isThrowStmt()) {
-                                                then.addArgument(
-                                                        new MethodCallExpr("error")
-                                                                .addArgument(
-                                                                        statement.asThrowStmt().getExpression()
-                                                                )
-                                                                .setScope(new NameExpr(Mono.class.getSimpleName()))
-                                                );
-                                            } else {
-                                                buildAsyncReturnExpression(parentStatement.asReturnStmt())
-                                                        .ifPresent(then::addArgument);
-                                            }
-                                        }
+                                .flatMap(node -> getParentReturnOrThrowStatementList(node, defaultIfEmpty))
+                                .ifPresent(nodeList ->
+                                        then.addArgument(
+                                                new MethodCallExpr("defer")
+                                                        .addArgument(
+                                                                new LambdaExpr()
+                                                                        .setEnclosingParameters(true)
+                                                                        .setBody(new BlockStmt(nodeList))
+                                                        )
+                                                        .setScope(new NameExpr(Mono.class.getSimpleName()))
+                                        )
                                 );
                         if (defaultIfEmpty != null) {
                             MethodCallExpr defaultIfEmptyMethod = new MethodCallExpr("defaultIfEmpty")
@@ -367,21 +360,17 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                         MethodCallExpr then = new MethodCallExpr("then")
                                 .setScope(asyncMethodCallExpr);
                         statement.getParentNode()
-                                .flatMap(this::getParentReturnOrThrowStatement)
-                                .ifPresent(parentStatement -> {
-                                            if (parentStatement.isThrowStmt()) {
-                                                then.addArgument(
-                                                        new MethodCallExpr("error")
-                                                                .addArgument(
-                                                                        statement.asThrowStmt().getExpression()
-                                                                )
-                                                                .setScope(new NameExpr(Mono.class.getSimpleName()))
-                                                );
-                                            } else {
-                                                buildAsyncReturnExpression(parentStatement.asReturnStmt())
-                                                        .ifPresent(then::addArgument);
-                                            }
-                                        }
+                                .flatMap(node -> getParentReturnOrThrowStatementList(node, defaultIfEmpty))
+                                .ifPresent(nodeList ->
+                                        then.addArgument(
+                                                new MethodCallExpr("defer")
+                                                        .addArgument(
+                                                                new LambdaExpr()
+                                                                        .setEnclosingParameters(true)
+                                                                        .setBody(new BlockStmt(nodeList))
+                                                        )
+                                                        .setScope(new NameExpr(Mono.class.getSimpleName()))
+                                        )
                                 );
                         if (defaultIfEmpty != null) {
                             MethodCallExpr defaultIfEmptyMethod = new MethodCallExpr("defaultIfEmpty")
@@ -475,6 +464,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                 }
 
                 String methodDeclarationReturnTypeName = processorManager.resolveMethodDeclarationReturnTypeQualifiedName(methodCallExpr);
+                String methodDeclarationReturnDescribe = processorManager.resolveMethodDeclarationReturnTypeDescribe(methodCallExpr);
                 if (methodCallExpr.getScope().isPresent() && processorManager.calculateType(methodCallExpr.getScope().get()).asReferenceType().getQualifiedName().equals(Provider.class.getCanonicalName()) ||
                         methodDeclarationReturnTypeName.equals(Mono.class.getCanonicalName())) {
                     if (hasReturnOrThrowStmt) {
@@ -550,21 +540,17 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                         MethodCallExpr then = new MethodCallExpr("then")
                                 .setScope(flatMap);
                         statement.getParentNode()
-                                .flatMap(this::getParentReturnOrThrowStatement)
-                                .ifPresent(parentStatement -> {
-                                            if (parentStatement.isThrowStmt()) {
-                                                then.addArgument(
-                                                        new MethodCallExpr("error")
-                                                                .addArgument(
-                                                                        statement.asThrowStmt().getExpression()
-                                                                )
-                                                                .setScope(new NameExpr(Mono.class.getSimpleName()))
-                                                );
-                                            } else {
-                                                buildAsyncReturnExpression(parentStatement.asReturnStmt())
-                                                        .ifPresent(then::addArgument);
-                                            }
-                                        }
+                                .flatMap(node -> getParentReturnOrThrowStatementList(node, defaultIfEmpty))
+                                .ifPresent(nodeList ->
+                                        then.addArgument(
+                                                new MethodCallExpr("defer")
+                                                        .addArgument(
+                                                                new LambdaExpr()
+                                                                        .setEnclosingParameters(true)
+                                                                        .setBody(new BlockStmt(nodeList))
+                                                        )
+                                                        .setScope(new NameExpr(Mono.class.getSimpleName()))
+                                        )
                                 );
                         if (defaultIfEmpty != null) {
                             MethodCallExpr defaultIfEmptyMethod = new MethodCallExpr("defaultIfEmpty")
@@ -609,21 +595,17 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                         MethodCallExpr then = new MethodCallExpr("then")
                                 .setScope(doOnSuccess);
                         statement.getParentNode()
-                                .flatMap(this::getParentReturnOrThrowStatement)
-                                .ifPresent(parentStatement -> {
-                                            if (parentStatement.isThrowStmt()) {
-                                                then.addArgument(
-                                                        new MethodCallExpr("error")
-                                                                .addArgument(
-                                                                        statement.asThrowStmt().getExpression()
-                                                                )
-                                                                .setScope(new NameExpr(Mono.class.getSimpleName()))
-                                                );
-                                            } else {
-                                                buildAsyncReturnExpression(parentStatement.asReturnStmt())
-                                                        .ifPresent(then::addArgument);
-                                            }
-                                        }
+                                .flatMap(node -> getParentReturnOrThrowStatementList(node, defaultIfEmpty))
+                                .ifPresent(nodeList ->
+                                        then.addArgument(
+                                                new MethodCallExpr("defer")
+                                                        .addArgument(
+                                                                new LambdaExpr()
+                                                                        .setEnclosingParameters(true)
+                                                                        .setBody(new BlockStmt(nodeList))
+                                                        )
+                                                        .setScope(new NameExpr(Mono.class.getSimpleName()))
+                                        )
                                 );
                         if (defaultIfEmpty != null) {
                             MethodCallExpr defaultIfEmptyMethod = new MethodCallExpr("defaultIfEmpty")
@@ -721,21 +703,17 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                         MethodCallExpr then = new MethodCallExpr("then")
                                 .setScope(flatMap);
                         statement.getParentNode()
-                                .flatMap(this::getParentReturnOrThrowStatement)
-                                .ifPresent(parentStatement -> {
-                                            if (parentStatement.isThrowStmt()) {
-                                                then.addArgument(
-                                                        new MethodCallExpr("error")
-                                                                .addArgument(
-                                                                        statement.asThrowStmt().getExpression()
-                                                                )
-                                                                .setScope(new NameExpr(Mono.class.getSimpleName()))
-                                                );
-                                            } else {
-                                                buildAsyncReturnExpression(parentStatement.asReturnStmt())
-                                                        .ifPresent(then::addArgument);
-                                            }
-                                        }
+                                .flatMap(node -> getParentReturnOrThrowStatementList(node, defaultIfEmpty))
+                                .ifPresent(nodeList ->
+                                        then.addArgument(
+                                                new MethodCallExpr("defer")
+                                                        .addArgument(
+                                                                new LambdaExpr()
+                                                                        .setEnclosingParameters(true)
+                                                                        .setBody(new BlockStmt(nodeList))
+                                                        )
+                                                        .setScope(new NameExpr(Mono.class.getSimpleName()))
+                                        )
                                 );
                         if (defaultIfEmpty != null) {
                             MethodCallExpr defaultIfEmptyMethod = new MethodCallExpr("defaultIfEmpty")
@@ -785,21 +763,17 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                         MethodCallExpr then = new MethodCallExpr("then")
                                 .setScope(doOnSuccess);
                         statement.getParentNode()
-                                .flatMap(this::getParentReturnOrThrowStatement)
-                                .ifPresent(parentStatement -> {
-                                            if (parentStatement.isThrowStmt()) {
-                                                then.addArgument(
-                                                        new MethodCallExpr("error")
-                                                                .addArgument(
-                                                                        statement.asThrowStmt().getExpression()
-                                                                )
-                                                                .setScope(new NameExpr(Mono.class.getSimpleName()))
-                                                );
-                                            } else {
-                                                buildAsyncReturnExpression(parentStatement.asReturnStmt())
-                                                        .ifPresent(then::addArgument);
-                                            }
-                                        }
+                                .flatMap(node -> getParentReturnOrThrowStatementList(node, defaultIfEmpty))
+                                .ifPresent(nodeList ->
+                                        then.addArgument(
+                                                new MethodCallExpr("defer")
+                                                        .addArgument(
+                                                                new LambdaExpr()
+                                                                        .setEnclosingParameters(true)
+                                                                        .setBody(new BlockStmt(nodeList))
+                                                        )
+                                                        .setScope(new NameExpr(Mono.class.getSimpleName()))
+                                        )
                                 );
                         if (defaultIfEmpty != null) {
                             MethodCallExpr defaultIfEmptyMethod = new MethodCallExpr("defaultIfEmpty")
@@ -855,7 +829,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                                                     .addArgument(
                                                                             new LambdaExpr()
                                                                                     .addParameter(new Parameter(new UnknownType(), "result"))
-                                                                                    .setBody(new ExpressionStmt(new CastExpr().setType(methodDeclarationReturnTypeName).setExpression(new NameExpr("result"))))
+                                                                                    .setBody(new ExpressionStmt(new CastExpr().setType(methodDeclarationReturnDescribe).setExpression(new NameExpr("result"))))
                                                                     )
                                                                     .setScope(asyncMethodCallExpr)
                                                     )
@@ -872,7 +846,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                                     .addArgument(
                                                             new LambdaExpr()
                                                                     .addParameter(new Parameter(new UnknownType(), "result"))
-                                                                    .setBody(new ExpressionStmt(new CastExpr().setType(methodDeclarationReturnTypeName).setExpression(new NameExpr("result"))))
+                                                                    .setBody(new ExpressionStmt(new CastExpr().setType(methodDeclarationReturnDescribe).setExpression(new NameExpr("result"))))
                                                     )
                                                     .setScope(asyncMethodCallExpr)
                                     );
@@ -910,7 +884,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                                                     .addArgument(
                                                                             new LambdaExpr()
                                                                                     .addParameter(new Parameter(new UnknownType(), "result"))
-                                                                                    .setBody(new ExpressionStmt(new CastExpr().setType(methodDeclarationReturnTypeName).setExpression(new NameExpr("result"))))
+                                                                                    .setBody(new ExpressionStmt(new CastExpr().setType(methodDeclarationReturnDescribe).setExpression(new NameExpr("result"))))
                                                                     )
                                                                     .setScope(asyncMethodCallExpr)
                                                     )
@@ -927,7 +901,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                                     .addArgument(
                                                             new LambdaExpr()
                                                                     .addParameter(new Parameter(new UnknownType(), "result"))
-                                                                    .setBody(new ExpressionStmt(new CastExpr().setType(methodDeclarationReturnTypeName).setExpression(new NameExpr("result"))))
+                                                                    .setBody(new ExpressionStmt(new CastExpr().setType(methodDeclarationReturnDescribe).setExpression(new NameExpr("result"))))
                                                     )
                                                     .setScope(asyncMethodCallExpr)
                                     );
@@ -935,21 +909,17 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                         MethodCallExpr then = new MethodCallExpr("then")
                                 .setScope(flatMap);
                         statement.getParentNode()
-                                .flatMap(this::getParentReturnOrThrowStatement)
-                                .ifPresent(parentStatement -> {
-                                            if (parentStatement.isThrowStmt()) {
-                                                then.addArgument(
-                                                        new MethodCallExpr("error")
-                                                                .addArgument(
-                                                                        statement.asThrowStmt().getExpression()
-                                                                )
-                                                                .setScope(new NameExpr(Mono.class.getSimpleName()))
-                                                );
-                                            } else {
-                                                buildAsyncReturnExpression(parentStatement.asReturnStmt())
-                                                        .ifPresent(then::addArgument);
-                                            }
-                                        }
+                                .flatMap(node -> getParentReturnOrThrowStatementList(node, defaultIfEmpty))
+                                .ifPresent(nodeList ->
+                                        then.addArgument(
+                                                new MethodCallExpr("defer")
+                                                        .addArgument(
+                                                                new LambdaExpr()
+                                                                        .setEnclosingParameters(true)
+                                                                        .setBody(new BlockStmt(nodeList))
+                                                        )
+                                                        .setScope(new NameExpr(Mono.class.getSimpleName()))
+                                        )
                                 );
                         if (defaultIfEmpty != null) {
                             MethodCallExpr defaultIfEmptyMethod = new MethodCallExpr("defaultIfEmpty")
@@ -984,7 +954,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                                                     .addArgument(
                                                                             new LambdaExpr()
                                                                                     .addParameter(new Parameter(new UnknownType(), "result"))
-                                                                                    .setBody(new ExpressionStmt(new CastExpr().setType(methodDeclarationReturnTypeName).setExpression(new NameExpr("result"))))
+                                                                                    .setBody(new ExpressionStmt(new CastExpr().setType(methodDeclarationReturnDescribe).setExpression(new NameExpr("result"))))
                                                                     )
                                                                     .setScope(asyncMethodCallExpr)
                                                     )
@@ -1001,7 +971,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                                     .addArgument(
                                                             new LambdaExpr()
                                                                     .addParameter(new Parameter(new UnknownType(), "result"))
-                                                                    .setBody(new ExpressionStmt(new CastExpr().setType(methodDeclarationReturnTypeName).setExpression(new NameExpr("result"))))
+                                                                    .setBody(new ExpressionStmt(new CastExpr().setType(methodDeclarationReturnDescribe).setExpression(new NameExpr("result"))))
                                                     )
                                                     .setScope(asyncMethodCallExpr)
                                     );
@@ -1009,21 +979,17 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                         MethodCallExpr then = new MethodCallExpr("then")
                                 .setScope(doOnSuccess);
                         statement.getParentNode()
-                                .flatMap(this::getParentReturnOrThrowStatement)
-                                .ifPresent(parentStatement -> {
-                                            if (parentStatement.isThrowStmt()) {
-                                                then.addArgument(
-                                                        new MethodCallExpr("error")
-                                                                .addArgument(
-                                                                        statement.asThrowStmt().getExpression()
-                                                                )
-                                                                .setScope(new NameExpr(Mono.class.getSimpleName()))
-                                                );
-                                            } else {
-                                                buildAsyncReturnExpression(parentStatement.asReturnStmt())
-                                                        .ifPresent(then::addArgument);
-                                            }
-                                        }
+                                .flatMap(node -> getParentReturnOrThrowStatementList(node, defaultIfEmpty))
+                                .ifPresent(nodeList ->
+                                        then.addArgument(
+                                                new MethodCallExpr("defer")
+                                                        .addArgument(
+                                                                new LambdaExpr()
+                                                                        .setEnclosingParameters(true)
+                                                                        .setBody(new BlockStmt(nodeList))
+                                                        )
+                                                        .setScope(new NameExpr(Mono.class.getSimpleName()))
+                                        )
                                 );
                         if (defaultIfEmpty != null) {
                             MethodCallExpr defaultIfEmptyMethod = new MethodCallExpr("defaultIfEmpty")
@@ -1430,16 +1396,19 @@ public class AsyncProcessor implements ComponentProxyProcessor {
         }
     }
 
-    private Optional<Statement> getParentReturnOrThrowStatement(Node node) {
+    private Optional<NodeList<Statement>> getParentReturnOrThrowStatementList(Node node, String defaultIsEmpty) {
         return node.getParentNode()
                 .flatMap(parent -> {
                             if (parent instanceof NodeWithStatements) {
-                                return ((NodeWithStatements<? extends Node>) parent).getStatements().stream()
-                                        .filter(statement -> statement.isThrowStmt() || statement.isReturnStmt())
-                                        .findFirst()
-                                        .or(() -> getParentReturnOrThrowStatement(parent));
+                                if (((NodeWithStatements<? extends Node>) parent).getStatements().stream()
+                                        .anyMatch(statement -> statement.isThrowStmt() || statement.isReturnStmt())) {
+                                    List<Statement> statementList = ((NodeWithStatements<? extends Node>) parent).getStatements();
+                                    return Optional.of(buildAsyncStatements(statementList.subList(statementList.indexOf(node) + 1, statementList.size()), defaultIsEmpty));
+                                } else {
+                                    return getParentReturnOrThrowStatementList(parent, defaultIsEmpty);
+                                }
                             } else {
-                                return getParentReturnOrThrowStatement(parent);
+                                return getParentReturnOrThrowStatementList(parent, defaultIsEmpty);
                             }
                         }
                 );
@@ -1456,7 +1425,9 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                 .map(expression -> {
                             if (expression.isMethodCallExpr()) {
                                 if (expression.asMethodCallExpr().getNameAsString().equals("await") &&
-                                        expression.asMethodCallExpr().getArgument(0).isMethodCallExpr() ||
+                                        expression.asMethodCallExpr().getArgument(0).isMethodCallExpr() &&
+                                        processorManager.getMethodDeclaration(expression.asMethodCallExpr().getArgument(0).asMethodCallExpr())
+                                                .filter(methodDeclaration -> methodDeclaration.isAnnotationPresent(Async.class)).isPresent() ||
                                         processorManager.getMethodDeclaration(expression.asMethodCallExpr())
                                                 .filter(methodDeclaration -> methodDeclaration.isAnnotationPresent(Async.class)).isPresent()) {
 
@@ -1485,7 +1456,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                             );
                                     methodCallExpr.getScope().ifPresent(asyncMethodCallExpr::setScope);
                                     return asyncMethodCallExpr;
-                                } else if (expression.asMethodCallExpr().getNameAsString().equals("await") && expression.asMethodCallExpr().getArgument(0).isNameExpr()) {
+                                } else if (expression.asMethodCallExpr().getNameAsString().equals("await")) {
                                     return expression.asMethodCallExpr().getArgument(0).clone();
                                 }
                                 String methodDeclarationReturnTypeName = processorManager.resolveMethodDeclarationReturnTypeQualifiedName(expression.asMethodCallExpr());

@@ -10,6 +10,7 @@ import com.github.javaparser.ast.body.*;
 import com.github.javaparser.ast.expr.*;
 import com.github.javaparser.ast.nodeTypes.NodeWithAnnotations;
 import com.github.javaparser.ast.stmt.ReturnStmt;
+import com.github.javaparser.ast.stmt.Statement;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import com.github.javaparser.ast.type.Type;
 import com.github.javaparser.resolution.Context;
@@ -205,8 +206,8 @@ public class ProcessorManager {
     }
 
     public Optional<CompilationUnit> getCompilationUnit(TypeElement typeElement) {
-        return combinedTypeSolver.getRoot().solveType(typeElement.getQualifiedName().toString())
-                .toAst()
+        return combinedTypeSolver.getRoot().tryToSolveType(typeElement.getQualifiedName().toString()).getDeclaration()
+                .flatMap(AssociableToAST::toAst)
                 .flatMap(Node::findCompilationUnit)
                 .or(() ->
                         Optional.ofNullable(trees.getPath(typeElement))
@@ -383,6 +384,37 @@ public class ProcessorManager {
         return qualifiedName;
     }
 
+    public String getDescribe(Type type) {
+        if (type.isClassOrInterfaceType()) {
+            return getDescribe(type.asClassOrInterfaceType());
+        } else if (type.isPrimitiveType()) {
+            return getDescribe(type.asPrimitiveType().toBoxedType());
+        } else if (type.isArrayType()) {
+            return getDescribe(type.asArrayType().getElementType()) + "[]";
+        }
+        return type.asString();
+    }
+
+    public String getDescribe(ResolvedType resolvedType) {
+        if (resolvedType.isPrimitive()) {
+            return resolvedType.asPrimitive().getBoxTypeQName();
+        } else if (resolvedType.isReferenceType()) {
+            return resolvedType.asReferenceType().describe();
+        } else if (resolvedType.isArray()) {
+            return getDescribe(resolvedType.asArrayType().getComponentType()) + "[]";
+        }
+        return resolvedType.describe();
+    }
+
+    public String getDescribe(ClassOrInterfaceType type) {
+        try {
+            ResolvedReferenceType resolvedReferenceType = getResolvedType(type).asReferenceType();
+            return resolvedReferenceType.describe();
+        } catch (RuntimeException e) {
+            return type.getNameAsString();
+        }
+    }
+
     public ResolvedType getResolvedType(Type type) {
         try {
             return javaSymbolSolver.toResolvedType(type, ResolvedReferenceType.class);
@@ -406,12 +438,84 @@ public class ProcessorManager {
         }
     }
 
+    public Optional<Node> getDeclaratorNode(NameExpr nameExpr) {
+        return getDeclaratorNode(nameExpr, nameExpr);
+    }
+
+    public Optional<Node> getDeclaratorNode(NameExpr nameExpr, Node node) {
+        if (node.getParentNode().isPresent()) {
+            Node parentNode = node.getParentNode().get();
+            if (parentNode instanceof Statement) {
+                Statement parentStatement = (Statement) parentNode;
+                if (parentStatement.isBlockStmt()) {
+                    return parentStatement.asBlockStmt().getStatements().stream()
+                            .filter((Statement::isExpressionStmt))
+                            .map((statement -> statement.asExpressionStmt().getExpression()))
+                            .filter(expression ->
+                                    expression.isVariableDeclarationExpr() &&
+                                            expression.asVariableDeclarationExpr().getVariables().stream()
+                                                    .anyMatch(variableDeclarator -> variableDeclarator.getNameAsString().equals(nameExpr.getNameAsString()))
+                            )
+                            .flatMap(expression ->
+                                    expression.asVariableDeclarationExpr().getVariables().stream()
+                                            .filter(variableDeclarator -> variableDeclarator.getNameAsString().equals(nameExpr.getNameAsString()))
+                            )
+                            .flatMap(variableDeclarator -> variableDeclarator.getInitializer().stream())
+                            .map(expression -> (Node) expression)
+                            .findFirst()
+                            .or(() -> getDeclaratorNode(nameExpr, parentNode));
+                } else {
+                    getDeclaratorNode(nameExpr, parentNode);
+                }
+            } else if (parentNode instanceof ClassOrInterfaceDeclaration) {
+                ClassOrInterfaceDeclaration classOrInterfaceDeclaration = (ClassOrInterfaceDeclaration) parentNode;
+                return classOrInterfaceDeclaration.getFieldByName(nameExpr.getNameAsString())
+                        .filter(fieldDeclaration ->
+                                fieldDeclaration.getVariables().stream()
+                                        .anyMatch(variableDeclarator -> variableDeclarator.getNameAsString().equals(nameExpr.getNameAsString()))
+                        )
+                        .flatMap(fieldDeclaration ->
+                                fieldDeclaration.getVariables().stream()
+                                        .filter(variableDeclarator -> variableDeclarator.getNameAsString().equals(nameExpr.getNameAsString()))
+                                        .findFirst()
+                        )
+                        .flatMap(VariableDeclarator::getInitializer)
+                        .map(expression -> (Node) expression)
+                        .or(() -> getDeclaratorNode(nameExpr, parentNode));
+            } else if (parentNode instanceof CompilationUnit) {
+                CompilationUnit compilationUnit = (CompilationUnit) parentNode;
+                return compilationUnit.getImports().stream()
+                        .filter(importDeclaration -> importDeclaration.getNameAsString().endsWith("." + nameExpr.getNameAsString()))
+                        .map(importDeclaration -> getClassOrInterfaceDeclarationOrError(importDeclaration.getNameAsString()))
+                        .map(expression -> (Node) expression)
+                        .findFirst();
+            } else {
+                getDeclaratorNode(nameExpr, parentNode);
+            }
+        }
+        return Optional.empty();
+    }
+
     public Optional<MethodDeclaration> getMethodDeclaration(MethodCallExpr methodCallExpr) {
         if (methodCallExpr.hasScope() && !methodCallExpr.getScope().get().isThisExpr()) {
-            ResolvedReferenceType referenceType = calculateType(methodCallExpr.getScope().get()).asReferenceType();
-            ClassOrInterfaceDeclaration classOrInterfaceDeclaration = referenceType.getTypeDeclaration()
-                    .flatMap(resolvedReferenceTypeDeclaration -> resolvedReferenceTypeDeclaration.toAst(ClassOrInterfaceDeclaration.class))
-                    .orElseGet(() -> getPublicClassOrInterfaceDeclarationOrError(getCompilationUnitOrError(referenceType.getQualifiedName())));
+            ClassOrInterfaceDeclaration classOrInterfaceDeclaration;
+            try {
+                ResolvedReferenceType referenceType = calculateType(methodCallExpr.getScope().get()).asReferenceType();
+                classOrInterfaceDeclaration = referenceType.getTypeDeclaration()
+                        .flatMap(resolvedReferenceTypeDeclaration -> resolvedReferenceTypeDeclaration.toAst(ClassOrInterfaceDeclaration.class))
+                        .orElseGet(() -> getPublicClassOrInterfaceDeclarationOrError(getCompilationUnitOrError(referenceType.getQualifiedName())));
+            } catch (RuntimeException e) {
+                if (methodCallExpr.getScope().get().isNameExpr()) {
+                    Optional<Node> node = getDeclaratorNode(methodCallExpr.getScope().get().asNameExpr());
+                    if (node.isPresent() && node.get() instanceof ClassOrInterfaceDeclaration) {
+                        classOrInterfaceDeclaration = (ClassOrInterfaceDeclaration) node.get();
+                    } else {
+                        throw e;
+                    }
+                } else {
+                    throw e;
+                }
+            }
             return classOrInterfaceDeclaration.getMethods().stream()
                     .filter(methodDeclaration -> methodDeclaration.getNameAsString().equals(methodCallExpr.getNameAsString()))
                     .filter(methodDeclaration -> methodDeclaration.getParameters().size() == methodCallExpr.getArguments().size())
@@ -504,6 +608,16 @@ public class ProcessorManager {
         } catch (RuntimeException e) {
             return getMethodDeclaration(methodCallExpr)
                     .map(methodDeclaration -> getQualifiedName(methodDeclaration.getType()))
+                    .orElseThrow(() -> new UnsolvedSymbolException(methodCallExpr.toString()));
+        }
+    }
+
+    public String resolveMethodDeclarationReturnTypeDescribe(MethodCallExpr methodCallExpr) {
+        try {
+            return getDescribe(calculateType(methodCallExpr));
+        } catch (RuntimeException e) {
+            return getMethodDeclaration(methodCallExpr)
+                    .map(methodDeclaration -> getDescribe(methodDeclaration.getType()))
                     .orElseThrow(() -> new UnsolvedSymbolException(methodCallExpr.toString()));
         }
     }
