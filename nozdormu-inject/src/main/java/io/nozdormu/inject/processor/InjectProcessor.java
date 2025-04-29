@@ -807,7 +807,7 @@ public class InjectProcessor extends AbstractProcessor {
                                                 if (producesMethodDeclaration.isAnnotationPresent(Singleton.class) || producesMethodDeclaration.isAnnotationPresent(ApplicationScoped.class)) {
                                                     ClassOrInterfaceDeclaration holderClassOrInterfaceDeclaration = new ClassOrInterfaceDeclaration();
                                                     holderClassOrInterfaceDeclaration
-                                                            .setName(qualifiedName.replaceAll("\\.", "_") + "Holder")
+                                                            .setName(qualifiedName.replaceAll("\\.", "_") + "Holder" + classOrInterfaceDeclaration.getMethods().indexOf(producesMethodDeclaration))
                                                             .setModifiers(Modifier.Keyword.PRIVATE, Modifier.Keyword.STATIC)
                                                             .addFieldWithInitializer(
                                                                     producesMethodDeclaration.getType(),
@@ -833,9 +833,9 @@ public class InjectProcessor extends AbstractProcessor {
 
                                                     addPutTypeProducerStatement(staticInitializer, qualifiedName, moduleContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, nameExpr.orElse(null), priorityExpr.orElse(null), defaultExpr.isPresent(), true);
                                                     processorManager.getNodeReturnResolvedReferenceType(producesMethodDeclaration)
-                                                            .filter(resolvedReferenceType -> !resolvedReferenceType.getQualifiedName().equals(processorManager.getQualifiedName(producesMethodDeclaration.getType())))
+                                                            .filter(resolvedReferenceType -> !resolvedReferenceType.getQualifiedName().equals(qualifiedName))
                                                             .forEach(resolvedReferenceType ->
-                                                                    addPutTypeProducerStatement(staticInitializer, qualifiedName, moduleContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, nameExpr.orElse(null), priorityExpr.orElse(null), defaultExpr.isPresent(), true)
+                                                                    addPutTypeProducerStatement(staticInitializer, resolvedReferenceType.getQualifiedName(), moduleContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, nameExpr.orElse(null), priorityExpr.orElse(null), defaultExpr.isPresent(), true)
                                                             );
 
                                                     processorManager.getClassOrInterfaceDeclaration(qualifiedName)
@@ -858,6 +858,11 @@ public class InjectProcessor extends AbstractProcessor {
                                                             );
                                                 } else {
                                                     addPutTypeProducerStatement(staticInitializer, qualifiedName, moduleContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, nameExpr.orElse(null), priorityExpr.orElse(null), defaultExpr.isPresent(), false);
+                                                    processorManager.getNodeReturnResolvedReferenceType(producesMethodDeclaration)
+                                                            .filter(resolvedReferenceType -> !resolvedReferenceType.getQualifiedName().equals(qualifiedName))
+                                                            .forEach(resolvedReferenceType ->
+                                                                    addPutTypeProducerStatement(staticInitializer, resolvedReferenceType.getQualifiedName(), moduleContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, nameExpr.orElse(null), priorityExpr.orElse(null), defaultExpr.isPresent(), true)
+                                                            );
 
                                                     processorManager.getClassOrInterfaceDeclaration(qualifiedName)
                                                             .ifPresent(returnTypeClassOrInterfaceDeclaration -> {
@@ -896,7 +901,7 @@ public class InjectProcessor extends AbstractProcessor {
                                     .setExpression(
                                             new FieldAccessExpr()
                                                     .setName("INSTANCE")
-                                                    .setScope(new NameExpr(qualifiedName.replaceAll("\\.", "_") + "Holder"))
+                                                    .setScope(new NameExpr(qualifiedName.replaceAll("\\.", "_") + "Holder" + classOrInterfaceDeclaration.getMethods().indexOf(methodDeclaration)))
                                     )
                     );
         } else {
