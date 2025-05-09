@@ -6,15 +6,17 @@ import org.eclipse.microprofile.config.ConfigValue;
 import org.eclipse.microprofile.config.spi.ConfigSource;
 import org.eclipse.microprofile.config.spi.Converter;
 import org.tinylog.Logger;
+import org.yaml.snakeyaml.Yaml;
 
 import javax.annotation.processing.Filer;
 import javax.tools.FileObject;
 import javax.tools.StandardLocation;
 import java.io.IOException;
 import java.io.Writer;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.URL;
+import java.nio.file.*;
 import java.util.*;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -22,14 +24,46 @@ import java.util.stream.Stream;
 
 public class TypesafeConfig implements Config {
 
-    private com.typesafe.config.Config config;
+    private Yaml yaml;
 
-    public TypesafeConfig() {
-        this.config = ConfigFactory.load(ConfigParseOptions.defaults());
+    public TypesafeConfig(ClassLoader classLoader) {
+        Yaml yaml = new Yaml();
+        Enumeration<URL> urlEnumeration = null;
+        try {
+            urlEnumeration = classLoader.getResources("");
+            while (urlEnumeration.hasMoreElements()) {
+                URL url = urlEnumeration.nextElement();
+                URI uri = url.toURI();
+                try (Stream<Path> pathStream = Files.list(Path.of(uri))) {
+                    register(pathStream, application);
+                } catch (FileSystemNotFoundException fileSystemNotFoundException) {
+                    Map<String, String> env = new HashMap<>();
+                    try (FileSystem fileSystem = FileSystems.newFileSystem(uri, env);
+                         Stream<Path> pathStream = Files.list(fileSystem.getPath("META-INF/graphql"))) {
+                        register(pathStream, application);
+                    }
+                }
+            }
+        } catch (IOException | URISyntaxException e) {
+            throw new RuntimeException(e);
+        }
     }
 
-    public TypesafeConfig(com.typesafe.config.Config config) {
-        this.config = config;
+    public void register(Stream<Path> pathStream) {
+        pathStream
+                .filter(path ->
+                        path.getFileName().toString().endsWith(".yml") ||
+                                path.getFileName().toString().equals(".yaml")
+                )
+                .forEach(path -> {
+                            try {
+                                documentManager.getDocument().merge(path);
+                                Logger.info("registered preset path {}", path);
+                            } catch (IOException e) {
+                                throw new RuntimeException(e);
+                            }
+                        }
+                );
     }
 
     @Override
