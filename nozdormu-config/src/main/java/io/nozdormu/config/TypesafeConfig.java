@@ -6,64 +6,29 @@ import org.eclipse.microprofile.config.ConfigValue;
 import org.eclipse.microprofile.config.spi.ConfigSource;
 import org.eclipse.microprofile.config.spi.Converter;
 import org.tinylog.Logger;
-import org.yaml.snakeyaml.Yaml;
 
 import javax.annotation.processing.Filer;
 import javax.tools.FileObject;
 import javax.tools.StandardLocation;
 import java.io.IOException;
 import java.io.Writer;
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.net.URL;
-import java.nio.file.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.*;
 import java.util.Optional;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public class TypesafeConfig implements Config {
 
-    private Yaml yaml;
+    private com.typesafe.config.Config config;
 
-    public TypesafeConfig(ClassLoader classLoader) {
-        Yaml yaml = new Yaml();
-        Enumeration<URL> urlEnumeration = null;
-        try {
-            urlEnumeration = classLoader.getResources("");
-            while (urlEnumeration.hasMoreElements()) {
-                URL url = urlEnumeration.nextElement();
-                URI uri = url.toURI();
-                try (Stream<Path> pathStream = Files.list(Path.of(uri))) {
-                    register(pathStream, application);
-                } catch (FileSystemNotFoundException fileSystemNotFoundException) {
-                    Map<String, String> env = new HashMap<>();
-                    try (FileSystem fileSystem = FileSystems.newFileSystem(uri, env);
-                         Stream<Path> pathStream = Files.list(fileSystem.getPath("META-INF/graphql"))) {
-                        register(pathStream, application);
-                    }
-                }
-            }
-        } catch (IOException | URISyntaxException e) {
-            throw new RuntimeException(e);
-        }
+    public TypesafeConfig() {
+        this.config = ConfigFactory.load(ConfigParseOptions.defaults());
     }
 
-    public void register(Stream<Path> pathStream) {
-        pathStream
-                .filter(path ->
-                        path.getFileName().toString().endsWith(".yml") ||
-                                path.getFileName().toString().equals(".yaml")
-                )
-                .forEach(path -> {
-                            try {
-                                documentManager.getDocument().merge(path);
-                                Logger.info("registered preset path {}", path);
-                            } catch (IOException e) {
-                                throw new RuntimeException(e);
-                            }
-                        }
-                );
+    public TypesafeConfig(ClassLoader classLoader) {
+        this.config = ConfigFactory.load(classLoader);
     }
 
     @Override
@@ -86,7 +51,7 @@ public class TypesafeConfig implements Config {
 
     @Override
     public Iterable<String> getPropertyNames() {
-        return config.entrySet().stream().map(Map.Entry::getKey).collect(Collectors.toList());
+        return config.root().keySet();
     }
 
     @Override
@@ -104,53 +69,49 @@ public class TypesafeConfig implements Config {
         return null;
     }
 
-    public TypesafeConfig merge(com.typesafe.config.Config config) {
-        this.config = this.config.withFallback(config);
-        return this;
+    public void merge(Stream<Path> pathStream) {
+        pathStream
+                .filter(path -> path.toString().endsWith(".conf") || path.toString().endsWith(".json") || path.toString().endsWith(".properties"))
+                .forEach(path -> {
+                            try {
+                                this.config = this.config.withFallback(ConfigFactory.parseFile(path.toFile()));
+                            } catch (ConfigException e) {
+                                Logger.info("{} Ignored", e.origin().filename());
+                            }
+                        }
+                );
     }
 
-    public TypesafeConfig load(ClassLoader classLoader) {
-        this.config = ConfigFactory.load(classLoader, ConfigParseOptions.defaults());
-        return this;
-    }
-
-    public TypesafeConfig merge(ClassLoader classLoader) {
-        merge(ConfigFactory.load(classLoader, ConfigParseOptions.defaults()));
-        return this;
-    }
-
-    public TypesafeConfig load(String path) {
-        this.config = ConfigFactory.empty();
-        return merge(path);
-    }
-
-    public TypesafeConfig merge(String path) {
-        Path configPath = Paths.get(path);
-        if (Files.exists(configPath)) {
-            try (Stream<Path> fileList = Files.list(configPath)) {
-                List<Path> configFileList = fileList
-                        .filter(filePath -> filePath.toString().endsWith(".conf") || filePath.toString().endsWith(".json") || filePath.toString().endsWith(".properties"))
-                        .collect(Collectors.toList());
-                for (Path configFile : configFileList) {
-                    try {
-                        merge(ConfigFactory.parseFile(configFile.toFile()));
-                    } catch (ConfigException e) {
-                        Logger.info("{} Ignored", e.origin().filename());
-                    }
-                }
+    public void merge(Path path) {
+        if (Files.exists(path)) {
+            try (Stream<Path> pathStream = Files.list(path)) {
+                merge(pathStream);
             } catch (IOException e) {
                 Logger.error(e);
             }
         }
+    }
+
+    public TypesafeConfig merge(String pathName) {
+        merge(Paths.get(pathName));
         return this;
+    }
+
+    public TypesafeConfig merge(Filer filer) {
+        Path generatedSourcePath = getGeneratedSourcePath(filer);
+        merge(getResourcesPath(generatedSourcePath));
+        merge(getTestResourcesPath(generatedSourcePath));
+        return this;
+    }
+
+    public TypesafeConfig load(String pathName) {
+        this.config = ConfigFactory.empty();
+        return merge(pathName);
     }
 
     public TypesafeConfig load(Filer filer) {
         this.config = ConfigFactory.empty();
-        Path generatedSourcePath = getGeneratedSourcePath(filer);
-        merge(getResourcesPath(generatedSourcePath).toString());
-        merge(getTestResourcesPath(generatedSourcePath).toString());
-        return this;
+        return merge(filer);
     }
 
     private Path getGeneratedSourcePath(Filer filer) {
