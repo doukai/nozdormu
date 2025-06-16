@@ -1,4 +1,5 @@
 rootProject.name = 'nozdormu'
+include 'nozdormu-platform'
 include 'nozdormu-spi'
 include 'nozdormu-common'
 include 'nozdormu-decompiler'
@@ -8,4 +9,3 @@ include 'nozdormu-inject'
 include 'nozdormu-interceptor'
 include 'nozdormu-config'
 include 'nozdormu-async'
-

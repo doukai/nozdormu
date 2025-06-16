@@ -1,0 +1,12 @@
+ext {
+    nozdormuVersion = '0.1.0-SNAPSHOT'
+}
+
+subprojects {
+    repositories {
+        mavenCentral()
+        mavenLocal()
+    }
+
+    version "$nozdormuVersion"
+}

@@ -4,28 +4,25 @@ plugins {
 }
 
 group 'org.graphoenix'
-version '0.1.0-SNAPSHOT'
-
-repositories {
-    mavenCentral()
-    mavenLocal()
-}
 
 dependencies {
-    implementation 'com.google.auto.service:auto-service:1.0.1'
+    implementation platform(project(':nozdormu-platform'))
 
-    api 'io.projectreactor:reactor-core:3.4.16'
-    api 'jakarta.annotation:jakarta.annotation-api:2.0.0'
-    api 'jakarta.inject:jakarta.inject-api:2.0.1'
-    api 'jakarta.enterprise:jakarta.enterprise.cdi-api:3.0.1'
-    api 'jakarta.transaction:jakarta.transaction-api:2.0.1'
-    api 'org.eclipse.microprofile.config:microprofile-config-api:3.0.1'
-    api 'org.tinylog:tinylog-api:2.4.1'
+    implementation 'com.google.auto.service:auto-service'
 
-    annotationProcessor 'com.google.auto.service:auto-service:1.0.1'
+    api 'io.projectreactor:reactor-core'
+    api 'jakarta.annotation:jakarta.annotation-api'
+    api 'jakarta.inject:jakarta.inject-api'
+    api 'jakarta.enterprise:jakarta.enterprise.cdi-api'
+    api 'jakarta.transaction:jakarta.transaction-api'
+    api 'org.eclipse.microprofile.config:microprofile-config-api'
+    api 'org.tinylog:tinylog-api'
 
-    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.8.1'
-    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.8.1'
+    annotationProcessor platform(project(':nozdormu-platform'))
+    annotationProcessor 'com.google.auto.service:auto-service'
+
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
 test {

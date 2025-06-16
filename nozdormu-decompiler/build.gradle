@@ -4,23 +4,20 @@ plugins {
 }
 
 group 'org.graphoenix'
-version '0.1.0-SNAPSHOT'
-
-repositories {
-    mavenCentral()
-    mavenLocal()
-}
 
 dependencies {
+    implementation platform(project(':nozdormu-platform'))
+
     implementation project(':nozdormu-spi')
-    implementation 'org.bitbucket.mstrobel:procyon-compilertools:0.6.0'
+    implementation 'org.bitbucket.mstrobel:procyon-compilertools'
 
-    implementation "com.google.auto.service:auto-service:1.0.1"
+    implementation "com.google.auto.service:auto-service"
 
-    annotationProcessor 'com.google.auto.service:auto-service:1.0.1'
+    annotationProcessor platform(project(':nozdormu-platform'))
+    annotationProcessor 'com.google.auto.service:auto-service'
 
-    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.7.0'
-    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.7.0'
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
 test {

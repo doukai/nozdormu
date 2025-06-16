@@ -4,27 +4,24 @@ plugins {
 }
 
 group 'org.graphoenix'
-version '0.1.0-SNAPSHOT'
-
-repositories {
-    mavenCentral()
-    mavenLocal()
-}
 
 dependencies {
+    implementation platform(project(':nozdormu-platform'))
+
     implementation project(':nozdormu-common')
     implementation project(':nozdormu-inject')
-    implementation 'com.github.javaparser:javaparser-symbol-solver-core:3.26.3'
-    implementation 'com.google.auto.service:auto-service:1.0.1'
+    implementation 'com.github.javaparser:javaparser-symbol-solver-core'
+    implementation 'com.google.auto.service:auto-service'
 
-    annotationProcessor 'com.google.auto.service:auto-service:1.0.1'
+    annotationProcessor platform(project(':nozdormu-platform'))
+    annotationProcessor 'com.google.auto.service:auto-service'
 
-    testImplementation platform('org.junit:junit-bom:5.9.1')
     testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 
     testAnnotationProcessor project(':nozdormu-inject')
     testAnnotationProcessor project(':nozdormu-interceptor')
-    testAnnotationProcessor 'com.google.auto.service:auto-service:1.0.1'
+    testAnnotationProcessor 'com.google.auto.service:auto-service'
 }
 
 test {

@@ -4,28 +4,25 @@ plugins {
 }
 
 group 'org.graphoenix'
-version '0.1.0-SNAPSHOT'
-
-repositories {
-    mavenCentral()
-    mavenLocal()
-}
 
 dependencies {
+    implementation platform(project(':nozdormu-platform'))
+
     api project(':nozdormu-spi')
 
     implementation project(':nozdormu-common')
-    implementation "com.google.auto.service:auto-service:1.0.1"
+    implementation "com.google.auto.service:auto-service"
 
-    annotationProcessor 'com.google.auto.service:auto-service:1.0.1'
+    annotationProcessor platform(project(':nozdormu-platform'))
+    annotationProcessor 'com.google.auto.service:auto-service'
 
-    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.8.1'
-    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.8.1'
-    testImplementation 'io.projectreactor:reactor-test:3.5.4'
-    testRuntimeOnly 'io.projectreactor:reactor-test:3.5.4'
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    testImplementation 'io.projectreactor:reactor-test'
+    testRuntimeOnly 'io.projectreactor:reactor-test'
 
     testAnnotationProcessor project(':nozdormu-inject')
-    testAnnotationProcessor 'com.google.auto.service:auto-service:1.0.1'
+    testAnnotationProcessor 'com.google.auto.service:auto-service'
 }
 
 test {
