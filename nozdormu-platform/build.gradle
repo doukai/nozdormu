@@ -17,7 +17,7 @@ dependencies {
         api "org.graphoenix:nozdormu-decompiler-cfr:$nozdormuVersion"
         api "org.graphoenix:nozdormu-decompiler-vineflower:$nozdormuVersion"
 
-        api 'io.projectreactor:reactor-core:3.7.7'
+        api 'io.projectreactor:reactor-core:3.5.20'
         api 'jakarta.annotation:jakarta.annotation-api:2.1.1'
         api 'jakarta.inject:jakarta.inject-api:2.0.1'
         api 'jakarta.enterprise:jakarta.enterprise.cdi-api:3.0.1'
@@ -35,7 +35,7 @@ dependencies {
 
         api 'org.junit.jupiter:junit-jupiter:5.13.1'
         runtime 'org.junit.platform:junit-platform-launcher:1.13.1'
-        api 'io.projectreactor:reactor-test:3.7.7'
+        api 'io.projectreactor:reactor-test:3.5.20'
     }
 }
 
