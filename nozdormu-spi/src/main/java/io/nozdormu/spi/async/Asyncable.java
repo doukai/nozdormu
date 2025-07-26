@@ -12,6 +12,10 @@ public interface Asyncable {
 
     String ASYNC_METHOD_NAME_SUFFIX = "Async";
 
+    default void await(Runnable runnable) {
+        throw new RuntimeException("invoke await method with async implement");
+    }
+
     default <T> T await(T methodInvoke) {
         throw new RuntimeException("invoke await method with async implement");
     }

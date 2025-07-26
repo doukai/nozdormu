@@ -628,6 +628,8 @@ public class ProcessorManager {
                         methodDeclaration.getParameters().stream().map(parameter -> {
                                     if (parameter.getType().isPrimitiveType()) {
                                         return parameter.getType().asPrimitiveType().toBoxedType().getNameAsString();
+                                    } else if (parameter.getType().isClassOrInterfaceType()) {
+                                        return parameter.getType().asClassOrInterfaceType().getNameAsString();
                                     } else {
                                         return parameter.getTypeAsString();
                                     }
