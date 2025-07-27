@@ -20,7 +20,6 @@ import jakarta.inject.Provider;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -120,7 +119,8 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                                                                                                                     expression.asMethodCallExpr().getScope().isPresent() &&
                                                                                                                                     expression.asMethodCallExpr().getScope().get().isNameExpr() &&
                                                                                                                                     expression.asMethodCallExpr().getScope().get().asNameExpr().getNameAsString().equals(Mono.class.getSimpleName())
-                                                                                                            )) {
+                                                                                                            )
+                                                                                                    ) {
                                                                                                         return statement.asReturnStmt().getExpression()
                                                                                                                 .map(expression ->
                                                                                                                         (Statement) new ReturnStmt(
@@ -151,12 +151,14 @@ public class AsyncProcessor implements ComponentProxyProcessor {
     }
 
     protected NodeList<Statement> buildAsyncStatements(List<Statement> statementNodeList, String defaultIfEmpty) {
-        boolean hasReturnOrThrowStmt = hasReturnOrThrowStmt(statementNodeList);
+        boolean hasReturnOrThrow = hasReturnOrThrowStmt(statementNodeList);
         boolean hasAwait = hasAwait(statementNodeList);
         NodeList<Statement> asyncStatements = new NodeList<>();
         for (int i = 0; i < statementNodeList.size(); i++) {
             Statement statement = statementNodeList.get(i);
             List<Statement> lastStatementList = statementNodeList.subList(i + 1, statementNodeList.size());
+            boolean lastHasReturnOrThrow = hasReturnOrThrowStmt(lastStatementList);
+            boolean lastHasAwait = hasAwait(lastStatementList);
             if (statement.isExpressionStmt() &&
                     statement.asExpressionStmt().getExpression().isMethodCallExpr() &&
                     statement.asExpressionStmt().getExpression().asMethodCallExpr().getNameAsString().equals("await") &&
@@ -197,7 +199,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                             asyncStatements.add(new ReturnStmt(then));
                         }
 
-                    } else if (hasReturnOrThrowStmt) {
+                    } else if (hasReturnOrThrow) {
                         MethodCallExpr then = new MethodCallExpr("then")
                                 .addArgument(
                                         new MethodCallExpr("defer")
@@ -217,7 +219,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                         } else {
                             asyncStatements.add(new ReturnStmt(then));
                         }
-                    } else if (hasAwait && (hasReturnOrThrowStmt(lastStatementList) || hasAwait(lastStatementList))) {
+                    } else if (hasAwait && (lastHasReturnOrThrow || lastHasAwait)) {
                         MethodCallExpr thenEmpty = new MethodCallExpr("thenEmpty")
                                 .addArgument(
                                         new MethodCallExpr("defer")
@@ -287,7 +289,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                         } else {
                             asyncStatements.add(new ReturnStmt(then));
                         }
-                    } else if (hasReturnOrThrowStmt) {
+                    } else if (hasReturnOrThrow) {
                         MethodCallExpr then = new MethodCallExpr("then")
                                 .addArgument(
                                         new MethodCallExpr("defer")
@@ -310,7 +312,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                         } else {
                             asyncStatements.add(new ReturnStmt(then));
                         }
-                    } else if (hasAwait && (hasReturnOrThrowStmt(lastStatementList) || hasAwait(lastStatementList))) {
+                    } else if (hasAwait && (lastHasReturnOrThrow || lastHasAwait)) {
                         MethodCallExpr thenEmpty = new MethodCallExpr("thenEmpty")
                                 .addArgument(
                                         new MethodCallExpr("defer")
@@ -402,7 +404,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                         } else {
                             asyncStatements.add(new ReturnStmt(then));
                         }
-                    } else if (hasReturnOrThrowStmt) {
+                    } else if (hasReturnOrThrow) {
                         MethodCallExpr then = new MethodCallExpr("then")
                                 .addArgument(
                                         new MethodCallExpr("defer")
@@ -422,7 +424,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                         } else {
                             asyncStatements.add(new ReturnStmt(then));
                         }
-                    } else if (hasAwait && (hasReturnOrThrowStmt(lastStatementList) || hasAwait(lastStatementList))) {
+                    } else if (hasAwait && (lastHasReturnOrThrow || lastHasAwait)) {
                         MethodCallExpr thenEmpty = new MethodCallExpr("thenEmpty")
                                 .addArgument(
                                         new MethodCallExpr("defer")
@@ -480,7 +482,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                 String methodDeclarationReturnDescribe = processorManager.resolveMethodDeclarationReturnTypeDescribe(methodCallExpr);
                 if (methodCallExpr.getScope().isPresent() && processorManager.calculateType(methodCallExpr.getScope().get()).asReferenceType().getQualifiedName().equals(Provider.class.getCanonicalName()) ||
                         methodDeclarationReturnTypeName.equals(Mono.class.getCanonicalName())) {
-                    if (hasReturnOrThrowStmt) {
+                    if (hasReturnOrThrow) {
                         MethodCallExpr flatMap;
                         if (hasCheckAwaitIsNull) {
                             flatMap = new MethodCallExpr("switchIfEmpty")
@@ -502,7 +504,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                                     )
                                                     .setScope(methodCallExpr)
                                     );
-                        } else if (!hasReturnOrThrowStmt(lastStatementList) && !hasAwait(lastStatementList)) {
+                        } else if (!lastHasReturnOrThrow && !lastHasAwait) {
                             flatMap = new MethodCallExpr("doOnSuccess")
                                     .addArgument(
                                             new LambdaExpr()
@@ -549,7 +551,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                                     )
                                                     .setScope(methodCallExpr)
                                     );
-                        } else if (!hasReturnOrThrowStmt(lastStatementList) && !hasAwait(lastStatementList)) {
+                        } else if (!lastHasReturnOrThrow && !lastHasAwait) {
                             flatMap = new MethodCallExpr("doOnSuccess")
                                     .addArgument(
                                             new LambdaExpr()
@@ -647,7 +649,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                     }
                     break;
                 } else if (methodDeclarationReturnTypeName.equals(Flux.class.getCanonicalName())) {
-                    if (hasReturnOrThrowStmt) {
+                    if (hasReturnOrThrow) {
                         MethodCallExpr flatMap;
                         if (hasCheckAwaitIsNull) {
                             flatMap = new MethodCallExpr("switchIfEmpty")
@@ -833,7 +835,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                             );
                     methodCallExpr.getScope().ifPresent(asyncMethodCallExpr::setScope);
 
-                    if (hasReturnOrThrowStmt) {
+                    if (hasReturnOrThrow) {
                         MethodCallExpr flatMap;
                         if (hasCheckAwaitIsNull) {
                             flatMap = new MethodCallExpr("switchIfEmpty")
@@ -1382,7 +1384,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
     private void buildIfStmt(List<Statement> statementNodeList, int i, IfStmt ifStmt, String defaultIfEmpty) {
         List<Statement> lastStatementList = statementNodeList.subList(i + 1, statementNodeList.size());
         boolean lastHasAwait = hasAwait(lastStatementList);
-        boolean lastReturnOrThrowStmt = hasReturnOrThrowStmt(lastStatementList);
+        boolean lastHasReturnOrThrow = hasReturnOrThrowStmt(lastStatementList);
         boolean hasAwait = false;
         if (ifStmt.getThenStmt().isBlockStmt()) {
             if (hasAwait(ifStmt.getThenStmt().asBlockStmt().getStatements()) && !hasReturnOrThrowStmt(ifStmt.getThenStmt().asBlockStmt().getStatements())) {
@@ -1411,10 +1413,10 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                         .ifPresent(expression -> ifStmt.getElseStmt().get().asReturnStmt().setExpression(expression));
             }
         } else {
-            if ((ifStmt.getThenStmt().isReturnStmt() ||
-                    ifStmt.getThenStmt().isBlockStmt() && hasAwait) &&
+            if ((ifStmt.getThenStmt().isReturnStmt() || ifStmt.getThenStmt().isBlockStmt() && hasAwait) &&
                     !lastHasAwait &&
-                    !lastReturnOrThrowStmt) {
+                    !lastHasReturnOrThrow
+            ) {
                 getParentReturnOrThrowStatementList(ifStmt, defaultIfEmpty)
                         .ifPresentOrElse(nodeList ->
                                         ifStmt.setElseStmt(
