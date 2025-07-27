@@ -15,7 +15,6 @@ import io.nozdormu.common.ProcessorManager;
 import io.nozdormu.inject.processor.ComponentProxyProcessor;
 import io.nozdormu.spi.async.Async;
 import io.nozdormu.spi.async.Asyncable;
-import jakarta.el.MethodNotFoundException;
 import jakarta.inject.Provider;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -26,7 +25,6 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
-import static com.github.javaparser.ast.expr.AssignExpr.Operator.ASSIGN;
 import static com.github.javaparser.ast.expr.BinaryExpr.Operator.EQUALS;
 import static com.github.javaparser.ast.expr.BinaryExpr.Operator.NOT_EQUALS;
 import static io.nozdormu.spi.async.Asyncable.ASYNC_METHOD_NAME_SUFFIX;
@@ -45,7 +43,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
     public void processComponentProxy(CompilationUnit componentCompilationUnit, ClassOrInterfaceDeclaration componentClassDeclaration, CompilationUnit componentProxyCompilationUnit, ClassOrInterfaceDeclaration componentProxyClassDeclaration) {
         componentProxyCompilationUnit.addImport(Mono.class);
         componentProxyCompilationUnit.addImport(Flux.class);
-        componentProxyCompilationUnit.addImport(MethodNotFoundException.class);
+        componentProxyCompilationUnit.addImport(RuntimeException.class);
         componentCompilationUnit.clone()
                 .addImport(Mono.class)
                 .addImport(Flux.class)
@@ -1503,7 +1501,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
             return Optional.empty();
         }
 
-        SwitchExpr switchExpr = new SwitchExpr()
+        SwitchStmt switchStmt = new SwitchStmt()
                 .setSelector(asyncMethodDeclaration.getParameter(0).getNameAsExpression())
                 .setEntries(
                         Stream
@@ -1529,8 +1527,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                                             return new SwitchEntry()
                                                                     .setLabels(new NodeList<>(new StringLiteralExpr(asyncMethodName)))
                                                                     .addStatement(
-                                                                            new AssignExpr(
-                                                                                    new NameExpr("result"),
+                                                                            new ReturnStmt(
                                                                                     new CastExpr()
                                                                                             .setExpression(
                                                                                                     new MethodCallExpr(asyncMethodName)
@@ -1548,11 +1545,9 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                                                                                                             .collect(Collectors.toCollection(NodeList::new))
                                                                                                             )
                                                                                             )
-                                                                                            .setType(asyncMethodDeclaration.getType()),
-                                                                                    ASSIGN
+                                                                                            .setType(asyncMethodDeclaration.getType())
                                                                             )
-                                                                    )
-                                                                    .addStatement(new BreakStmt());
+                                                                    );
                                                         }
                                                 ),
                                         Stream.of(
@@ -1562,9 +1557,14 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                                                         new ObjectCreationExpr()
                                                                                 .setType(
                                                                                         new ClassOrInterfaceType()
-                                                                                                .setName(MethodNotFoundException.class.getSimpleName())
+                                                                                                .setName(RuntimeException.class.getSimpleName())
                                                                                 )
-                                                                                .addArgument(new NameExpr("asyncMethodName"))
+                                                                                .addArgument(
+                                                                                        new BinaryExpr()
+                                                                                                .setLeft(new StringLiteralExpr("method not found: "))
+                                                                                                .setOperator(BinaryExpr.Operator.PLUS)
+                                                                                                .setRight(new NameExpr("asyncMethodName"))
+                                                                                )
                                                                 )
                                                         )
                                         )
@@ -1580,12 +1580,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                         .setParameters(asyncMethodDeclaration.getParameters())
                         .setTypeParameters(asyncMethodDeclaration.getTypeParameters())
                         .addAnnotation(Override.class)
-                        .setBody(
-                                new BlockStmt()
-                                        .addStatement(new VariableDeclarationExpr().addVariable(new VariableDeclarator(asyncMethodDeclaration.getType(), "result")))
-                                        .addStatement(switchExpr)
-                                        .addStatement(new ReturnStmt(new NameExpr("result")))
-                        )
+                        .setBody(new BlockStmt().addStatement(switchStmt))
         );
     }
 }
