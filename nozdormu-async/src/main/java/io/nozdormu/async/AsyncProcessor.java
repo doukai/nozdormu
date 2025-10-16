@@ -216,7 +216,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                             asyncStatements.add(new ReturnStmt(then));
                         }
                     } else if (lastHasAwait) {
-                        MethodCallExpr thenEmpty = new MethodCallExpr("thenEmpty")
+                        MethodCallExpr then = new MethodCallExpr("then")
                                 .addArgument(
                                         new MethodCallExpr("defer")
                                                 .addArgument(
@@ -230,10 +230,10 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                         if (defaultIfEmpty != null) {
                             MethodCallExpr defaultIfEmptyMethod = new MethodCallExpr("defaultIfEmpty")
                                     .addArgument(new NameExpr(defaultIfEmpty))
-                                    .setScope(thenEmpty);
+                                    .setScope(then);
                             asyncStatements.add(new ReturnStmt(defaultIfEmptyMethod));
                         } else {
-                            asyncStatements.add(new ReturnStmt(thenEmpty));
+                            asyncStatements.add(new ReturnStmt(then));
                         }
                     } else {
                         MethodCallExpr thenEmpty = new MethodCallExpr("thenEmpty")
@@ -309,7 +309,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                             asyncStatements.add(new ReturnStmt(then));
                         }
                     } else if (lastHasAwait) {
-                        MethodCallExpr thenEmpty = new MethodCallExpr("thenEmpty")
+                        MethodCallExpr then = new MethodCallExpr("then")
                                 .addArgument(
                                         new MethodCallExpr("defer")
                                                 .addArgument(
@@ -326,13 +326,13 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                         if (defaultIfEmpty != null) {
                             MethodCallExpr defaultIfEmptyMethod = new MethodCallExpr("defaultIfEmpty")
                                     .addArgument(new NameExpr(defaultIfEmpty))
-                                    .setScope(thenEmpty);
+                                    .setScope(then);
                             asyncStatements.add(new ReturnStmt(defaultIfEmptyMethod));
                         } else {
-                            asyncStatements.add(new ReturnStmt(thenEmpty));
+                            asyncStatements.add(new ReturnStmt(then));
                         }
                     } else {
-                        MethodCallExpr thenEmpty = new MethodCallExpr("thenEmpty")
+                        MethodCallExpr then = new MethodCallExpr("then")
                                 .addArgument(
                                         new MethodCallExpr("fromRunnable")
                                                 .addArgument(
@@ -349,10 +349,10 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                         if (defaultIfEmpty != null) {
                             MethodCallExpr defaultIfEmptyMethod = new MethodCallExpr("defaultIfEmpty")
                                     .addArgument(new NameExpr(defaultIfEmpty))
-                                    .setScope(thenEmpty);
+                                    .setScope(then);
                             asyncStatements.add(new ReturnStmt(defaultIfEmptyMethod));
                         } else {
-                            asyncStatements.add(new ReturnStmt(thenEmpty));
+                            asyncStatements.add(new ReturnStmt(then));
                         }
                     }
                     break;
@@ -421,7 +421,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                             asyncStatements.add(new ReturnStmt(then));
                         }
                     } else if (lastHasAwait) {
-                        MethodCallExpr thenEmpty = new MethodCallExpr("thenEmpty")
+                        MethodCallExpr then = new MethodCallExpr("then")
                                 .addArgument(
                                         new MethodCallExpr("defer")
                                                 .addArgument(
@@ -435,10 +435,10 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                         if (defaultIfEmpty != null) {
                             MethodCallExpr defaultIfEmptyMethod = new MethodCallExpr("defaultIfEmpty")
                                     .addArgument(new NameExpr(defaultIfEmpty))
-                                    .setScope(thenEmpty);
+                                    .setScope(then);
                             asyncStatements.add(new ReturnStmt(defaultIfEmptyMethod));
                         } else {
-                            asyncStatements.add(new ReturnStmt(thenEmpty));
+                            asyncStatements.add(new ReturnStmt(then));
                         }
                     } else {
                         MethodCallExpr thenEmpty = new MethodCallExpr("thenEmpty")
@@ -1438,9 +1438,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                             if (parent instanceof NodeWithStatements) {
                                 List<Statement> statementList = ((NodeWithStatements<? extends Node>) parent).getStatements();
                                 List<Statement> lastStatementList = statementList.subList(statementList.indexOf(node) + 1, statementList.size());
-                                if (lastStatementList.stream()
-                                        .anyMatch(statement -> statement.isThrowStmt() || statement.isReturnStmt() || hasAwait(statement))
-                                ) {
+                                if (hasReturnOrThrowStmt(lastStatementList) || hasAwait(lastStatementList)) {
                                     return Optional.of(buildAsyncStatements(lastStatementList, defaultIsEmpty));
                                 } else {
                                     return getParentReturnOrThrowStatementList(parent, defaultIsEmpty);
