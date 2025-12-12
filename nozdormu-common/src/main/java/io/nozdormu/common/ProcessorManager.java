@@ -50,11 +50,10 @@ import javax.lang.model.util.Elements;
 import javax.tools.Diagnostic;
 import javax.tools.FileObject;
 import javax.tools.StandardLocation;
-import java.io.FileNotFoundException;
-import java.io.IOException;
-import java.io.Writer;
+import java.io.*;
 import java.lang.annotation.Annotation;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
@@ -65,6 +64,10 @@ import java.util.stream.Stream;
 import static javax.lang.model.element.ElementKind.CLASS;
 
 public class ProcessorManager {
+
+    private static final Map<String, CompilationUnit> COMPILATION_UNIT_CACHE = new HashMap<>();
+
+    private static final Map<String, String> JAVA_SOURCE_CACHE = new HashMap<>();
 
     private final ProcessingEnvironment processingEnv;
     private RoundEnvironment roundEnv;
@@ -181,12 +184,12 @@ public class ProcessorManager {
                 );
     }
 
-    public void createResource(String name, String content) {
+    public void createResource(String fileName, String content) {
         try {
-            Writer writer = filer.createResource(StandardLocation.CLASS_OUTPUT, "", name).openWriter();
+            Writer writer = filer.createResource(StandardLocation.CLASS_OUTPUT, "", fileName).openWriter();
             writer.write(content);
             writer.close();
-            Logger.info("{} build success", name);
+            Logger.info("{} build success", fileName);
         } catch (IOException e) {
             Logger.error(e);
             processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, "resource file create failed");
@@ -194,25 +197,25 @@ public class ProcessorManager {
         }
     }
 
-    public Optional<FileObject> getResource(String fileName) {
+    public FileObject getResource(String fileName) {
         try {
-            FileObject resource = processingEnv.getFiler().getResource(StandardLocation.SOURCE_PATH, "", fileName);
-            return Optional.ofNullable(resource);
-        } catch (FileNotFoundException e) {
-            return Optional.empty();
+            return processingEnv.getFiler().getResource(StandardLocation.CLASS_OUTPUT, "", fileName);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
     }
 
     public Optional<CompilationUnit> getCompilationUnit(TypeElement typeElement) {
-        return combinedTypeSolver.getRoot().tryToSolveType(typeElement.getQualifiedName().toString()).getDeclaration()
+        if (COMPILATION_UNIT_CACHE.containsKey(typeElement.getQualifiedName().toString())) {
+            return Optional.of(COMPILATION_UNIT_CACHE.get(typeElement.getQualifiedName().toString()));
+        }
+        Optional<CompilationUnit> compilationUnitOptional = combinedTypeSolver.getRoot().tryToSolveType(typeElement.getQualifiedName().toString()).getDeclaration()
                 .flatMap(AssociableToAST::toAst)
                 .flatMap(Node::findCompilationUnit)
                 .or(() ->
-                        Optional.ofNullable(trees.getPath(typeElement))
-                                .flatMap(treePath -> {
-                                            ParseResult<CompilationUnit> parseResult = javaParser.parse(treePath.getCompilationUnit().toString());
+                        Optional.ofNullable(JAVA_SOURCE_CACHE.get(typeElement.getQualifiedName().toString()))
+                                .flatMap(source -> {
+                                            ParseResult<CompilationUnit> parseResult = javaParser.parse(source);
                                             if (!parseResult.getProblems().isEmpty()) {
                                                 throw new RuntimeException(parseResult.getProblems().stream()
                                                         .map(Problem::getMessage)
@@ -221,10 +224,44 @@ public class ProcessorManager {
                                             return parseResult.getResult();
                                         }
                                 )
+                                .or(() ->
+                                        Optional.ofNullable(trees.getPath(typeElement))
+                                                .flatMap(treePath -> {
+                                                            String source = treePath.getCompilationUnit().toString();
+                                                            JAVA_SOURCE_CACHE.put(typeElement.getQualifiedName().toString(), source);
+                                                            ParseResult<CompilationUnit> parseResult = javaParser.parse(source);
+                                                            if (!parseResult.getProblems().isEmpty()) {
+                                                                throw new RuntimeException(parseResult.getProblems().stream()
+                                                                        .map(Problem::getMessage)
+                                                                        .collect(Collectors.joining(System.lineSeparator())));
+                                                            }
+                                                            return parseResult.getResult();
+                                                        }
+                                                )
+                                )
+                                .or(() -> {
+                                            FileObject fileObject = getResource(typeElement.getQualifiedName().toString().replace('.', File.separatorChar) + ".java");
+                                            try (InputStream inputStream = fileObject.openInputStream()) {
+                                                ParseResult<CompilationUnit> parseResult = javaParser.parse(inputStream);
+                                                if (!parseResult.getProblems().isEmpty()) {
+                                                    throw new RuntimeException(parseResult.getProblems().stream()
+                                                            .map(Problem::getMessage)
+                                                            .collect(Collectors.joining(System.lineSeparator())));
+                                                }
+                                                return parseResult.getResult();
+                                            } catch (NoSuchFileException e1) {
+                                                return Optional.empty();
+                                            } catch (IOException e1) {
+                                                throw new RuntimeException(e1);
+                                            }
+                                        }
+                                )
                                 .or(() -> {
                                             try {
                                                 return typeElementDecompiler.decompileOrEmpty(typeElement)
                                                         .flatMap(source -> {
+                                                                    createResource(typeElement.getQualifiedName().toString().replace('.', File.separatorChar) + ".java", source);
+                                                                    JAVA_SOURCE_CACHE.put(typeElement.getQualifiedName().toString(), source);
                                                                     ParseResult<CompilationUnit> parseResult = javaParser.parse(source);
                                                                     if (!parseResult.getProblems().isEmpty()) {
                                                                         throw new RuntimeException(parseResult.getProblems().stream()
@@ -234,12 +271,18 @@ public class ProcessorManager {
                                                                     return parseResult.getResult();
                                                                 }
                                                         );
-                                            } catch (Exception e) {
-                                                throw new RuntimeException(e);
+                                            } catch (Exception e1) {
+                                                throw new RuntimeException(e1);
                                             }
                                         }
                                 )
                 );
+        compilationUnitOptional
+                .ifPresent(compilationUnit -> {
+                            COMPILATION_UNIT_CACHE.put(typeElement.getQualifiedName().toString(), compilationUnit);
+                        }
+                );
+        return compilationUnitOptional;
     }
 
     public List<CompilationUnit> getCompilationUnitListWithAnnotationClass(Class<? extends Annotation> annotationClass) {
