@@ -67,8 +67,6 @@ public class ProcessorManager {
 
     private static final Map<String, CompilationUnit> COMPILATION_UNIT_CACHE = new HashMap<>();
 
-    private static final Map<String, String> JAVA_SOURCE_CACHE = new HashMap<>();
-
     private final ProcessingEnvironment processingEnv;
     private RoundEnvironment roundEnv;
     private final Trees trees;
@@ -213,8 +211,9 @@ public class ProcessorManager {
                 .flatMap(AssociableToAST::toAst)
                 .flatMap(Node::findCompilationUnit)
                 .or(() ->
-                        Optional.ofNullable(JAVA_SOURCE_CACHE.get(typeElement.getQualifiedName().toString()))
-                                .flatMap(source -> {
+                        Optional.ofNullable(trees.getPath(typeElement))
+                                .flatMap(treePath -> {
+                                            String source = treePath.getCompilationUnit().toString();
                                             ParseResult<CompilationUnit> parseResult = javaParser.parse(source);
                                             if (!parseResult.getProblems().isEmpty()) {
                                                 throw new RuntimeException(parseResult.getProblems().stream()
@@ -223,21 +222,6 @@ public class ProcessorManager {
                                             }
                                             return parseResult.getResult();
                                         }
-                                )
-                                .or(() ->
-                                        Optional.ofNullable(trees.getPath(typeElement))
-                                                .flatMap(treePath -> {
-                                                            String source = treePath.getCompilationUnit().toString();
-                                                            JAVA_SOURCE_CACHE.put(typeElement.getQualifiedName().toString(), source);
-                                                            ParseResult<CompilationUnit> parseResult = javaParser.parse(source);
-                                                            if (!parseResult.getProblems().isEmpty()) {
-                                                                throw new RuntimeException(parseResult.getProblems().stream()
-                                                                        .map(Problem::getMessage)
-                                                                        .collect(Collectors.joining(System.lineSeparator())));
-                                                            }
-                                                            return parseResult.getResult();
-                                                        }
-                                                )
                                 )
                                 .or(() -> {
                                             FileObject fileObject = getResource(typeElement.getQualifiedName().toString().replace('.', File.separatorChar) + ".java");
@@ -249,10 +233,10 @@ public class ProcessorManager {
                                                             .collect(Collectors.joining(System.lineSeparator())));
                                                 }
                                                 return parseResult.getResult();
-                                            } catch (NoSuchFileException e1) {
+                                            } catch (NoSuchFileException e) {
                                                 return Optional.empty();
-                                            } catch (IOException e1) {
-                                                throw new RuntimeException(e1);
+                                            } catch (IOException e) {
+                                                throw new RuntimeException(e);
                                             }
                                         }
                                 )
@@ -261,7 +245,6 @@ public class ProcessorManager {
                                                 return typeElementDecompiler.decompileOrEmpty(typeElement)
                                                         .flatMap(source -> {
                                                                     createResource(typeElement.getQualifiedName().toString().replace('.', File.separatorChar) + ".java", source);
-                                                                    JAVA_SOURCE_CACHE.put(typeElement.getQualifiedName().toString(), source);
                                                                     ParseResult<CompilationUnit> parseResult = javaParser.parse(source);
                                                                     if (!parseResult.getProblems().isEmpty()) {
                                                                         throw new RuntimeException(parseResult.getProblems().stream()
@@ -271,8 +254,8 @@ public class ProcessorManager {
                                                                     return parseResult.getResult();
                                                                 }
                                                         );
-                                            } catch (Exception e1) {
-                                                throw new RuntimeException(e1);
+                                            } catch (Exception e) {
+                                                throw new RuntimeException(e);
                                             }
                                         }
                                 )
