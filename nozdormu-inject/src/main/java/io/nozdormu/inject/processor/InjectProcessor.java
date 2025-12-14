@@ -43,6 +43,7 @@ import org.tinylog.Logger;
 import reactor.core.publisher.Mono;
 
 import javax.annotation.processing.*;
+import javax.lang.model.SourceVersion;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.TypeElement;
 import java.util.*;
@@ -50,7 +51,6 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static io.nozdormu.spi.error.InjectionProcessErrorType.*;
-import static javax.lang.model.SourceVersion.RELEASE_11;
 
 @SupportedAnnotationTypes({
         "jakarta.inject.Singleton",
@@ -60,7 +60,6 @@ import static javax.lang.model.SourceVersion.RELEASE_11;
         "jakarta.enterprise.context.SessionScoped",
         "jakarta.transaction.TransactionScoped"
 })
-@SupportedSourceVersion(RELEASE_11)
 @AutoService(Processor.class)
 public class InjectProcessor extends AbstractProcessor {
 
@@ -68,6 +67,11 @@ public class InjectProcessor extends AbstractProcessor {
     private ProcessorManager processorManager;
     private final List<String> processed = new ArrayList<>();
     private int index = 0;
+
+    @Override
+    public SourceVersion getSupportedSourceVersion() {
+        return SourceVersion.latestSupported();
+    }
 
     @Override
     public synchronized void init(ProcessingEnvironment processingEnv) {

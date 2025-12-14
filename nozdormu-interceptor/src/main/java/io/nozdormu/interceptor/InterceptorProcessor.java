@@ -17,6 +17,7 @@ import jakarta.inject.Named;
 import jakarta.interceptor.*;
 
 import javax.annotation.processing.*;
+import javax.lang.model.SourceVersion;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.TypeElement;
 
@@ -25,16 +26,18 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static javax.lang.model.SourceVersion.RELEASE_11;
-
 @SupportedAnnotationTypes({
         "jakarta.interceptor.Interceptor"
 })
-@SupportedSourceVersion(RELEASE_11)
 @AutoService(Processor.class)
 public class InterceptorProcessor extends AbstractProcessor {
 
     private ProcessorManager processorManager;
+
+    @Override
+    public SourceVersion getSupportedSourceVersion() {
+        return SourceVersion.latestSupported();
+    }
 
     @Override
     public synchronized void init(ProcessingEnvironment processingEnv) {

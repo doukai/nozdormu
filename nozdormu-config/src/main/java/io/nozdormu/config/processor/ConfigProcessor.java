@@ -20,6 +20,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperties;
 import org.tinylog.Logger;
 
 import javax.annotation.processing.*;
+import javax.lang.model.SourceVersion;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.TypeElement;
 import java.util.List;
@@ -35,6 +36,11 @@ import static io.nozdormu.spi.error.InjectionProcessErrorType.CONFIG_PROPERTIES_
 public class ConfigProcessor extends AbstractProcessor {
 
     private ProcessorManager processorManager;
+
+    @Override
+    public SourceVersion getSupportedSourceVersion() {
+        return SourceVersion.latestSupported();
+    }
 
     @Override
     public synchronized void init(ProcessingEnvironment processingEnv) {
