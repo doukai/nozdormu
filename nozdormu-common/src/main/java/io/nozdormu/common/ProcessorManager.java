@@ -88,10 +88,13 @@ public class ProcessorManager {
             JavaParserTypeSolver testJavaParserTypeSolver = new JavaParserTypeSolver(testSourcePath);
             this.combinedTypeSolver.add(testJavaParserTypeSolver);
         }
-        Path rootSourcePath = getRootPath(generatedSourcePath);
-        if (Files.exists(rootSourcePath)) {
-            if (Files.exists(rootSourcePath.resolve("build.gradle"))) {
-                try (Stream<Path> stream = Files.walk(rootSourcePath, 1)) {
+        JavaParserTypeSolver generatedJavaParserTypeSolver = new JavaParserTypeSolver(generatedSourcePath);
+        this.combinedTypeSolver.add(generatedJavaParserTypeSolver);
+        String rootProjectDirOption = processingEnv.getOptions().get("rootProjectDir");
+        if (rootProjectDirOption != null && !rootProjectDirOption.isEmpty()) {
+            Path rootProjectDir = Paths.get(rootProjectDirOption);
+            if (Files.exists(rootProjectDir)) {
+                try (Stream<Path> stream = Files.walk(rootProjectDir, 1)) {
                     stream.filter(Files::isDirectory)
                             .forEach(path -> {
                                         Path javaPath = path.resolve("src/main/java");
@@ -110,8 +113,6 @@ public class ProcessorManager {
                 }
             }
         }
-        JavaParserTypeSolver generatedJavaParserTypeSolver = new JavaParserTypeSolver(generatedSourcePath);
-        this.combinedTypeSolver.add(generatedJavaParserTypeSolver);
         ReflectionTypeSolver reflectionTypeSolver = new ReflectionTypeSolver();
         this.combinedTypeSolver.add(reflectionTypeSolver);
         ClassLoaderTypeSolver classLoaderTypeSolver = new ClassLoaderTypeSolver(classLoader);
