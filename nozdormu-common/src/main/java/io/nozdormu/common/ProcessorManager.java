@@ -24,10 +24,7 @@ import com.github.javaparser.resolution.types.ResolvedTypeVariable;
 import com.github.javaparser.symbolsolver.JavaSymbolSolver;
 import com.github.javaparser.symbolsolver.javaparsermodel.JavaParserFactory;
 import com.github.javaparser.symbolsolver.javaparsermodel.declarations.*;
-import com.github.javaparser.symbolsolver.resolution.typesolvers.ClassLoaderTypeSolver;
-import com.github.javaparser.symbolsolver.resolution.typesolvers.CombinedTypeSolver;
-import com.github.javaparser.symbolsolver.resolution.typesolvers.JavaParserTypeSolver;
-import com.github.javaparser.symbolsolver.resolution.typesolvers.ReflectionTypeSolver;
+import com.github.javaparser.symbolsolver.resolution.typesolvers.*;
 import com.sun.source.util.Trees;
 import io.nozdormu.spi.decompiler.TypeElementDecompiler;
 import io.nozdormu.spi.decompiler.TypeElementDecompilerProvider;
@@ -47,15 +44,11 @@ import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.PackageElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.util.Elements;
-import javax.tools.Diagnostic;
-import javax.tools.FileObject;
-import javax.tools.StandardLocation;
+import javax.tools.*;
 import java.io.*;
 import java.lang.annotation.Annotation;
-import java.nio.file.Files;
-import java.nio.file.NoSuchFileException;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.*;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -76,7 +69,7 @@ public class ProcessorManager {
     private final JavaSymbolSolver javaSymbolSolver;
     private final CombinedTypeSolver combinedTypeSolver;
     private final TypeElementDecompiler typeElementDecompiler;
-    private final ClassLoader classLoader;
+    private Path decompileCacheDir;
 
     public ProcessorManager(ProcessingEnvironment processingEnv, ClassLoader classLoader) {
         this.processingEnv = processingEnv;
@@ -88,24 +81,49 @@ public class ProcessorManager {
         Path sourcePath = getSourcePath(generatedSourcePath);
         if (Files.exists(sourcePath)) {
             JavaParserTypeSolver javaParserTypeSolver = new JavaParserTypeSolver(sourcePath);
-            combinedTypeSolver.add(javaParserTypeSolver);
+            this.combinedTypeSolver.add(javaParserTypeSolver);
         }
         Path testSourcePath = getTestSourcePath(generatedSourcePath);
         if (Files.exists(testSourcePath)) {
             JavaParserTypeSolver testJavaParserTypeSolver = new JavaParserTypeSolver(testSourcePath);
-            combinedTypeSolver.add(testJavaParserTypeSolver);
+            this.combinedTypeSolver.add(testJavaParserTypeSolver);
+        }
+        Path rootSourcePath = getRootPath(generatedSourcePath);
+        if (Files.exists(rootSourcePath)) {
+            if (Files.exists(rootSourcePath.resolve("build.gradle"))) {
+                try (Stream<Path> stream = Files.walk(rootSourcePath, 1)) {
+                    stream.filter(Files::isDirectory)
+                            .forEach(path -> {
+                                        Path javaPath = path.resolve("src/main/java");
+                                        if (Files.exists(javaPath)) {
+                                            JavaParserTypeSolver javaParserTypeSolver = new JavaParserTypeSolver(javaPath);
+                                            this.combinedTypeSolver.add(javaParserTypeSolver);
+                                        }
+                                        Path testJavaPath = path.resolve("src/test/java");
+                                        if (Files.exists(testJavaPath)) {
+                                            JavaParserTypeSolver testJavaParserTypeSolver = new JavaParserTypeSolver(testJavaPath);
+                                            this.combinedTypeSolver.add(testJavaParserTypeSolver);
+                                        }
+                                    }
+                            );
+                } catch (IOException ignore) {
+                }
+            }
         }
         JavaParserTypeSolver generatedJavaParserTypeSolver = new JavaParserTypeSolver(generatedSourcePath);
-        ClassLoaderTypeSolver classLoaderTypeSolver = new ClassLoaderTypeSolver(classLoader);
+        this.combinedTypeSolver.add(generatedJavaParserTypeSolver);
         ReflectionTypeSolver reflectionTypeSolver = new ReflectionTypeSolver();
-        combinedTypeSolver.add(generatedJavaParserTypeSolver);
-        combinedTypeSolver.add(classLoaderTypeSolver);
-        combinedTypeSolver.add(reflectionTypeSolver);
-        this.javaSymbolSolver = new JavaSymbolSolver(combinedTypeSolver);
+        this.combinedTypeSolver.add(reflectionTypeSolver);
+        ClassLoaderTypeSolver classLoaderTypeSolver = new ClassLoaderTypeSolver(classLoader);
+        this.combinedTypeSolver.add(classLoaderTypeSolver);
+        this.javaSymbolSolver = new JavaSymbolSolver(this.combinedTypeSolver);
         this.javaParser = new JavaParser();
-        this.javaParser.getParserConfiguration().setSymbolResolver(javaSymbolSolver);
+        this.javaParser.getParserConfiguration().setSymbolResolver(this.javaSymbolSolver);
         this.typeElementDecompiler = TypeElementDecompilerProvider.load(classLoader);
-        this.classLoader = classLoader;
+        String decompileCacheDirOption = processingEnv.getOptions().get("decompileCacheDir");
+        if (decompileCacheDirOption != null && !decompileCacheDirOption.isEmpty()) {
+            this.decompileCacheDir = Paths.get(decompileCacheDirOption);
+        }
     }
 
     public void setRoundEnv(RoundEnvironment roundEnv) {
@@ -140,6 +158,12 @@ public class ProcessorManager {
         Path sourcePath = generatedSourcePath.getParent().getParent().getParent().getParent().getParent().getParent().resolve("src/test/java");
         Logger.info("test source path: {}", sourcePath.toString());
         return sourcePath;
+    }
+
+    private Path getRootPath(Path generatedSourcePath) {
+        Path rootPath = generatedSourcePath.getParent().getParent().getParent().getParent().getParent().getParent().getParent();
+        Logger.info("rootPath path: {}", rootPath.toString());
+        return rootPath;
     }
 
     public String getRootPackageName() {
@@ -203,8 +227,29 @@ public class ProcessorManager {
         }
     }
 
+    public void cacheDecompile(TypeElement typeElement, String source) {
+        if (decompileCacheDir != null) {
+            Path filePath = decompileCacheDir.resolve(typeElement.getQualifiedName().toString().replace('.', File.separatorChar) + ".java");
+            try {
+                if (!Files.exists(filePath.getParent())) {
+                    Files.createDirectories(filePath.getParent());
+                }
+                Files.writeString(
+                        filePath,
+                        source,
+                        StandardCharsets.UTF_8,
+                        StandardOpenOption.CREATE_NEW,
+                        StandardOpenOption.WRITE
+                );
+                Logger.info("cache decompile: {}", typeElement.getQualifiedName().toString());
+            } catch (IOException ignore) {
+            }
+        }
+    }
+
     public Optional<CompilationUnit> getCompilationUnit(TypeElement typeElement) {
         if (COMPILATION_UNIT_CACHE.containsKey(typeElement.getQualifiedName().toString())) {
+            Logger.info(typeElement.getQualifiedName().toString() + " decompile cache exist");
             return Optional.of(COMPILATION_UNIT_CACHE.get(typeElement.getQualifiedName().toString()));
         }
         Optional<CompilationUnit> compilationUnitOptional = combinedTypeSolver.getRoot().tryToSolveType(typeElement.getQualifiedName().toString()).getDeclaration()
@@ -213,7 +258,15 @@ public class ProcessorManager {
                 .or(() ->
                         Optional.ofNullable(trees.getPath(typeElement))
                                 .flatMap(treePath -> {
-                                            String source = treePath.getCompilationUnit().toString();
+                                            JavaFileObject sourceFile = treePath.getCompilationUnit().getSourceFile();
+                                            try {
+                                                return Optional.of(sourceFile.getCharContent(true).toString());
+                                            } catch (IOException e) {
+                                                return Optional.empty();
+                                            }
+                                        }
+                                )
+                                .flatMap(source -> {
                                             ParseResult<CompilationUnit> parseResult = javaParser.parse(source);
                                             if (!parseResult.getProblems().isEmpty()) {
                                                 throw new RuntimeException(parseResult.getProblems().stream()
@@ -224,37 +277,44 @@ public class ProcessorManager {
                                         }
                                 )
                                 .or(() -> {
-                                            FileObject fileObject = getResource(typeElement.getQualifiedName().toString().replace('.', File.separatorChar) + ".java");
-                                            try (InputStream inputStream = fileObject.openInputStream()) {
-                                                ParseResult<CompilationUnit> parseResult = javaParser.parse(inputStream);
-                                                if (!parseResult.getProblems().isEmpty()) {
-                                                    throw new RuntimeException(parseResult.getProblems().stream()
-                                                            .map(Problem::getMessage)
-                                                            .collect(Collectors.joining(System.lineSeparator())));
+                                            if (decompileCacheDir != null) {
+                                                Path filePath = decompileCacheDir.resolve(typeElement.getQualifiedName().toString().replace('.', File.separatorChar) + ".java");
+                                                try {
+                                                    String decompileJava = Files.readString(filePath);
+                                                    Logger.info(typeElement.getQualifiedName() + " decompile java file exist");
+                                                    ParseResult<CompilationUnit> parseResult = javaParser.parse(decompileJava);
+                                                    if (!parseResult.getProblems().isEmpty()) {
+                                                        throw new RuntimeException(parseResult.getProblems().stream()
+                                                                .map(Problem::getMessage)
+                                                                .collect(Collectors.joining(System.lineSeparator())));
+                                                    }
+                                                    return parseResult.getResult();
+                                                } catch (IOException e) {
+                                                    return Optional.empty();
                                                 }
-                                                return parseResult.getResult();
-                                            } catch (NoSuchFileException e) {
+                                            } else {
                                                 return Optional.empty();
-                                            } catch (IOException e) {
-                                                throw new RuntimeException(e);
                                             }
                                         }
                                 )
                                 .or(() -> {
                                             try {
+                                                Logger.info(typeElement.getQualifiedName() + " decompile start");
                                                 return typeElementDecompiler.decompileOrEmpty(typeElement)
                                                         .flatMap(source -> {
-                                                                    createResource(typeElement.getQualifiedName().toString().replace('.', File.separatorChar) + ".java", source);
+                                                                    cacheDecompile(typeElement, source);
                                                                     ParseResult<CompilationUnit> parseResult = javaParser.parse(source);
                                                                     if (!parseResult.getProblems().isEmpty()) {
                                                                         throw new RuntimeException(parseResult.getProblems().stream()
                                                                                 .map(Problem::getMessage)
                                                                                 .collect(Collectors.joining(System.lineSeparator())));
                                                                     }
+                                                                    Logger.info(typeElement.getQualifiedName() + " decompile success");
                                                                     return parseResult.getResult();
                                                                 }
                                                         );
                                             } catch (Exception e) {
+                                                Logger.info(typeElement.getQualifiedName() + " decompile error");
                                                 throw new RuntimeException(e);
                                             }
                                         }
@@ -267,6 +327,7 @@ public class ProcessorManager {
                 );
         return compilationUnitOptional;
     }
+
 
     public List<CompilationUnit> getCompilationUnitListWithAnnotationClass(Class<? extends Annotation> annotationClass) {
         return roundEnv.getElementsAnnotatedWith(annotationClass).stream()

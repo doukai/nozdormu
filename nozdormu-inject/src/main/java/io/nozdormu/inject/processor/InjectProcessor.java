@@ -65,8 +65,6 @@ public class InjectProcessor extends AbstractProcessor {
 
     private final Set<ComponentProxyProcessor> componentProxyProcessors = new HashSet<>();
     private ProcessorManager processorManager;
-    private final List<String> processed = new ArrayList<>();
-    private int index = 0;
 
     @Override
     public SourceVersion getSupportedSourceVersion() {
@@ -109,13 +107,10 @@ public class InjectProcessor extends AbstractProcessor {
                 .filter(element -> element.getAnnotation(Generated.class) == null)
                 .filter(element -> element.getKind().isClass())
                 .map(element -> (TypeElement) element)
-                .filter(typeElement -> !processed.contains(typeElement.getQualifiedName().toString()))
                 .collect(Collectors.toList());
 
         if (typeElements.isEmpty()) {
             return false;
-        } else {
-            processed.addAll(typeElements.stream().map(typeElement -> typeElement.getQualifiedName().toString()).collect(Collectors.toList()));
         }
 
         processorManager.setRoundEnv(roundEnv);
@@ -136,8 +131,7 @@ public class InjectProcessor extends AbstractProcessor {
                 typeElements.stream()
                         .flatMap(typeElement -> processorManager.getCompilationUnit(typeElement).stream())
                         .collect(Collectors.toList()),
-                componentProxyCompilationUnits,
-                index++
+                componentProxyCompilationUnits
         );
         processorManager.writeToFiler(moduleContextCompilationUnit);
         Logger.debug("module context class build success");
@@ -287,10 +281,10 @@ public class InjectProcessor extends AbstractProcessor {
         return proxyCompilationUnit;
     }
 
-    private CompilationUnit buildModuleContext(List<CompilationUnit> componentCompilationUnits, List<CompilationUnit> componentProxyCompilationUnits, int index) {
+    private CompilationUnit buildModuleContext(List<CompilationUnit> componentCompilationUnits, List<CompilationUnit> componentProxyCompilationUnits) {
         ClassOrInterfaceDeclaration contextClassDeclaration = new ClassOrInterfaceDeclaration()
                 .setPublic(true)
-                .setName(processorManager.getRootPackageName().replaceAll("\\.", "_") + (index == 0 ? "" : index) + "_Context")
+                .setName(processorManager.getRootPackageName().replaceAll("\\.", "_") + "_Context" + "_" + System.currentTimeMillis())
                 .addAnnotation(
                         new SingleMemberAnnotationExpr()
                                 .setMemberValue(new ClassExpr().setType(BeanContextLoader.class))
