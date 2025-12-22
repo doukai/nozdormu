@@ -17,7 +17,8 @@ import jakarta.annotation.Generated;
 import org.eclipse.microprofile.config.Config;
 import org.eclipse.microprofile.config.ConfigProvider;
 import org.eclipse.microprofile.config.inject.ConfigProperties;
-import org.tinylog.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.annotation.processing.*;
 import javax.lang.model.SourceVersion;
@@ -34,6 +35,8 @@ import static io.nozdormu.spi.error.InjectionProcessErrorType.CONFIG_PROPERTIES_
 })
 @AutoService(Processor.class)
 public class ConfigProcessor extends AbstractProcessor {
+
+    private static final Logger logger = LoggerFactory.getLogger(ConfigProcessor.class);
 
     private ProcessorManager processorManager;
 
@@ -70,7 +73,7 @@ public class ConfigProcessor extends AbstractProcessor {
                 .collect(Collectors.toList());
         CompilationUnit moduleContextCompilationUnit = buildModuleContext(compilationUnitList);
         processorManager.writeToFiler(moduleContextCompilationUnit);
-        Logger.debug("config module context class build success");
+        logger.debug("config module context class build success");
         return false;
     }
 
@@ -157,7 +160,7 @@ public class ConfigProcessor extends AbstractProcessor {
                             );
                         }
                 );
-        Logger.info("{} module context class build success", contextClassDeclaration.getNameAsString());
+        logger.info("{} module context class build success", contextClassDeclaration.getNameAsString());
         return contextCompilationUnit;
     }
 

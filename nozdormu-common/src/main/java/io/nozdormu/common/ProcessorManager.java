@@ -13,16 +13,11 @@ import com.github.javaparser.ast.stmt.ReturnStmt;
 import com.github.javaparser.ast.stmt.Statement;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import com.github.javaparser.ast.type.Type;
-import com.github.javaparser.resolution.Context;
 import com.github.javaparser.resolution.UnsolvedSymbolException;
 import com.github.javaparser.resolution.declarations.*;
-import com.github.javaparser.resolution.model.SymbolReference;
-import com.github.javaparser.resolution.model.typesystem.ReferenceTypeImpl;
 import com.github.javaparser.resolution.types.ResolvedReferenceType;
 import com.github.javaparser.resolution.types.ResolvedType;
-import com.github.javaparser.resolution.types.ResolvedTypeVariable;
 import com.github.javaparser.symbolsolver.JavaSymbolSolver;
-import com.github.javaparser.symbolsolver.javaparsermodel.JavaParserFactory;
 import com.github.javaparser.symbolsolver.javaparsermodel.declarations.*;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.*;
 import com.sun.source.util.Trees;
@@ -34,7 +29,8 @@ import jakarta.enterprise.context.RequestScoped;
 import jakarta.enterprise.context.SessionScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.TransactionScoped;
-import org.tinylog.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 
 import javax.annotation.processing.Filer;
@@ -58,6 +54,7 @@ import static javax.lang.model.element.ElementKind.CLASS;
 
 public class ProcessorManager {
 
+    private static final Logger logger = LoggerFactory.getLogger(ProcessorManager.class);
     private static final Map<String, CompilationUnit> COMPILATION_UNIT_CACHE = new HashMap<>();
 
     private final ProcessingEnvironment processingEnv;
@@ -140,10 +137,10 @@ public class ProcessorManager {
             Path path = Paths.get(tmp.toUri());
             Files.deleteIfExists(path);
             Path generatedSourcePath = path.getParent();
-            Logger.info("generated source path: {}", generatedSourcePath.toString());
+            logger.info("generated source path: {}", generatedSourcePath.toString());
             return generatedSourcePath;
         } catch (IOException e) {
-            Logger.error(e);
+            logger.error(e.getMessage(), e);
             processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, "unable to determine generated source path.");
             throw new RuntimeException(e);
         }
@@ -151,20 +148,14 @@ public class ProcessorManager {
 
     private Path getSourcePath(Path generatedSourcePath) {
         Path sourcePath = generatedSourcePath.getParent().getParent().getParent().getParent().getParent().getParent().resolve("src/main/java");
-        Logger.info("source path: {}", sourcePath.toString());
+        logger.info("source path: {}", sourcePath);
         return sourcePath;
     }
 
     private Path getTestSourcePath(Path generatedSourcePath) {
         Path sourcePath = generatedSourcePath.getParent().getParent().getParent().getParent().getParent().getParent().resolve("src/test/java");
-        Logger.info("test source path: {}", sourcePath.toString());
+        logger.info("test source path: {}", sourcePath);
         return sourcePath;
-    }
-
-    private Path getRootPath(Path generatedSourcePath) {
-        Path rootPath = generatedSourcePath.getParent().getParent().getParent().getParent().getParent().getParent().getParent();
-        Logger.info("rootPath path: {}", rootPath.toString());
-        return rootPath;
     }
 
     public String getRootPackageName() {
@@ -197,9 +188,9 @@ public class ProcessorManager {
                                 Writer writer = filer.createSourceFile(qualifiedName).openWriter();
                                 writer.write(compilationUnit.toString());
                                 writer.close();
-                                Logger.info("{} build success", qualifiedName);
+                                logger.info("{} compilationUnit build success", qualifiedName);
                             } catch (IOException e) {
-                                Logger.error(e);
+                                logger.error(e.getMessage(), e);
                                 processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, "java file create failed");
                                 throw new RuntimeException(e);
                             }
@@ -212,9 +203,9 @@ public class ProcessorManager {
             Writer writer = filer.createResource(StandardLocation.CLASS_OUTPUT, "", fileName).openWriter();
             writer.write(content);
             writer.close();
-            Logger.info("{} build success", fileName);
+            logger.info("{} fileName build success", fileName);
         } catch (IOException e) {
-            Logger.error(e);
+            logger.error(e.getMessage(), e);
             processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, "resource file create failed");
             throw new RuntimeException(e);
         }
@@ -242,7 +233,7 @@ public class ProcessorManager {
                         StandardOpenOption.CREATE_NEW,
                         StandardOpenOption.WRITE
                 );
-                Logger.info("cache decompile: {}", typeElement.getQualifiedName().toString());
+                logger.info("cache decompile: {}", typeElement.getQualifiedName());
             } catch (IOException ignore) {
             }
         }
@@ -250,7 +241,7 @@ public class ProcessorManager {
 
     public Optional<CompilationUnit> getCompilationUnit(TypeElement typeElement) {
         if (COMPILATION_UNIT_CACHE.containsKey(typeElement.getQualifiedName().toString())) {
-            Logger.info(typeElement.getQualifiedName().toString() + " decompile cache exist");
+            logger.info("{} decompile cache exist", typeElement.getQualifiedName());
             return Optional.of(COMPILATION_UNIT_CACHE.get(typeElement.getQualifiedName().toString()));
         }
         Optional<CompilationUnit> compilationUnitOptional = combinedTypeSolver.getRoot().tryToSolveType(typeElement.getQualifiedName().toString()).getDeclaration()
@@ -282,7 +273,7 @@ public class ProcessorManager {
                                                 Path filePath = decompileCacheDir.resolve(typeElement.getQualifiedName().toString().replace('.', File.separatorChar) + ".java");
                                                 try {
                                                     String decompileJava = Files.readString(filePath);
-                                                    Logger.info(typeElement.getQualifiedName() + " decompile java file exist");
+                                                    logger.info("{} decompile java file exist", typeElement.getQualifiedName());
                                                     ParseResult<CompilationUnit> parseResult = javaParser.parse(decompileJava);
                                                     if (!parseResult.getProblems().isEmpty()) {
                                                         throw new RuntimeException(parseResult.getProblems().stream()
@@ -300,7 +291,7 @@ public class ProcessorManager {
                                 )
                                 .or(() -> {
                                             try {
-                                                Logger.info(typeElement.getQualifiedName() + " decompile start");
+                                                logger.info("{} decompile start", typeElement.getQualifiedName());
                                                 return typeElementDecompiler.decompileOrEmpty(typeElement)
                                                         .flatMap(source -> {
                                                                     cacheDecompile(typeElement, source);
@@ -310,22 +301,19 @@ public class ProcessorManager {
                                                                                 .map(Problem::getMessage)
                                                                                 .collect(Collectors.joining(System.lineSeparator())));
                                                                     }
-                                                                    Logger.info(typeElement.getQualifiedName() + " decompile success");
+                                                                    logger.info("{} decompile success", typeElement.getQualifiedName());
                                                                     return parseResult.getResult();
                                                                 }
                                                         );
                                             } catch (Exception e) {
-                                                Logger.info(typeElement.getQualifiedName() + " decompile error");
+                                                logger.info("{} decompile error", typeElement.getQualifiedName());
                                                 throw new RuntimeException(e);
                                             }
                                         }
                                 )
                 );
         compilationUnitOptional
-                .ifPresent(compilationUnit -> {
-                            COMPILATION_UNIT_CACHE.put(typeElement.getQualifiedName().toString(), compilationUnit);
-                        }
-                );
+                .ifPresent(compilationUnit -> COMPILATION_UNIT_CACHE.put(typeElement.getQualifiedName().toString(), compilationUnit));
         return compilationUnitOptional;
     }
 
@@ -504,25 +492,14 @@ public class ProcessorManager {
     }
 
     public ResolvedType getResolvedType(Type type) {
-        try {
-            return javaSymbolSolver.toResolvedType(type, ResolvedReferenceType.class);
-        } catch (RuntimeException e) {
-            if (type.isClassOrInterfaceType() && type.hasScope()) {
-                return getResolvedInnerType(type.asClassOrInterfaceType());
-            }
-            throw e;
-        }
+        return javaSymbolSolver.toResolvedType(type, ResolvedReferenceType.class);
     }
 
     public ResolvedType calculateType(Expression expression) {
         try {
             return javaSymbolSolver.calculateType(expression);
         } catch (RuntimeException e) {
-            try {
-                return findResolvedType(expression);
-            } catch (RuntimeException ignored) {
-            }
-            throw e;
+            return findResolvedType(expression);
         }
     }
 
@@ -585,7 +562,7 @@ public class ProcessorManager {
     }
 
     public Optional<MethodDeclaration> getMethodDeclaration(MethodCallExpr methodCallExpr) {
-        if (methodCallExpr.hasScope() && !methodCallExpr.getScope().get().isThisExpr()) {
+        if (methodCallExpr.getScope().stream().noneMatch(Expression::isThisExpr)) {
             ClassOrInterfaceDeclaration classOrInterfaceDeclaration;
             try {
                 ResolvedReferenceType referenceType = calculateType(methodCallExpr.getScope().get()).asReferenceType();
@@ -593,16 +570,12 @@ public class ProcessorManager {
                         .flatMap(resolvedReferenceTypeDeclaration -> resolvedReferenceTypeDeclaration.toAst(ClassOrInterfaceDeclaration.class))
                         .orElseGet(() -> getPublicClassOrInterfaceDeclarationOrError(getCompilationUnitOrError(referenceType.getQualifiedName())));
             } catch (RuntimeException e) {
-                if (methodCallExpr.getScope().get().isNameExpr()) {
-                    Optional<Node> node = getDeclaratorNode(methodCallExpr.getScope().get().asNameExpr());
-                    if (node.isPresent() && node.get() instanceof ClassOrInterfaceDeclaration) {
-                        classOrInterfaceDeclaration = (ClassOrInterfaceDeclaration) node.get();
-                    } else {
-                        throw e;
-                    }
-                } else {
-                    throw e;
-                }
+                classOrInterfaceDeclaration = methodCallExpr.getScope()
+                        .filter(Expression::isNameExpr)
+                        .flatMap(expression -> getDeclaratorNode(expression.asNameExpr()))
+                        .filter(node -> node instanceof ClassOrInterfaceDeclaration)
+                        .map(node -> (ClassOrInterfaceDeclaration) node)
+                        .orElseThrow(() -> e);
             }
             return classOrInterfaceDeclaration.getMethods().stream()
                     .filter(methodDeclaration -> methodDeclaration.getNameAsString().equals(methodCallExpr.getNameAsString()))
@@ -725,38 +698,6 @@ public class ProcessorManager {
                         )
                 )
                 .orElseThrow(() -> new UnsolvedSymbolException(methodCallExpr.toString()));
-    }
-
-    public ResolvedType getResolvedInnerType(ClassOrInterfaceType classOrInterfaceType) {
-        if (classOrInterfaceType.hasScope()) {
-            Context context = JavaParserFactory.getContext(classOrInterfaceType, combinedTypeSolver);
-            String name = classOrInterfaceType.getNameAsString();
-            SymbolReference<ResolvedTypeDeclaration> ref = context.solveType(
-                    name,
-                    classOrInterfaceType.getTypeArguments()
-                            .map(types ->
-                                    types.stream()
-                                            .map(this::getResolvedType)
-                                            .collect(Collectors.toList())
-                            )
-                            .orElse(null)
-            );
-            if (!ref.isSolved()) {
-                throw new UnsolvedSymbolException(name);
-            }
-            ResolvedTypeDeclaration typeDeclaration = ref.getCorrespondingDeclaration();
-            List<ResolvedType> typeParameters = Collections.emptyList();
-            if (classOrInterfaceType.getTypeArguments().isPresent()) {
-                typeParameters = classOrInterfaceType.getTypeArguments().get().stream()
-                        .map(this::getResolvedType)
-                        .collect(Collectors.toList());
-            }
-            if (typeDeclaration.isTypeParameter()) {
-                return new ResolvedTypeVariable(typeDeclaration.asTypeParameter()).asReferenceType();
-            }
-            return new ReferenceTypeImpl((ResolvedReferenceTypeDeclaration) typeDeclaration, typeParameters);
-        }
-        throw new RuntimeException("scope not exist:" + classOrInterfaceType.getNameAsString());
     }
 
     public Optional<Expression> findAnnotationValue(AnnotationExpr annotationExpr) {

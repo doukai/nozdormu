@@ -115,7 +115,7 @@ public class CFRDecompiler implements TypeElementDecompiler {
             }
         };
 
-        Map<String, String> options = new HashMap<>();  // 设置 CFR 的反编译选项
+        Map<String, String> options = new HashMap<>();
         CfrDriver cfrDriver = new CfrDriver.Builder()
                 .withOptions(options)
                 .withOutputSink(sinkFactory)

@@ -473,7 +473,9 @@ public class AsyncProcessor implements ComponentProxyProcessor {
             ) {
                 VariableDeclarator variableDeclarator = statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariable(0);
                 boolean hasCheckAwaitIsNull = hasCheckAwaitIsNull(variableDeclarator.getNameAsString(), lastStatementList);
-                MethodCallExpr methodCallExpr = variableDeclarator.getInitializer().get().asMethodCallExpr().getArgument(0).asMethodCallExpr();
+                MethodCallExpr methodCallExpr = variableDeclarator.getInitializer()
+                        .map(expression -> expression.asMethodCallExpr().getArgument(0).asMethodCallExpr())
+                        .orElseThrow(() -> new RuntimeException("incorrect await method definition: " + variableDeclarator));
                 String methodDeclarationReturnTypeName = processorManager.resolveMethodDeclarationReturnTypeQualifiedName(methodCallExpr);
                 String methodDeclarationReturnDescribe = processorManager.resolveMethodDeclarationReturnTypeDescribe(methodCallExpr);
                 if (methodCallExpr.getScope().isPresent() && processorManager.calculateType(methodCallExpr.getScope().get()).asReferenceType().getQualifiedName().equals(Provider.class.getCanonicalName()) ||
@@ -1039,8 +1041,16 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                 )
                                 .setScope(
                                         new MethodCallExpr("range")
-                                                .addArgument(statement.asForStmt().getInitialization().get(0).asVariableDeclarationExpr().getVariable(0).getInitializer().get().asAssignExpr().getValue())
-                                                .addArgument(statement.asForStmt().getCompare().get().asBinaryExpr().getRight())
+                                                .addArgument(
+                                                        statement.asForStmt().getInitialization().get(0).asVariableDeclarationExpr().getVariable(0).getInitializer()
+                                                                .map(expression -> expression.asAssignExpr().getValue())
+                                                                .orElseThrow(() -> new RuntimeException("missing assignment in statement: " + statement))
+                                                )
+                                                .addArgument(
+                                                        statement.asForStmt().getCompare()
+                                                                .map(expression -> expression.asBinaryExpr().getRight())
+                                                                .orElseThrow(() -> new RuntimeException("missing binary in statement: " + statement))
+                                                )
                                                 .setScope(new NameExpr(Flux.class.getSimpleName()))
                                 );
                         asyncStatements.add(
@@ -1437,7 +1447,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                 .flatMap(parent -> {
                             if (parent instanceof NodeWithStatements) {
                                 List<Statement> statementList = ((NodeWithStatements<? extends Node>) parent).getStatements();
-                                List<Statement> lastStatementList = statementList.subList(statementList.indexOf(node) + 1, statementList.size());
+                                List<Statement> lastStatementList = statementList.subList(statementList.indexOf((Statement) node) + 1, statementList.size());
                                 if (hasReturnOrThrowStmt(lastStatementList) || hasAwait(lastStatementList)) {
                                     return Optional.of(buildAsyncStatements(lastStatementList, defaultIsEmpty));
                                 } else {

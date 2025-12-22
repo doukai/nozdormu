@@ -5,7 +5,8 @@ import org.eclipse.microprofile.config.Config;
 import org.eclipse.microprofile.config.ConfigValue;
 import org.eclipse.microprofile.config.spi.ConfigSource;
 import org.eclipse.microprofile.config.spi.Converter;
-import org.tinylog.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.annotation.processing.Filer;
 import javax.tools.FileObject;
@@ -20,6 +21,8 @@ import java.util.Optional;
 import java.util.stream.Stream;
 
 public class TypesafeConfig implements Config {
+
+    private static final Logger logger = LoggerFactory.getLogger(TypesafeConfig.class);
 
     private com.typesafe.config.Config config;
 
@@ -76,7 +79,7 @@ public class TypesafeConfig implements Config {
                             try {
                                 this.config = this.config.withFallback(ConfigFactory.parseFile(path.toFile()));
                             } catch (ConfigException e) {
-                                Logger.info("{} Ignored", e.origin().filename());
+                                logger.info("{} Ignored", e.origin().filename());
                             }
                         }
                 );
@@ -87,7 +90,7 @@ public class TypesafeConfig implements Config {
             try (Stream<Path> pathStream = Files.list(path)) {
                 merge(pathStream);
             } catch (IOException e) {
-                Logger.error(e);
+                logger.error(e.getMessage(), e);
             }
         }
     }
@@ -123,23 +126,23 @@ public class TypesafeConfig implements Config {
             Path path = Paths.get(tmp.toUri());
             Files.deleteIfExists(path);
             Path generatedSourcePath = path.getParent();
-            Logger.info("generated source path: {}", generatedSourcePath.toString());
+            logger.info("generated source path: {}", generatedSourcePath.toString());
             return generatedSourcePath;
         } catch (IOException e) {
-            Logger.error(e);
+            logger.error(e.getMessage(), e);
             throw new RuntimeException(e);
         }
     }
 
     private Path getResourcesPath(Path generatedSourcePath) {
         Path sourcePath = generatedSourcePath.getParent().getParent().getParent().getParent().getParent().getParent().resolve("src/main/resources");
-        Logger.info("resources path: {}", sourcePath.toString());
+        logger.info("resources path: {}", sourcePath);
         return sourcePath;
     }
 
     private Path getTestResourcesPath(Path generatedSourcePath) {
         Path sourcePath = generatedSourcePath.getParent().getParent().getParent().getParent().getParent().getParent().resolve("src/test/resources");
-        Logger.info("test resources path: {}", sourcePath.toString());
+        logger.info("test resources path: {}", sourcePath);
         return sourcePath;
     }
 }

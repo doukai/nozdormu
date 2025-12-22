@@ -39,7 +39,8 @@ import jakarta.inject.Named;
 import jakarta.inject.Provider;
 import jakarta.inject.Singleton;
 import jakarta.transaction.TransactionScoped;
-import org.tinylog.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 
 import javax.annotation.processing.*;
@@ -63,6 +64,8 @@ import static io.nozdormu.spi.error.InjectionProcessErrorType.*;
 @AutoService(Processor.class)
 public class InjectProcessor extends AbstractProcessor {
 
+    private static final Logger logger = LoggerFactory.getLogger(InjectProcessor.class);
+
     private final Set<ComponentProxyProcessor> componentProxyProcessors = new HashSet<>();
     private ProcessorManager processorManager;
 
@@ -78,7 +81,7 @@ public class InjectProcessor extends AbstractProcessor {
         loader.forEach(componentProxyProcessors::add);
         this.processorManager = new ProcessorManager(processingEnv, InjectProcessor.class.getClassLoader());
         for (ComponentProxyProcessor componentProxyProcessor : this.componentProxyProcessors) {
-            Logger.debug("init {}", componentProxyProcessor.getClass().getName());
+            logger.debug("init {}", componentProxyProcessor.getClass().getName());
             componentProxyProcessor.init(processorManager);
         }
     }
@@ -116,7 +119,7 @@ public class InjectProcessor extends AbstractProcessor {
         processorManager.setRoundEnv(roundEnv);
         componentProxyProcessors
                 .forEach(componentProxyProcessor -> {
-                            Logger.debug("inProcess {}", componentProxyProcessor.getClass().getName());
+                            logger.debug("inProcess {}", componentProxyProcessor.getClass().getName());
                             componentProxyProcessor.inProcess();
                         }
                 );
@@ -125,7 +128,7 @@ public class InjectProcessor extends AbstractProcessor {
                 .map(this::buildComponentProxy)
                 .collect(Collectors.toList());
         componentProxyCompilationUnits.forEach(compilationUnit -> processorManager.writeToFiler(compilationUnit));
-        Logger.debug("all proxy class build success");
+        logger.debug("all proxy class build success");
 
         CompilationUnit moduleContextCompilationUnit = buildModuleContext(
                 typeElements.stream()
@@ -134,15 +137,15 @@ public class InjectProcessor extends AbstractProcessor {
                 componentProxyCompilationUnits
         );
         processorManager.writeToFiler(moduleContextCompilationUnit);
-        Logger.debug("module context class build success");
+        logger.debug("module context class build success");
 
         List<CompilationUnit> producesContextCompilationUnits = buildProducesContextStream(singletonSet, dependentSet, applicationScopedSet, requestScopedSet, sessionScopedSet, transactionScopedSet).collect(Collectors.toList());
         producesContextCompilationUnits.forEach(producesModuleCompilationUnit -> {
                     processorManager.writeToFiler(producesModuleCompilationUnit);
-                    Logger.debug("produces context class build success");
+                    logger.debug("produces context class build success");
                 }
         );
-        Logger.debug("all produces module class build success");
+        logger.debug("all produces module class build success");
 
         return false;
     }
@@ -273,11 +276,11 @@ public class InjectProcessor extends AbstractProcessor {
 
         componentProxyProcessors
                 .forEach(componentProxyProcessor -> {
-                            Logger.debug("processComponentProxy {}", componentProxyProcessor.getClass().getName());
+                            logger.debug("processComponentProxy {}", componentProxyProcessor.getClass().getName());
                             componentProxyProcessor.processComponentProxy(componentCompilationUnit, componentClassDeclaration, proxyCompilationUnit, proxyClassDeclaration);
                         }
                 );
-        Logger.info("{} proxy class build success", componentClassDeclaration.getNameAsString());
+        logger.info("{} proxy class build success", componentClassDeclaration.getNameAsString());
         return proxyCompilationUnit;
     }
 
@@ -441,11 +444,11 @@ public class InjectProcessor extends AbstractProcessor {
                         )
         );
         componentProxyProcessors.forEach(componentProxyProcessor -> {
-                    Logger.debug("processModuleContext {}", componentProxyProcessor.getClass().getName());
+                    logger.debug("processModuleContext {}", componentProxyProcessor.getClass().getName());
                     componentProxyProcessor.processModuleContext(contextCompilationUnit, contextClassDeclaration, staticInitializer);
                 }
         );
-        Logger.info("{} module context class build success", contextClassDeclaration.getNameAsString());
+        logger.info("{} module context class build success", contextClassDeclaration.getNameAsString());
         return contextCompilationUnit;
     }
 
@@ -840,17 +843,11 @@ public class InjectProcessor extends AbstractProcessor {
                                                             .ifPresent(returnTypeClassOrInterfaceDeclaration -> {
                                                                         processorManager.getExtendedTypes(returnTypeClassOrInterfaceDeclaration)
                                                                                 .filter(extendedTypeName -> processorManager.getClassOrInterfaceDeclarationOrError(extendedTypeName).hasModifier(Modifier.Keyword.PUBLIC))
-                                                                                .forEach(extendedTypeName -> {
-                                                                                            addPutTypeProducerStatement(staticInitializer, extendedTypeName, moduleContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, nameExpr.orElse(null), priorityExpr.orElse(null), defaultExpr.isPresent(), true);
-                                                                                        }
-                                                                                );
+                                                                                .forEach(extendedTypeName -> addPutTypeProducerStatement(staticInitializer, extendedTypeName, moduleContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, nameExpr.orElse(null), priorityExpr.orElse(null), defaultExpr.isPresent(), true));
 
                                                                         processorManager.getImplementedTypes(returnTypeClassOrInterfaceDeclaration)
                                                                                 .filter(implementedTypeName -> processorManager.getClassOrInterfaceDeclarationOrError(implementedTypeName).hasModifier(Modifier.Keyword.PUBLIC))
-                                                                                .forEach(implementedTypeName -> {
-                                                                                            addPutTypeProducerStatement(staticInitializer, implementedTypeName, moduleContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, nameExpr.orElse(null), priorityExpr.orElse(null), defaultExpr.isPresent(), true);
-                                                                                        }
-                                                                                );
+                                                                                .forEach(implementedTypeName -> addPutTypeProducerStatement(staticInitializer, implementedTypeName, moduleContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, nameExpr.orElse(null), priorityExpr.orElse(null), defaultExpr.isPresent(), true));
 
                                                                     }
                                                             );
@@ -866,17 +863,11 @@ public class InjectProcessor extends AbstractProcessor {
                                                             .ifPresent(returnTypeClassOrInterfaceDeclaration -> {
                                                                         processorManager.getExtendedTypes(returnTypeClassOrInterfaceDeclaration)
                                                                                 .filter(extendedTypeName -> processorManager.getClassOrInterfaceDeclarationOrError(extendedTypeName).hasModifier(Modifier.Keyword.PUBLIC))
-                                                                                .forEach(extendedTypeName -> {
-                                                                                            addPutTypeProducerStatement(staticInitializer, extendedTypeName, moduleContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, nameExpr.orElse(null), priorityExpr.orElse(null), defaultExpr.isPresent(), false);
-                                                                                        }
-                                                                                );
+                                                                                .forEach(extendedTypeName -> addPutTypeProducerStatement(staticInitializer, extendedTypeName, moduleContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, nameExpr.orElse(null), priorityExpr.orElse(null), defaultExpr.isPresent(), false));
 
                                                                         processorManager.getImplementedTypes(returnTypeClassOrInterfaceDeclaration)
                                                                                 .filter(implementedTypeName -> processorManager.getClassOrInterfaceDeclarationOrError(implementedTypeName).hasModifier(Modifier.Keyword.PUBLIC))
-                                                                                .forEach(implementedTypeName -> {
-                                                                                            addPutTypeProducerStatement(staticInitializer, implementedTypeName, moduleContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, nameExpr.orElse(null), priorityExpr.orElse(null), defaultExpr.isPresent(), false);
-                                                                                        }
-                                                                                );
+                                                                                .forEach(implementedTypeName -> addPutTypeProducerStatement(staticInitializer, implementedTypeName, moduleContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, nameExpr.orElse(null), priorityExpr.orElse(null), defaultExpr.isPresent(), false));
                                                                     }
                                                             );
                                                 }
