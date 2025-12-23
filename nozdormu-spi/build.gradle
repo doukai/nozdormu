@@ -18,6 +18,10 @@ dependencies {
     api 'org.eclipse.microprofile.config:microprofile-config-api'
     api 'org.slf4j:slf4j-api'
 
+    implementation 'org.tinylog:tinylog-impl'
+    implementation 'org.tinylog:slf4j-tinylog'
+    implementation 'org.tinylog:jcl-tinylog'
+
     annotationProcessor platform(project(':nozdormu-platform'))
     annotationProcessor 'com.google.auto.service:auto-service'
 

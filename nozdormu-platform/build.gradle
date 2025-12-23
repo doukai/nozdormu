@@ -23,7 +23,11 @@ dependencies {
         api 'jakarta.enterprise:jakarta.enterprise.cdi-api:3.0.1'
         api 'jakarta.transaction:jakarta.transaction-api:2.0.1'
         api 'org.eclipse.microprofile.config:microprofile-config-api:3.0.3'
+
         api 'org.slf4j:slf4j-api:2.0.17'
+        api 'org.tinylog:tinylog-impl:2.7.0'
+        api 'org.tinylog:slf4j-tinylog:2.7.0'
+        api 'org.tinylog:jcl-tinylog:2.7.0'
 
         api 'com.github.javaparser:javaparser-symbol-solver-core:3.26.4'
         api 'com.typesafe:config:1.4.3'
