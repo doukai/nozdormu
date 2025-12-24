@@ -17,12 +17,16 @@ import io.nozdormu.common.ProcessorManager;
 import io.nozdormu.inject.processor.ComponentProxyProcessor;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.stream.Collectors;
 
 @AutoService(ComponentProxyProcessor.class)
 public class ConfigComponentProcessor implements ComponentProxyProcessor {
+
+    private static final Logger logger = LoggerFactory.getLogger(ConfigComponentProcessor.class);
 
     private ProcessorManager processorManager;
 
@@ -33,6 +37,7 @@ public class ConfigComponentProcessor implements ComponentProxyProcessor {
 
     @Override
     public void processComponentProxy(CompilationUnit componentCompilationUnit, ClassOrInterfaceDeclaration componentClassDeclaration, CompilationUnit componentProxyCompilationUnit, ClassOrInterfaceDeclaration componentProxyClassDeclaration) {
+        logger.info("{} config component build start", componentClassDeclaration.getFullyQualifiedName().orElseGet(componentClassDeclaration::getNameAsString));
         List<MethodDeclaration> methodDeclarationList = componentClassDeclaration.getMethods().stream()
                 .filter(methodDeclaration ->
                         methodDeclaration.isAnnotationPresent(ConfigProperty.class) ||
@@ -69,6 +74,7 @@ public class ConfigComponentProcessor implements ComponentProxyProcessor {
                                 }
                         )
                 );
+        logger.info("{} config component build success", componentClassDeclaration.getFullyQualifiedName().orElseGet(componentClassDeclaration::getNameAsString));
     }
 
     private boolean isConfigPropertyFieldSetter(MethodDeclaration methodDeclaration) {

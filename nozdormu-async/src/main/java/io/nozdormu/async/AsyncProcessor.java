@@ -16,6 +16,8 @@ import io.nozdormu.inject.processor.ComponentProxyProcessor;
 import io.nozdormu.spi.async.Async;
 import io.nozdormu.spi.async.Asyncable;
 import jakarta.inject.Provider;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -33,6 +35,8 @@ import static io.nozdormu.spi.async.Asyncable.ASYNC_METHOD_NAME_SUFFIX;
 @AutoService(ComponentProxyProcessor.class)
 public class AsyncProcessor implements ComponentProxyProcessor {
 
+    private static final Logger logger = LoggerFactory.getLogger(AsyncProcessor.class);
+
     private ProcessorManager processorManager;
 
     @Override
@@ -42,6 +46,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
 
     @Override
     public void processComponentProxy(CompilationUnit componentCompilationUnit, ClassOrInterfaceDeclaration componentClassDeclaration, CompilationUnit componentProxyCompilationUnit, ClassOrInterfaceDeclaration componentProxyClassDeclaration) {
+        logger.info("{} async component build start", componentClassDeclaration.getFullyQualifiedName().orElseGet(componentClassDeclaration::getNameAsString));
         componentProxyCompilationUnit.addImport(Mono.class);
         componentProxyCompilationUnit.addImport(Flux.class);
         componentProxyCompilationUnit.addImport(RuntimeException.class);
@@ -147,6 +152,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                             buildAsyncMethodDeclaration(componentClassDeclaration).ifPresent(componentProxyClassDeclaration::addMember);
                         }
                 );
+        logger.info("{} async component build success", componentClassDeclaration.getFullyQualifiedName().orElseGet(componentClassDeclaration::getNameAsString));
     }
 
     protected NodeList<Statement> buildAsyncStatements(List<Statement> statementNodeList, String defaultIfEmpty) {

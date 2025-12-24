@@ -81,7 +81,7 @@ public class InjectProcessor extends AbstractProcessor {
         loader.forEach(componentProxyProcessors::add);
         this.processorManager = new ProcessorManager(processingEnv, InjectProcessor.class.getClassLoader());
         for (ComponentProxyProcessor componentProxyProcessor : this.componentProxyProcessors) {
-            logger.debug("init {}", componentProxyProcessor.getClass().getName());
+            logger.info("{} init", componentProxyProcessor.getClass().getName());
             componentProxyProcessor.init(processorManager);
         }
     }
@@ -119,7 +119,7 @@ public class InjectProcessor extends AbstractProcessor {
         processorManager.setRoundEnv(roundEnv);
         componentProxyProcessors
                 .forEach(componentProxyProcessor -> {
-                            logger.debug("inProcess {}", componentProxyProcessor.getClass().getName());
+                            logger.info("{} in process", componentProxyProcessor.getClass().getName());
                             componentProxyProcessor.inProcess();
                         }
                 );
@@ -128,7 +128,6 @@ public class InjectProcessor extends AbstractProcessor {
                 .map(this::buildComponentProxy)
                 .collect(Collectors.toList());
         componentProxyCompilationUnits.forEach(compilationUnit -> processorManager.writeToFiler(compilationUnit));
-        logger.debug("all proxy class build success");
 
         CompilationUnit moduleContextCompilationUnit = buildModuleContext(
                 typeElements.stream()
@@ -137,15 +136,9 @@ public class InjectProcessor extends AbstractProcessor {
                 componentProxyCompilationUnits
         );
         processorManager.writeToFiler(moduleContextCompilationUnit);
-        logger.debug("module context class build success");
 
         List<CompilationUnit> producesContextCompilationUnits = buildProducesContextStream(singletonSet, dependentSet, applicationScopedSet, requestScopedSet, sessionScopedSet, transactionScopedSet).collect(Collectors.toList());
-        producesContextCompilationUnits.forEach(producesModuleCompilationUnit -> {
-                    processorManager.writeToFiler(producesModuleCompilationUnit);
-                    logger.debug("produces context class build success");
-                }
-        );
-        logger.debug("all produces module class build success");
+        producesContextCompilationUnits.forEach(producesModuleCompilationUnit -> processorManager.writeToFiler(producesModuleCompilationUnit));
 
         return false;
     }
@@ -164,6 +157,8 @@ public class InjectProcessor extends AbstractProcessor {
     }
 
     private CompilationUnit buildComponentProxy(CompilationUnit componentCompilationUnit, ClassOrInterfaceDeclaration componentClassDeclaration) {
+        logger.info("{} proxy class build start", componentClassDeclaration.getFullyQualifiedName().orElseGet(componentClassDeclaration::getNameAsString));
+
         ClassOrInterfaceDeclaration proxyClassDeclaration = new ClassOrInterfaceDeclaration()
                 .addModifier(Modifier.Keyword.PUBLIC)
                 .addExtendedType(componentClassDeclaration.getNameAsString())
@@ -276,18 +271,21 @@ public class InjectProcessor extends AbstractProcessor {
 
         componentProxyProcessors
                 .forEach(componentProxyProcessor -> {
-                            logger.debug("processComponentProxy {}", componentProxyProcessor.getClass().getName());
+                            logger.info("{} process component proxy", componentProxyProcessor.getClass().getName());
                             componentProxyProcessor.processComponentProxy(componentCompilationUnit, componentClassDeclaration, proxyCompilationUnit, proxyClassDeclaration);
                         }
                 );
-        logger.info("{} proxy class build success", componentClassDeclaration.getNameAsString());
+        logger.info("{} proxy class build success", componentClassDeclaration.getFullyQualifiedName().orElseGet(componentClassDeclaration::getNameAsString));
         return proxyCompilationUnit;
     }
 
     private CompilationUnit buildModuleContext(List<CompilationUnit> componentCompilationUnits, List<CompilationUnit> componentProxyCompilationUnits) {
+        String rootPackageName = processorManager.getRootPackageName();
+        logger.info("{} module context class build start", rootPackageName);
+
         ClassOrInterfaceDeclaration contextClassDeclaration = new ClassOrInterfaceDeclaration()
                 .setPublic(true)
-                .setName(processorManager.getRootPackageName().replaceAll("\\.", "_") + "_Context" + "_" + System.currentTimeMillis())
+                .setName(rootPackageName.replaceAll("\\.", "_") + "_Context" + "_" + System.currentTimeMillis())
                 .addAnnotation(
                         new SingleMemberAnnotationExpr()
                                 .setMemberValue(new ClassExpr().setType(BeanContextLoader.class))
@@ -444,11 +442,11 @@ public class InjectProcessor extends AbstractProcessor {
                         )
         );
         componentProxyProcessors.forEach(componentProxyProcessor -> {
-                    logger.debug("processModuleContext {}", componentProxyProcessor.getClass().getName());
+                    logger.info("{} process module context", componentProxyProcessor.getClass().getName());
                     componentProxyProcessor.processModuleContext(contextCompilationUnit, contextClassDeclaration, staticInitializer);
                 }
         );
-        logger.info("{} module context class build success", contextClassDeclaration.getNameAsString());
+        logger.info("{} module context class build success", rootPackageName);
         return contextCompilationUnit;
     }
 
@@ -717,7 +715,10 @@ public class InjectProcessor extends AbstractProcessor {
                 )
                 .map(compilationUnit -> {
                             ClassOrInterfaceDeclaration classOrInterfaceDeclaration = processorManager.getPublicClassOrInterfaceDeclarationOrError(compilationUnit);
-                            ClassOrInterfaceDeclaration moduleContextClassDeclaration = new ClassOrInterfaceDeclaration()
+
+                            logger.info("{} produces context class build start", classOrInterfaceDeclaration.getFullyQualifiedName().orElseGet(classOrInterfaceDeclaration::getNameAsString));
+
+                            ClassOrInterfaceDeclaration producesContextClassDeclaration = new ClassOrInterfaceDeclaration()
                                     .setPublic(true)
                                     .setName(classOrInterfaceDeclaration.getNameAsString() + "_Context")
                                     .addAnnotation(
@@ -732,17 +733,17 @@ public class InjectProcessor extends AbstractProcessor {
                                     )
                                     .addImplementedType(BeanContextLoader.class);
 
-                            CompilationUnit moduleContextCompilationUnit = new CompilationUnit()
-                                    .addType(moduleContextClassDeclaration)
+                            CompilationUnit producesContextCompilationUnit = new CompilationUnit()
+                                    .addType(producesContextClassDeclaration)
                                     .addImport(AutoService.class)
                                     .addImport(Generated.class)
                                     .addImport(BeanContextLoader.class)
                                     .addImport(BeanContext.class);
 
-                            processorManager.importAllClassOrInterfaceType(moduleContextClassDeclaration, classOrInterfaceDeclaration);
+                            processorManager.importAllClassOrInterfaceType(producesContextClassDeclaration, classOrInterfaceDeclaration);
 
                             compilationUnit.getPackageDeclaration()
-                                    .ifPresent(packageDeclaration -> moduleContextCompilationUnit.setPackageDeclaration(packageDeclaration.getNameAsString()));
+                                    .ifPresent(packageDeclaration -> producesContextCompilationUnit.setPackageDeclaration(packageDeclaration.getNameAsString()));
 
                             MethodDeclaration loadMethod = new MethodDeclaration()
                                     .setName("load")
@@ -750,7 +751,7 @@ public class InjectProcessor extends AbstractProcessor {
                                     .setType(new VoidType())
                                     .addAnnotation(Override.class);
 
-                            moduleContextClassDeclaration.addMember(loadMethod);
+                            producesContextClassDeclaration.addMember(loadMethod);
                             BlockStmt staticInitializer = loadMethod.createBody();
 
                             classOrInterfaceDeclaration.getMethods().stream()
@@ -769,7 +770,7 @@ public class InjectProcessor extends AbstractProcessor {
                                                                                 .filter(ResolvedType::isReferenceType)
                                                                                 .map(ResolvedType::asReferenceType)
                                                                                 .map(ResolvedReferenceType::getQualifiedName)
-                                                                                .forEach(moduleContextCompilationUnit::addImport);
+                                                                                .forEach(producesContextCompilationUnit::addImport);
                                                                         if (expression.isNameExpr() && processorManager.getResolvedDeclaration(expression.asNameExpr()).isField()) {
                                                                             return new FieldAccessExpr()
                                                                                     .setName(expression.asNameExpr().getName())
@@ -794,7 +795,7 @@ public class InjectProcessor extends AbstractProcessor {
                                                                                 .filter(ResolvedType::isReferenceType)
                                                                                 .map(ResolvedType::asReferenceType)
                                                                                 .map(ResolvedReferenceType::getQualifiedName)
-                                                                                .forEach(moduleContextCompilationUnit::addImport);
+                                                                                .forEach(producesContextCompilationUnit::addImport);
                                                                         if (expression.isNameExpr() && processorManager.getResolvedDeclaration(expression.asNameExpr()).isField()) {
                                                                             return new FieldAccessExpr()
                                                                                     .setName(expression.asNameExpr().getName())
@@ -817,7 +818,7 @@ public class InjectProcessor extends AbstractProcessor {
                                                                             .setName(producesMethodDeclaration.getName())
                                                                             .setArguments(
                                                                                     producesMethodDeclaration.getParameters().stream()
-                                                                                            .map(parameter -> getBeanGetMethodCallExpr(parameter, moduleContextCompilationUnit, parameter.getType().asClassOrInterfaceType()))
+                                                                                            .map(parameter -> getBeanGetMethodCallExpr(parameter, producesContextCompilationUnit, parameter.getType().asClassOrInterfaceType()))
                                                                                             .map(methodCallExpr -> (Expression) methodCallExpr)
                                                                                             .collect(Collectors.toCollection(NodeList::new))
                                                                             )
@@ -830,50 +831,52 @@ public class InjectProcessor extends AbstractProcessor {
                                                             )
                                                             .setModifiers(Modifier.Keyword.PRIVATE, Modifier.Keyword.STATIC, Modifier.Keyword.FINAL);
 
-                                                    moduleContextClassDeclaration.addMember(holderClassOrInterfaceDeclaration);
+                                                    producesContextClassDeclaration.addMember(holderClassOrInterfaceDeclaration);
 
-                                                    addPutTypeProducerStatement(staticInitializer, qualifiedName, moduleContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, nameExpr.orElse(null), priorityExpr.orElse(null), defaultExpr.isPresent(), true);
+                                                    addPutTypeProducerStatement(staticInitializer, qualifiedName, producesContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, nameExpr.orElse(null), priorityExpr.orElse(null), defaultExpr.isPresent(), true);
                                                     processorManager.getNodeReturnResolvedReferenceType(producesMethodDeclaration)
                                                             .filter(resolvedReferenceType -> !resolvedReferenceType.getQualifiedName().equals(qualifiedName))
                                                             .forEach(resolvedReferenceType ->
-                                                                    addPutTypeProducerStatement(staticInitializer, resolvedReferenceType.getQualifiedName(), moduleContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, nameExpr.orElse(null), priorityExpr.orElse(null), defaultExpr.isPresent(), true)
+                                                                    addPutTypeProducerStatement(staticInitializer, resolvedReferenceType.getQualifiedName(), producesContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, nameExpr.orElse(null), priorityExpr.orElse(null), defaultExpr.isPresent(), true)
                                                             );
 
                                                     processorManager.getClassOrInterfaceDeclaration(qualifiedName)
                                                             .ifPresent(returnTypeClassOrInterfaceDeclaration -> {
                                                                         processorManager.getExtendedTypes(returnTypeClassOrInterfaceDeclaration)
                                                                                 .filter(extendedTypeName -> processorManager.getClassOrInterfaceDeclarationOrError(extendedTypeName).hasModifier(Modifier.Keyword.PUBLIC))
-                                                                                .forEach(extendedTypeName -> addPutTypeProducerStatement(staticInitializer, extendedTypeName, moduleContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, nameExpr.orElse(null), priorityExpr.orElse(null), defaultExpr.isPresent(), true));
+                                                                                .forEach(extendedTypeName -> addPutTypeProducerStatement(staticInitializer, extendedTypeName, producesContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, nameExpr.orElse(null), priorityExpr.orElse(null), defaultExpr.isPresent(), true));
 
                                                                         processorManager.getImplementedTypes(returnTypeClassOrInterfaceDeclaration)
                                                                                 .filter(implementedTypeName -> processorManager.getClassOrInterfaceDeclarationOrError(implementedTypeName).hasModifier(Modifier.Keyword.PUBLIC))
-                                                                                .forEach(implementedTypeName -> addPutTypeProducerStatement(staticInitializer, implementedTypeName, moduleContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, nameExpr.orElse(null), priorityExpr.orElse(null), defaultExpr.isPresent(), true));
+                                                                                .forEach(implementedTypeName -> addPutTypeProducerStatement(staticInitializer, implementedTypeName, producesContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, nameExpr.orElse(null), priorityExpr.orElse(null), defaultExpr.isPresent(), true));
 
                                                                     }
                                                             );
                                                 } else {
-                                                    addPutTypeProducerStatement(staticInitializer, qualifiedName, moduleContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, nameExpr.orElse(null), priorityExpr.orElse(null), defaultExpr.isPresent(), false);
+                                                    addPutTypeProducerStatement(staticInitializer, qualifiedName, producesContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, nameExpr.orElse(null), priorityExpr.orElse(null), defaultExpr.isPresent(), false);
                                                     processorManager.getNodeReturnResolvedReferenceType(producesMethodDeclaration)
                                                             .filter(resolvedReferenceType -> !resolvedReferenceType.getQualifiedName().equals(qualifiedName))
                                                             .forEach(resolvedReferenceType ->
-                                                                    addPutTypeProducerStatement(staticInitializer, resolvedReferenceType.getQualifiedName(), moduleContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, nameExpr.orElse(null), priorityExpr.orElse(null), defaultExpr.isPresent(), true)
+                                                                    addPutTypeProducerStatement(staticInitializer, resolvedReferenceType.getQualifiedName(), producesContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, nameExpr.orElse(null), priorityExpr.orElse(null), defaultExpr.isPresent(), true)
                                                             );
 
                                                     processorManager.getClassOrInterfaceDeclaration(qualifiedName)
                                                             .ifPresent(returnTypeClassOrInterfaceDeclaration -> {
                                                                         processorManager.getExtendedTypes(returnTypeClassOrInterfaceDeclaration)
                                                                                 .filter(extendedTypeName -> processorManager.getClassOrInterfaceDeclarationOrError(extendedTypeName).hasModifier(Modifier.Keyword.PUBLIC))
-                                                                                .forEach(extendedTypeName -> addPutTypeProducerStatement(staticInitializer, extendedTypeName, moduleContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, nameExpr.orElse(null), priorityExpr.orElse(null), defaultExpr.isPresent(), false));
+                                                                                .forEach(extendedTypeName -> addPutTypeProducerStatement(staticInitializer, extendedTypeName, producesContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, nameExpr.orElse(null), priorityExpr.orElse(null), defaultExpr.isPresent(), false));
 
                                                                         processorManager.getImplementedTypes(returnTypeClassOrInterfaceDeclaration)
                                                                                 .filter(implementedTypeName -> processorManager.getClassOrInterfaceDeclarationOrError(implementedTypeName).hasModifier(Modifier.Keyword.PUBLIC))
-                                                                                .forEach(implementedTypeName -> addPutTypeProducerStatement(staticInitializer, implementedTypeName, moduleContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, nameExpr.orElse(null), priorityExpr.orElse(null), defaultExpr.isPresent(), false));
+                                                                                .forEach(implementedTypeName -> addPutTypeProducerStatement(staticInitializer, implementedTypeName, producesContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, nameExpr.orElse(null), priorityExpr.orElse(null), defaultExpr.isPresent(), false));
                                                                     }
                                                             );
                                                 }
                                             }
                                     );
-                            return moduleContextCompilationUnit;
+
+                            logger.info("{} produces context class build success", classOrInterfaceDeclaration.getFullyQualifiedName().orElseGet(classOrInterfaceDeclaration::getNameAsString));
+                            return producesContextCompilationUnit;
                         }
                 );
     }

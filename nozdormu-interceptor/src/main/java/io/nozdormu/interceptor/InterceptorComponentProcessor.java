@@ -16,6 +16,8 @@ import io.nozdormu.spi.context.BeanContext;
 import io.nozdormu.inject.processor.ComponentProxyProcessor;
 import jakarta.enterprise.inject.Produces;
 import jakarta.interceptor.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -23,6 +25,8 @@ import java.util.stream.Stream;
 
 @AutoService(ComponentProxyProcessor.class)
 public class InterceptorComponentProcessor implements ComponentProxyProcessor {
+
+    private static final Logger logger = LoggerFactory.getLogger(InterceptorComponentProcessor.class);
 
     private ProcessorManager processorManager;
 
@@ -33,8 +37,10 @@ public class InterceptorComponentProcessor implements ComponentProxyProcessor {
 
     @Override
     public void processComponentProxy(CompilationUnit componentCompilationUnit, ClassOrInterfaceDeclaration componentClassDeclaration, CompilationUnit componentProxyCompilationUnit, ClassOrInterfaceDeclaration componentProxyClassDeclaration) {
+        logger.info("{} interceptor component build start", componentClassDeclaration.getFullyQualifiedName().orElseGet(componentClassDeclaration::getNameAsString));
         buildMethod(componentClassDeclaration, componentProxyCompilationUnit, componentProxyClassDeclaration);
         buildConstructor(componentClassDeclaration, componentProxyCompilationUnit, componentProxyClassDeclaration);
+        logger.info("{} interceptor component build success", componentClassDeclaration.getFullyQualifiedName().orElseGet(componentClassDeclaration::getNameAsString));
     }
 
     private void buildMethod(ClassOrInterfaceDeclaration componentClassDeclaration, CompilationUnit componentProxyCompilationUnit, ClassOrInterfaceDeclaration componentProxyClassDeclaration) {

@@ -73,14 +73,16 @@ public class ConfigProcessor extends AbstractProcessor {
                 .collect(Collectors.toList());
         CompilationUnit moduleContextCompilationUnit = buildModuleContext(compilationUnitList);
         processorManager.writeToFiler(moduleContextCompilationUnit);
-        logger.debug("config module context class build success");
         return false;
     }
 
     public CompilationUnit buildModuleContext(List<CompilationUnit> componentCompilationUnits) {
+        String rootPackageName = processorManager.getRootPackageName();
+        logger.info("{} module config context class build start", rootPackageName);
+
         ClassOrInterfaceDeclaration contextClassDeclaration = new ClassOrInterfaceDeclaration()
                 .setPublic(true)
-                .setName(processorManager.getRootPackageName().replaceAll("\\.", "_") + "_Config_Context")
+                .setName(rootPackageName.replaceAll("\\.", "_") + "_Config_Context")
                 .addAnnotation(
                         new SingleMemberAnnotationExpr()
                                 .setMemberValue(new ClassExpr().setType(BeanContextLoader.class))
@@ -160,7 +162,7 @@ public class ConfigProcessor extends AbstractProcessor {
                             );
                         }
                 );
-        logger.info("{} module context class build success", contextClassDeclaration.getNameAsString());
+        logger.info("{} module config context class build success", rootPackageName);
         return contextCompilationUnit;
     }
 

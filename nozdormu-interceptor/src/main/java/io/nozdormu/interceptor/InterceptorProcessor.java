@@ -15,6 +15,8 @@ import jakarta.annotation.Priority;
 import jakarta.enterprise.context.Dependent;
 import jakarta.inject.Named;
 import jakarta.interceptor.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.annotation.processing.*;
 import javax.lang.model.SourceVersion;
@@ -31,6 +33,8 @@ import java.util.stream.Stream;
 })
 @AutoService(Processor.class)
 public class InterceptorProcessor extends AbstractProcessor {
+
+    private static final Logger logger = LoggerFactory.getLogger(InterceptorProcessor.class);
 
     private ProcessorManager processorManager;
 
@@ -91,6 +95,8 @@ public class InterceptorProcessor extends AbstractProcessor {
                                             interceptorClassDeclaration.getMethods().stream()
                                                     .filter(methodDeclaration -> methodDeclaration.isAnnotationPresent(AroundInvoke.class))
                                                     .map(methodDeclaration -> {
+                                                                logger.info("{} proxy class build start", interceptorClassDeclaration.getFullyQualifiedName().orElseGet(interceptorClassDeclaration::getNameAsString));
+
                                                                 String name = interceptorClassDeclaration.getNameAsString() + annotationExpr.getNameAsString() + "_" + methodDeclaration.getNameAsString() + interceptorClassDeclaration.getMethods().indexOf(methodDeclaration) + "InvokeInterceptor";
                                                                 ClassOrInterfaceDeclaration invokeInterceptorDeclaration = new ClassOrInterfaceDeclaration()
                                                                         .addModifier(Modifier.Keyword.PUBLIC)
@@ -184,6 +190,7 @@ public class InterceptorProcessor extends AbstractProcessor {
                                                                         );
                                                                 invokeInterceptorDeclaration.addMember(aroundInvoke);
 
+                                                                logger.info("{} proxy class build success", interceptorClassDeclaration.getFullyQualifiedName().orElseGet(interceptorClassDeclaration::getNameAsString));
                                                                 return invokeInterceptorCompilationUnit;
                                                             }
                                                     )
