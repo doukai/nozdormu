@@ -46,6 +46,7 @@ import java.lang.annotation.Annotation;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
@@ -55,7 +56,7 @@ import static javax.lang.model.element.ElementKind.CLASS;
 public class ProcessorManager {
 
     private static final Logger logger = LoggerFactory.getLogger(ProcessorManager.class);
-    private static final Map<String, CompilationUnit> COMPILATION_UNIT_CACHE = new HashMap<>();
+    private static final Map<String, CompilationUnit> COMPILATION_UNIT_CACHE = new ConcurrentHashMap<>();
 
     private final ProcessingEnvironment processingEnv;
     private RoundEnvironment roundEnv;

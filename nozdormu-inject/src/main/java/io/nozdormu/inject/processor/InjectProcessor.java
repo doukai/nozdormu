@@ -3,7 +3,6 @@ package io.nozdormu.inject.processor;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.Modifier;
 import com.github.javaparser.ast.NodeList;
-import com.github.javaparser.ast.PackageDeclaration;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.ConstructorDeclaration;
 import com.github.javaparser.ast.body.FieldDeclaration;
@@ -170,10 +169,7 @@ public class InjectProcessor extends AbstractProcessor {
                 .addImport(Generated.class);
 
         componentCompilationUnit.getPackageDeclaration()
-                .map(PackageDeclaration::clone)
                 .ifPresent(proxyCompilationUnit::setPackageDeclaration);
-
-        proxyClassDeclaration.setParentNode(proxyCompilationUnit);
 
         processorManager.importAllClassOrInterfaceType(proxyClassDeclaration, componentClassDeclaration);
 
@@ -186,19 +182,19 @@ public class InjectProcessor extends AbstractProcessor {
                                 .map(NodeWithSimpleName::getNameAsString)
                                 .anyMatch(name -> fieldDeclaration.getVariable(0).getNameAsString().equals(name))
                 )
-                .map(fieldDeclaration -> (FieldDeclaration) fieldDeclaration.clone().setParentNode(componentClassDeclaration))
+                .map(FieldDeclaration::clone)
                 .collect(Collectors.toList());
 
         privateFieldDeclarationList.forEach(proxyClassDeclaration::addMember);
 
-        componentClassDeclaration.getConstructors().stream()
-                .map(ConstructorDeclaration::clone)
+        componentClassDeclaration.getConstructors()
                 .forEach(constructorDeclaration -> {
-                            constructorDeclaration.setParentNode(proxyClassDeclaration);
-                            BlockStmt blockStmt = proxyClassDeclaration
+                            ConstructorDeclaration proxyConstructorDeclaration = proxyClassDeclaration
                                     .addConstructor(Modifier.Keyword.PUBLIC)
                                     .setAnnotations(constructorDeclaration.getAnnotations())
-                                    .setParameters(constructorDeclaration.getParameters())
+                                    .setParameters(constructorDeclaration.getParameters());
+
+                            BlockStmt blockStmt = proxyConstructorDeclaration
                                     .createBody()
                                     .addStatement(
                                             new MethodCallExpr()
@@ -231,7 +227,7 @@ public class InjectProcessor extends AbstractProcessor {
                                                     processorManager.isInjectFieldSetter(methodDeclaration)
                                     )
                                     .forEach(methodDeclaration -> {
-                                                methodDeclaration.getParameters().forEach(constructorDeclaration::addParameter);
+                                                methodDeclaration.getParameters().forEach(proxyConstructorDeclaration::addParameter);
                                                 blockStmt
                                                         .addStatement(
                                                                 new MethodCallExpr()
@@ -262,12 +258,7 @@ public class InjectProcessor extends AbstractProcessor {
                                     !qualifiedName.equals(TransactionScoped.class.getName());
                         }
                 )
-                .map(AnnotationExpr::clone)
-                .forEach(annotationExpr -> {
-                            annotationExpr.setParentNode(proxyClassDeclaration);
-                            proxyClassDeclaration.addAnnotation(annotationExpr);
-                        }
-                );
+                .forEach(proxyClassDeclaration::addAnnotation);
 
         componentProxyProcessors
                 .forEach(componentProxyProcessor -> {

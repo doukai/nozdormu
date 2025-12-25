@@ -47,12 +47,8 @@ public class AsyncProcessor implements ComponentProxyProcessor {
     @Override
     public void processComponentProxy(CompilationUnit componentCompilationUnit, ClassOrInterfaceDeclaration componentClassDeclaration, CompilationUnit componentProxyCompilationUnit, ClassOrInterfaceDeclaration componentProxyClassDeclaration) {
         logger.info("{} async component build start", componentClassDeclaration.getFullyQualifiedName().orElseGet(componentClassDeclaration::getNameAsString));
-        componentProxyCompilationUnit.addImport(Mono.class);
-        componentProxyCompilationUnit.addImport(Flux.class);
-        componentProxyCompilationUnit.addImport(RuntimeException.class);
-        componentCompilationUnit.clone()
-                .addImport(Mono.class)
-                .addImport(Flux.class)
+
+        componentCompilationUnit
                 .getTypes().stream()
                 .filter(BodyDeclaration::isClassOrInterfaceDeclaration)
                 .map(BodyDeclaration::asClassOrInterfaceDeclaration)
@@ -62,6 +58,10 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                     .forEach(methodDeclaration ->
                                             methodDeclaration.getBody()
                                                     .ifPresent(methodBody -> {
+                                                                componentProxyCompilationUnit
+                                                                        .addImport(Mono.class)
+                                                                        .addImport(Flux.class)
+                                                                        .addImport(RuntimeException.class);
                                                                 if (methodDeclaration.getType().isVoidType()) {
                                                                     componentProxyCompilationUnit.addImport(Void.class);
                                                                 }
@@ -1023,17 +1023,16 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                 }
             } else if (statement.isBlockStmt()) {
                 if (hasAwait(statement.asBlockStmt().getStatements()) && !hasReturnOrThrowStmt(statement.asBlockStmt().getStatements())) {
-                    statement.asBlockStmt().setStatements(buildAsyncStatements(Stream.concat(statement.asBlockStmt().getStatements().stream(), lastStatementList.stream()).collect(Collectors.toList()), defaultIfEmpty));
+                    asyncStatements.add(new BlockStmt().setStatements(buildAsyncStatements(Stream.concat(statement.asBlockStmt().getStatements().stream(), lastStatementList.stream()).collect(Collectors.toList()), defaultIfEmpty)));
                 } else {
-                    statement.asBlockStmt().setStatements(buildAsyncStatements(statement.asBlockStmt().getStatements(), defaultIfEmpty));
+                    asyncStatements.add(new BlockStmt().setStatements(buildAsyncStatements(statement.asBlockStmt().getStatements(), defaultIfEmpty)));
                 }
-                asyncStatements.add(statement.clone());
             } else if (statement.isIfStmt()) {
                 boolean ifStmtHasAwait = ifStmtHasAwait(statement.asIfStmt());
                 boolean ifStmtHasReturnOrThrow = ifStmtHasReturnOrThrowStmt(statement.asIfStmt());
-                buildIfStmt(statementNodeList, i, statement.asIfStmt(), defaultIfEmpty);
-                asyncStatements.add(statement.clone());
-                if ((ifStmtHasAwait || ifStmtHasReturnOrThrow) && ifStmtLastIsElse(statement.asIfStmt())) {
+                IfStmt asyncIfStmt = buildIfStmt(statementNodeList, i, statement.asIfStmt(), defaultIfEmpty);
+                asyncStatements.add(asyncIfStmt);
+                if ((ifStmtHasAwait || ifStmtHasReturnOrThrow) && ifStmtLastIsElse(asyncIfStmt)) {
                     break;
                 }
             } else if (statement.isForStmt()) {
@@ -1076,13 +1075,22 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                         );
                         break;
                     } else {
-                        statement.asForStmt().getBody().asBlockStmt().setStatements(buildAsyncStatements(statement.asForStmt().getBody().asBlockStmt().getStatements(), defaultIfEmpty));
+                        ForStmt forStmt = new ForStmt();
+                        forStmt.setInitialization(statement.asForStmt().getInitialization());
+                        statement.asForStmt().getCompare().ifPresent(forStmt::setCompare);
+                        forStmt.setUpdate(statement.asForStmt().getUpdate());
+                        asyncStatements.add(forStmt.setBody(new BlockStmt().setStatements(buildAsyncStatements(statement.asForStmt().getBody().asBlockStmt().getStatements(), defaultIfEmpty))));
                     }
                 } else if (statement.asForStmt().getBody().isReturnStmt()) {
+                    ForStmt forStmt = new ForStmt();
+                    forStmt.setInitialization(statement.asForStmt().getInitialization());
+                    statement.asForStmt().getCompare().ifPresent(forStmt::setCompare);
+                    forStmt.setUpdate(statement.asForStmt().getUpdate());
                     buildAsyncReturnExpression(statement.asForStmt().getBody().asReturnStmt())
-                            .ifPresent(expression -> statement.asForStmt().getBody().asReturnStmt().setExpression(expression));
+                            .ifPresent(expression -> forStmt.setBody(new ReturnStmt(expression)));
+                    asyncStatements.add(forStmt);
                 }
-                asyncStatements.add(statement.clone());
+                asyncStatements.add(statement);
             } else if (statement.isForEachStmt()) {
                 if (statement.asForEachStmt().getBody().isBlockStmt()) {
                     if (hasAwait(statement.asForEachStmt().getBody().asBlockStmt().getStatements())) {
@@ -1122,43 +1130,69 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                         }
                         break;
                     } else {
-                        statement.asForEachStmt().getBody().asBlockStmt().setStatements(buildAsyncStatements(statement.asForEachStmt().getBody().asBlockStmt().getStatements(), defaultIfEmpty));
+                        ForEachStmt forEachStmt = new ForEachStmt();
+                        forEachStmt.setVariable(statement.asForEachStmt().getVariable());
+                        forEachStmt.setIterable(statement.asForEachStmt().getIterable());
+                        asyncStatements.add(forEachStmt.setBody(new BlockStmt().setStatements(buildAsyncStatements(statement.asForEachStmt().getBody().asBlockStmt().getStatements(), defaultIfEmpty))));
                     }
                 } else if (statement.asForEachStmt().getBody().isReturnStmt()) {
+                    ForEachStmt forEachStmt = new ForEachStmt();
+                    forEachStmt.setVariable(statement.asForEachStmt().getVariable());
+                    forEachStmt.setIterable(statement.asForEachStmt().getIterable());
                     buildAsyncReturnExpression(statement.asForEachStmt().getBody().asReturnStmt())
-                            .ifPresent(expression -> statement.asForEachStmt().getBody().asReturnStmt().setExpression(expression));
+                            .ifPresent(expression -> forEachStmt.setBody(new ReturnStmt(expression)));
+                    asyncStatements.add(forEachStmt);
                 }
-                asyncStatements.add(statement.clone());
+                asyncStatements.add(statement);
             } else if (statement.isTryStmt()) {
+                TryStmt tryStmt = new TryStmt();
+                tryStmt.setResources(statement.asTryStmt().getResources());
                 if (hasAwait(statement.asTryStmt().getTryBlock().getStatements()) && !hasReturnOrThrowStmt(statement.asTryStmt().getTryBlock().getStatements())) {
-                    statement.asTryStmt().getTryBlock().setStatements(buildAsyncStatements(Stream.concat(statement.asTryStmt().getTryBlock().getStatements().stream(), lastStatementList.stream()).collect(Collectors.toList()), defaultIfEmpty));
+                    asyncStatements.add(tryStmt.setTryBlock(new BlockStmt().setStatements(buildAsyncStatements(Stream.concat(statement.asTryStmt().getTryBlock().getStatements().stream(), lastStatementList.stream()).collect(Collectors.toList()), defaultIfEmpty))));
                 } else {
-                    statement.asTryStmt().getTryBlock().setStatements(buildAsyncStatements(statement.asTryStmt().getTryBlock().getStatements(), defaultIfEmpty));
+                    asyncStatements.add(tryStmt.setTryBlock(new BlockStmt().setStatements(buildAsyncStatements(statement.asTryStmt().getTryBlock().getStatements(), defaultIfEmpty))));
                 }
-                for (CatchClause catchClause : statement.asTryStmt().getCatchClauses()) {
-                    if (hasAwait(catchClause.getBody().getStatements()) && !hasReturnOrThrowStmt(catchClause.getBody().getStatements())) {
-                        catchClause.getBody().setStatements(buildAsyncStatements(Stream.concat(catchClause.getBody().getStatements().stream(), lastStatementList.stream()).collect(Collectors.toList()), defaultIfEmpty));
-                    } else {
-                        catchClause.getBody().setStatements(buildAsyncStatements(catchClause.getBody().getStatements(), defaultIfEmpty));
-                    }
-                }
+                tryStmt.setCatchClauses(
+                        statement.asTryStmt().getCatchClauses().stream()
+                                .map(catchClause -> {
+                                            CatchClause asyncCatchClause = new CatchClause();
+                                            asyncCatchClause.setParameter(catchClause.getParameter());
+                                            if (hasAwait(catchClause.getBody().getStatements()) && !hasReturnOrThrowStmt(catchClause.getBody().getStatements())) {
+                                                asyncCatchClause.setBody(new BlockStmt().setStatements(buildAsyncStatements(Stream.concat(catchClause.getBody().getStatements().stream(), lastStatementList.stream()).collect(Collectors.toList()), defaultIfEmpty)));
+                                            } else {
+                                                asyncCatchClause.setBody(new BlockStmt().setStatements(buildAsyncStatements(catchClause.getBody().getStatements(), defaultIfEmpty)));
+                                            }
+                                            return asyncCatchClause;
+                                        }
+                                )
+                                .collect(Collectors.toCollection(NodeList::new))
+                );
                 if (statement.asTryStmt().getFinallyBlock().isPresent()) {
                     if (hasAwait(statement.asTryStmt().getFinallyBlock().get().getStatements()) && !hasReturnOrThrowStmt(statement.asTryStmt().getFinallyBlock().get().getStatements())) {
-                        statement.asTryStmt().getFinallyBlock().get().setStatements(buildAsyncStatements(Stream.concat(statement.asTryStmt().getFinallyBlock().get().getStatements().stream(), lastStatementList.stream()).collect(Collectors.toList()), defaultIfEmpty));
+                        tryStmt.setFinallyBlock(new BlockStmt().setStatements(buildAsyncStatements(Stream.concat(statement.asTryStmt().getFinallyBlock().get().getStatements().stream(), lastStatementList.stream()).collect(Collectors.toList()), defaultIfEmpty)));
                     } else {
-                        statement.asTryStmt().getFinallyBlock().get().setStatements(buildAsyncStatements(statement.asTryStmt().getFinallyBlock().get().getStatements(), defaultIfEmpty));
+                        tryStmt.setFinallyBlock(new BlockStmt().setStatements(buildAsyncStatements(statement.asTryStmt().getFinallyBlock().get().getStatements(), defaultIfEmpty)));
                     }
                 }
-                asyncStatements.add(statement.clone());
+                asyncStatements.add(tryStmt);
             } else if (statement.isSwitchStmt()) {
-                for (SwitchEntry switchEntry : statement.asSwitchStmt().getEntries()) {
-                    if (hasAwait(switchEntry.getStatements()) && !hasReturnOrThrowStmt(switchEntry.getStatements())) {
-                        switchEntry.setStatements(buildAsyncStatements(Stream.concat(switchEntry.getStatements().stream(), lastStatementList.stream()).collect(Collectors.toList()), defaultIfEmpty));
-                    } else {
-                        switchEntry.setStatements(buildAsyncStatements(switchEntry.getStatements(), defaultIfEmpty));
-                    }
-                }
-                asyncStatements.add(statement.clone());
+                SwitchStmt switchStmt = new SwitchStmt();
+                switchStmt.setSelector(statement.asSwitchStmt().getSelector());
+                switchStmt.setEntries(
+                        statement.asSwitchStmt().getEntries().stream()
+                                .map(switchEntry -> {
+                                            SwitchEntry asyncSwitchEntry = new SwitchEntry();
+                                            if (hasAwait(switchEntry.getStatements()) && !hasReturnOrThrowStmt(switchEntry.getStatements())) {
+                                                asyncSwitchEntry.setStatements(buildAsyncStatements(Stream.concat(switchEntry.getStatements().stream(), lastStatementList.stream()).collect(Collectors.toList()), defaultIfEmpty));
+                                            } else {
+                                                asyncSwitchEntry.setStatements(buildAsyncStatements(switchEntry.getStatements(), defaultIfEmpty));
+                                            }
+                                            return asyncSwitchEntry;
+                                        }
+                                )
+                                .collect(Collectors.toCollection(NodeList::new))
+                );
+                asyncStatements.add(switchStmt);
             } else if (statement.isThrowStmt()) {
                 asyncStatements.add(
                         new ReturnStmt(
@@ -1172,10 +1206,9 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                 break;
             } else if (statement.isReturnStmt()) {
                 buildAsyncReturnExpression(statement.asReturnStmt())
-                        .ifPresent(expression -> statement.asReturnStmt().setExpression(expression));
-                asyncStatements.add(statement.clone());
+                        .ifPresent(expression -> asyncStatements.add(new ReturnStmt(expression)));
             } else {
-                asyncStatements.add(statement.clone());
+                asyncStatements.add(statement);
             }
         }
         return asyncStatements;
@@ -1376,7 +1409,9 @@ public class AsyncProcessor implements ComponentProxyProcessor {
         return false;
     }
 
-    private void buildIfStmt(List<Statement> statementNodeList, int i, IfStmt ifStmt, String defaultIfEmpty) {
+    private IfStmt buildIfStmt(List<Statement> statementNodeList, int i, IfStmt ifStmt, String defaultIfEmpty) {
+        IfStmt asyncIfStmt = new IfStmt();
+        asyncIfStmt.setCondition(ifStmt.getCondition());
         List<Statement> lastStatementList = statementNodeList.subList(i + 1, statementNodeList.size());
         boolean hasAwait = false;
         boolean hasReturnOrThrow = false;
@@ -1384,40 +1419,40 @@ public class AsyncProcessor implements ComponentProxyProcessor {
             hasAwait = hasAwait(ifStmt.getThenStmt().asBlockStmt().getStatements());
             hasReturnOrThrow = hasReturnOrThrowStmt(ifStmt.getThenStmt().asBlockStmt().getStatements());
             if (hasAwait && !hasReturnOrThrow) {
-                ifStmt.getThenStmt().asBlockStmt().setStatements(buildAsyncStatements(Stream.concat(ifStmt.getThenStmt().asBlockStmt().getStatements().stream(), lastStatementList.stream()).collect(Collectors.toList()), defaultIfEmpty));
+                asyncIfStmt.setThenStmt(new BlockStmt().setStatements(buildAsyncStatements(Stream.concat(ifStmt.getThenStmt().asBlockStmt().getStatements().stream(), lastStatementList.stream()).collect(Collectors.toList()), defaultIfEmpty)));
             } else {
-                ifStmt.getThenStmt().asBlockStmt().setStatements(buildAsyncStatements(ifStmt.getThenStmt().asBlockStmt().getStatements(), defaultIfEmpty));
+                asyncIfStmt.setThenStmt(new BlockStmt().setStatements(buildAsyncStatements(ifStmt.getThenStmt().asBlockStmt().getStatements(), defaultIfEmpty)));
             }
         } else if (ifStmt.getThenStmt().isThrowStmt()) {
             hasReturnOrThrow = true;
-            ifStmt.getThenStmt().asBlockStmt().setStatements(buildAsyncStatements(Collections.singletonList(ifStmt.getThenStmt().asThrowStmt()), defaultIfEmpty));
+            asyncIfStmt.setThenStmt(new BlockStmt().setStatements(buildAsyncStatements(Collections.singletonList(ifStmt.getThenStmt().asThrowStmt()), defaultIfEmpty)));
         } else if (ifStmt.getThenStmt().isReturnStmt()) {
             hasAwait = hasAwait(ifStmt.getThenStmt().asReturnStmt());
             hasReturnOrThrow = true;
             buildAsyncReturnExpression(ifStmt.getThenStmt().asReturnStmt())
-                    .ifPresent(expression -> ifStmt.getThenStmt().asReturnStmt().setExpression(expression));
+                    .ifPresent(expression -> asyncIfStmt.setThenStmt(new ReturnStmt(expression)));
         }
 
         if (ifStmt.getElseStmt().isPresent()) {
             if (ifStmt.getElseStmt().get().isIfStmt()) {
-                buildIfStmt(statementNodeList, i, ifStmt.getElseStmt().get().asIfStmt(), defaultIfEmpty);
+                asyncIfStmt.setElseStmt(buildIfStmt(statementNodeList, i, ifStmt.getElseStmt().get().asIfStmt(), defaultIfEmpty));
             } else if (ifStmt.getElseStmt().get().isBlockStmt()) {
                 if (hasAwait(ifStmt.getElseStmt().get().asBlockStmt().getStatements()) && !hasReturnOrThrowStmt(ifStmt.getElseStmt().get().asBlockStmt().getStatements())) {
-                    ifStmt.getElseStmt().get().asBlockStmt().setStatements(buildAsyncStatements(Stream.concat(ifStmt.getElseStmt().get().asBlockStmt().getStatements().stream(), lastStatementList.stream()).collect(Collectors.toList()), defaultIfEmpty));
+                    asyncIfStmt.setElseStmt(new BlockStmt().setStatements(buildAsyncStatements(Stream.concat(ifStmt.getElseStmt().get().asBlockStmt().getStatements().stream(), lastStatementList.stream()).collect(Collectors.toList()), defaultIfEmpty)));
                 } else {
-                    ifStmt.getElseStmt().get().asBlockStmt().setStatements(buildAsyncStatements(ifStmt.getElseStmt().get().asBlockStmt().getStatements(), defaultIfEmpty));
+                    asyncIfStmt.setElseStmt(new BlockStmt().setStatements(buildAsyncStatements(ifStmt.getElseStmt().get().asBlockStmt().getStatements(), defaultIfEmpty)));
                 }
             } else if (ifStmt.getElseStmt().get().isThrowStmt()) {
-                ifStmt.getElseStmt().get().asBlockStmt().setStatements(buildAsyncStatements(Collections.singletonList(ifStmt.getElseStmt().get().asThrowStmt()), defaultIfEmpty));
+                asyncIfStmt.setElseStmt(new BlockStmt().setStatements(buildAsyncStatements(Collections.singletonList(ifStmt.getElseStmt().get().asThrowStmt()), defaultIfEmpty)));
             } else if (ifStmt.getElseStmt().get().isReturnStmt()) {
                 buildAsyncReturnExpression(ifStmt.getElseStmt().get().asReturnStmt())
-                        .ifPresent(expression -> ifStmt.getElseStmt().get().asReturnStmt().setExpression(expression));
+                        .ifPresent(expression -> asyncIfStmt.setElseStmt(new ReturnStmt(expression)));
             }
         } else {
             if (hasReturnOrThrow || hasAwait) {
                 getParentReturnOrThrowStatementList(ifStmt, defaultIfEmpty)
                         .ifPresentOrElse(nodeList ->
-                                        ifStmt.setElseStmt(
+                                        asyncIfStmt.setElseStmt(
                                                 new BlockStmt()
                                                         .addStatement(
                                                                 new ReturnStmt(
@@ -1431,7 +1466,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                                                 )
                                                         )
                                         ),
-                                () -> ifStmt.setElseStmt(
+                                () -> asyncIfStmt.setElseStmt(
                                         new BlockStmt()
                                                 .addStatement(
                                                         new ReturnStmt(
@@ -1443,6 +1478,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                         );
             }
         }
+        return asyncIfStmt;
     }
 
     private Optional<NodeList<Statement>> getParentReturnOrThrowStatementList(Node node, String defaultIsEmpty) {
@@ -1475,7 +1511,7 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                     MethodCallExpr methodCallExpr = expression.asMethodCallExpr().getArgument(0).asMethodCallExpr();
                                     String methodDeclarationReturnTypeName = processorManager.resolveMethodDeclarationReturnTypeQualifiedName(methodCallExpr);
                                     if (methodDeclarationReturnTypeName.equals(Mono.class.getCanonicalName())) {
-                                        return expression.asMethodCallExpr().getArgument(0).clone();
+                                        return expression.asMethodCallExpr().getArgument(0);
                                     } else {
                                         String asyncMethodName = Stream
                                                 .concat(
@@ -1499,14 +1535,14 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                                 }
                                 String methodDeclarationReturnTypeName = processorManager.resolveMethodDeclarationReturnTypeQualifiedName(expression.asMethodCallExpr());
                                 if (methodDeclarationReturnTypeName.equals(Mono.class.getCanonicalName())) {
-                                    return expression.clone();
+                                    return expression;
                                 }
                             } else if (expression.isNullLiteralExpr()) {
                                 return new MethodCallExpr("empty")
                                         .setScope(new NameExpr(Mono.class.getSimpleName()));
                             }
                             return new MethodCallExpr("just")
-                                    .addArgument(expression.clone())
+                                    .addArgument(expression)
                                     .setScope(new NameExpr(Mono.class.getSimpleName()));
                         }
                 );

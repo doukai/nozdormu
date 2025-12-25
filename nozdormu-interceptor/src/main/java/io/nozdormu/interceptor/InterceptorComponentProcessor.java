@@ -8,7 +8,6 @@ import com.github.javaparser.ast.expr.*;
 import com.github.javaparser.ast.nodeTypes.NodeWithSimpleName;
 import com.github.javaparser.ast.stmt.*;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
-import com.github.javaparser.ast.type.TypeParameter;
 import com.github.javaparser.ast.type.UnknownType;
 import com.google.auto.service.AutoService;
 import io.nozdormu.common.ProcessorManager;
@@ -100,21 +99,19 @@ public class InterceptorComponentProcessor implements ComponentProxyProcessor {
                                 );
 
                                 MethodDeclaration overrideMethodDeclaration = componentProxyClassDeclaration.addMethod(methodDeclaration.getNameAsString())
-                                        .setModifiers(methodDeclaration.getModifiers().stream().map(Modifier::clone).collect(Collectors.toCollection(NodeList::new)))
-                                        .setParameters(methodDeclaration.getParameters().stream().map(Parameter::clone).collect(Collectors.toCollection(NodeList::new)))
-                                        .setType(methodDeclaration.getType().clone())
+                                        .setModifiers(methodDeclaration.getModifiers().stream().collect(Collectors.toCollection(NodeList::new)))
+                                        .setParameters(methodDeclaration.getParameters().stream().collect(Collectors.toCollection(NodeList::new)))
+                                        .setType(methodDeclaration.getType())
                                         .addAnnotation(Override.class);
 
-                                methodDeclaration.getTypeParameters().stream()
-                                        .map(TypeParameter::clone)
+                                methodDeclaration.getTypeParameters()
                                         .forEach(overrideMethodDeclaration::addTypeParameter);
 
                                 MethodDeclaration proxyMethodDeclaration = componentProxyClassDeclaration.addMethod(proxyMethodName)
-                                        .setModifiers(methodDeclaration.getModifiers().stream().map(Modifier::clone).collect(Collectors.toCollection(NodeList::new)))
+                                        .setModifiers(methodDeclaration.getModifiers().stream().collect(Collectors.toCollection(NodeList::new)))
                                         .addParameter(InvocationContext.class, "invocationContext");
 
-                                methodDeclaration.getTypeParameters().stream()
-                                        .map(TypeParameter::clone)
+                                methodDeclaration.getTypeParameters()
                                         .forEach(proxyMethodDeclaration::addTypeParameter);
 
                                 VariableDeclarationExpr invocationContextProxyVariable = new VariableDeclarationExpr()
@@ -129,10 +126,9 @@ public class InterceptorComponentProcessor implements ComponentProxyProcessor {
                                         );
 
                                 MethodCallExpr superMethodCallExpr = new MethodCallExpr()
-                                        .setName(methodDeclaration.getName().clone())
+                                        .setName(methodDeclaration.getName())
                                         .setArguments(
                                                 methodDeclaration.getParameters().stream()
-                                                        .map(Parameter::clone)
                                                         .map(parameter ->
                                                                 new CastExpr()
                                                                         .setType(parameter.getType())
@@ -148,7 +144,7 @@ public class InterceptorComponentProcessor implements ComponentProxyProcessor {
 
                                 if (methodDeclaration.getType().isVoidType()) {
                                     proxyMethodDeclaration
-                                            .setType(methodDeclaration.getType().clone())
+                                            .setType(methodDeclaration.getType())
                                             .createBody()
                                             .addStatement(
                                                     new TryStmt()
@@ -349,7 +345,7 @@ public class InterceptorComponentProcessor implements ComponentProxyProcessor {
                                                                                                         new ExpressionStmt()
                                                                                                                 .setExpression(
                                                                                                                         new CastExpr()
-                                                                                                                                .setType(methodDeclaration.getType().clone())
+                                                                                                                                .setType(methodDeclaration.getType())
                                                                                                                                 .setExpression(
                                                                                                                                         new MethodCallExpr()
                                                                                                                                                 .setName("aroundInvoke")
@@ -387,7 +383,6 @@ public class InterceptorComponentProcessor implements ComponentProxyProcessor {
                                                                                                                                                                 .addArgument(methodParameterTypeNames)
                                                                                                                                                                 .setScope(
                                                                                                                                                                         methodDeclaration.getParameters().stream()
-                                                                                                                                                                                .map(Parameter::clone)
                                                                                                                                                                                 .map(parameter -> (Expression) parameter.getNameAsExpression())
                                                                                                                                                                                 .reduce(setTarget, (left, right) ->
                                                                                                                                                                                         new MethodCallExpr("addParameterValue")

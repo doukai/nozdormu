@@ -2,7 +2,6 @@ package io.nozdormu.interceptor;
 
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.Modifier;
-import com.github.javaparser.ast.PackageDeclaration;
 import com.github.javaparser.ast.body.*;
 import com.github.javaparser.ast.expr.*;
 import com.github.javaparser.ast.stmt.BlockStmt;
@@ -114,22 +113,13 @@ public class InterceptorProcessor extends AbstractProcessor {
                                                                         .addImport(Dependent.class)
                                                                         .addImport(Named.class);
 
-                                                                Stream.of(Priority.class)
-                                                                        .forEach(aClass ->
-                                                                                interceptorClassDeclaration.getAnnotationByClass(aClass)
-                                                                                        .ifPresent(aExpr -> {
-                                                                                                    invokeInterceptorDeclaration.addAnnotation(aExpr.clone());
-                                                                                                    invokeInterceptorCompilationUnit.addImport(aClass);
-                                                                                                }
-                                                                                        )
-
-                                                                        );
+                                                                invokeInterceptorCompilationUnit.addImport(Priority.class);
+                                                                interceptorClassDeclaration.getAnnotationByClass(Priority.class)
+                                                                        .ifPresent(invokeInterceptorDeclaration::addAnnotation);
 
                                                                 compilationUnit.getPackageDeclaration()
-                                                                        .map(PackageDeclaration::clone)
                                                                         .ifPresent(invokeInterceptorCompilationUnit::setPackageDeclaration);
 
-                                                                invokeInterceptorDeclaration.setParentNode(invokeInterceptorCompilationUnit);
                                                                 processorManager.importAllClassOrInterfaceType(invokeInterceptorDeclaration, interceptorClassDeclaration);
 
                                                                 FieldDeclaration invocationContext = new FieldDeclaration()
@@ -232,22 +222,13 @@ public class InterceptorProcessor extends AbstractProcessor {
                                                                         .addImport(Dependent.class)
                                                                         .addImport(Named.class);
 
-                                                                Stream.of(Priority.class)
-                                                                        .forEach(aClass ->
-                                                                                interceptorClassDeclaration.getAnnotationByClass(aClass)
-                                                                                        .ifPresent(aExpr -> {
-                                                                                                    constructInterceptorDeclaration.addAnnotation(aExpr.clone());
-                                                                                                    constructInterceptorCompilationUnit.addImport(aClass);
-                                                                                                }
-                                                                                        )
-
-                                                                        );
+                                                                constructInterceptorCompilationUnit.addImport(Priority.class);
+                                                                interceptorClassDeclaration.getAnnotationByClass(Priority.class)
+                                                                        .ifPresent(constructInterceptorDeclaration::addAnnotation);
 
                                                                 compilationUnit.getPackageDeclaration()
-                                                                        .map(PackageDeclaration::clone)
                                                                         .ifPresent(constructInterceptorCompilationUnit::setPackageDeclaration);
 
-                                                                constructInterceptorDeclaration.setParentNode(constructInterceptorCompilationUnit);
                                                                 processorManager.importAllClassOrInterfaceType(constructInterceptorDeclaration, interceptorClassDeclaration);
 
                                                                 FieldDeclaration invocationContext = new FieldDeclaration()
