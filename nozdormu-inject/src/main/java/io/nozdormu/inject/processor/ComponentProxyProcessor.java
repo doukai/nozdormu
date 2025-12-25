@@ -13,6 +13,10 @@ public interface ComponentProxyProcessor {
     default void inProcess() {
     }
 
+    default boolean match(CompilationUnit componentCompilationUnit, ClassOrInterfaceDeclaration componentClassDeclaration) {
+        return false;
+    }
+
     default void processComponentProxy(CompilationUnit componentCompilationUnit,
                                        ClassOrInterfaceDeclaration componentClassDeclaration,
                                        CompilationUnit componentProxyCompilationUnit,

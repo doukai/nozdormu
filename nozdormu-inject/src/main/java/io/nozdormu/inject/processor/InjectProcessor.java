@@ -3,10 +3,7 @@ package io.nozdormu.inject.processor;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.Modifier;
 import com.github.javaparser.ast.NodeList;
-import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
-import com.github.javaparser.ast.body.ConstructorDeclaration;
-import com.github.javaparser.ast.body.FieldDeclaration;
-import com.github.javaparser.ast.body.MethodDeclaration;
+import com.github.javaparser.ast.body.*;
 import com.github.javaparser.ast.expr.*;
 import com.github.javaparser.ast.nodeTypes.NodeWithAnnotations;
 import com.github.javaparser.ast.nodeTypes.NodeWithSimpleName;
@@ -123,8 +120,10 @@ public class InjectProcessor extends AbstractProcessor {
                         }
                 );
 
-        List<CompilationUnit> componentProxyCompilationUnits = typeElements.stream()
-                .map(this::buildComponentProxy)
+        List<CompilationUnit> componentProxyCompilationUnits = new ArrayList<>();
+
+        List<CompilationUnit> componentCompilationUnits = typeElements.stream()
+                .map(typeElement -> buildComponentProxy(typeElement, componentProxyCompilationUnits))
                 .collect(Collectors.toList());
         componentProxyCompilationUnits.forEach(compilationUnit -> processorManager.writeToFiler(compilationUnit));
 
@@ -132,7 +131,7 @@ public class InjectProcessor extends AbstractProcessor {
                 typeElements.stream()
                         .flatMap(typeElement -> processorManager.getCompilationUnit(typeElement).stream())
                         .collect(Collectors.toList()),
-                componentProxyCompilationUnits
+                componentCompilationUnits
         );
         processorManager.writeToFiler(moduleContextCompilationUnit);
 
@@ -142,20 +141,29 @@ public class InjectProcessor extends AbstractProcessor {
         return false;
     }
 
-    private CompilationUnit buildComponentProxy(TypeElement typeElement) {
+    private CompilationUnit buildComponentProxy(TypeElement typeElement, List<CompilationUnit> componentProxyCompilationUnits) {
         return processorManager.getCompilationUnit(typeElement)
-                .map(this::buildComponentProxy)
+                .map(compilationUnit -> buildComponentProxy(compilationUnit, componentProxyCompilationUnits))
                 .orElseThrow(() -> new InjectionProcessException(CANNOT_GET_COMPILATION_UNIT.bind(typeElement.getQualifiedName().toString())));
     }
 
-    private CompilationUnit buildComponentProxy(CompilationUnit componentCompilationUnit) {
+    private CompilationUnit buildComponentProxy(CompilationUnit componentCompilationUnit, List<CompilationUnit> componentProxyCompilationUnits) {
         return buildComponentProxy(
                 componentCompilationUnit,
-                processorManager.getPublicClassOrInterfaceDeclarationOrError(componentCompilationUnit)
+                processorManager.getPublicClassOrInterfaceDeclarationOrError(componentCompilationUnit),
+                componentProxyCompilationUnits
         );
     }
 
-    private CompilationUnit buildComponentProxy(CompilationUnit componentCompilationUnit, ClassOrInterfaceDeclaration componentClassDeclaration) {
+    private CompilationUnit buildComponentProxy(CompilationUnit componentCompilationUnit, ClassOrInterfaceDeclaration componentClassDeclaration, List<CompilationUnit> componentProxyCompilationUnits) {
+        if (componentClassDeclaration.getMembers().stream()
+                .filter(bodyDeclaration -> bodyDeclaration.isMethodDeclaration() || bodyDeclaration.isFieldDeclaration())
+                .noneMatch(bodyDeclaration -> bodyDeclaration.isAnnotationPresent(Inject.class)) &&
+                componentProxyProcessors.stream().noneMatch(componentProxyProcessor -> componentProxyProcessor.match(componentCompilationUnit, componentClassDeclaration))
+        ) {
+            return componentCompilationUnit;
+        }
+
         logger.info("{} proxy class build start", componentClassDeclaration.getFullyQualifiedName().orElseGet(componentClassDeclaration::getNameAsString));
 
         ClassOrInterfaceDeclaration proxyClassDeclaration = new ClassOrInterfaceDeclaration()
@@ -267,6 +275,7 @@ public class InjectProcessor extends AbstractProcessor {
                         }
                 );
         logger.info("{} proxy class build success", componentClassDeclaration.getFullyQualifiedName().orElseGet(componentClassDeclaration::getNameAsString));
+        componentProxyCompilationUnits.add(proxyCompilationUnit);
         return proxyCompilationUnit;
     }
 
@@ -312,13 +321,16 @@ public class InjectProcessor extends AbstractProcessor {
                                     ClassOrInterfaceDeclaration proxyClassOrInterfaceDeclaration = componentProxyCompilationUnits.stream()
                                             .map(processorManager::getPublicClassOrInterfaceDeclarationOrError)
                                             .filter(proxyClassDeclaration ->
-                                                    proxyClassDeclaration.getExtendedTypes().stream()
-                                                            .anyMatch(classOrInterfaceType ->
-                                                                    processorManager.getQualifiedName(classOrInterfaceType).equals(qualifiedName)
-                                                            )
+                                                    processorManager.getQualifiedName(proxyClassDeclaration).equals(qualifiedName) ||
+                                                            proxyClassDeclaration.getExtendedTypes().stream()
+                                                                    .anyMatch(classOrInterfaceType ->
+                                                                            processorManager.getQualifiedName(classOrInterfaceType).equals(qualifiedName)
+                                                                    )
                                             )
                                             .findFirst()
                                             .orElseThrow(() -> new RuntimeException(qualifiedName + "_Proxy not found"));
+
+                                    String proxyQualifiedName = processorManager.getQualifiedName(proxyClassOrInterfaceDeclaration);
 
                                     Optional<Expression> nameExpr = classOrInterfaceDeclaration.getAnnotationByClass(Named.class)
                                             .flatMap(processorManager::findAnnotationValue)
@@ -374,7 +386,7 @@ public class InjectProcessor extends AbstractProcessor {
 
                                         Expression objectCreateExpression = proxyClassOrInterfaceDeclaration.getMethods().stream()
                                                 .filter(methodDeclaration -> methodDeclaration.isAnnotationPresent(Produces.class))
-                                                .filter(methodDeclaration -> processorManager.getQualifiedName(methodDeclaration.getType()).equals(qualifiedName + "_Proxy"))
+                                                .filter(methodDeclaration -> processorManager.getQualifiedName(methodDeclaration.getType()).equals(proxyQualifiedName))
                                                 .findFirst()
                                                 .map(methodDeclaration ->
                                                         (Expression) new MethodCallExpr()
@@ -385,11 +397,11 @@ public class InjectProcessor extends AbstractProcessor {
                                                                                 .map(methodCallExpr -> (Expression) methodCallExpr)
                                                                                 .collect(Collectors.toCollection(NodeList::new))
                                                                 )
-                                                                .setScope(new NameExpr(qualifiedName + "_Proxy"))
+                                                                .setScope(new NameExpr(proxyQualifiedName))
                                                 )
                                                 .orElseGet(() ->
                                                         new ObjectCreationExpr()
-                                                                .setType(qualifiedName + "_Proxy")
+                                                                .setType(proxyQualifiedName)
                                                                 .setArguments(
                                                                         proxyClassOrInterfaceDeclaration.getConstructors().stream()
                                                                                 .findFirst()
@@ -443,6 +455,7 @@ public class InjectProcessor extends AbstractProcessor {
 
     private void addPutTypeStatement(BlockStmt staticInitializer, String putClassQualifiedName, CompilationUnit contextCompilationUnit, ClassOrInterfaceDeclaration classOrInterfaceDeclaration, ClassOrInterfaceDeclaration proxyClassOrInterfaceDeclaration, Expression nameExpr, Expression priorityExpr, boolean isDefault, boolean isSingleton) {
         String qualifiedName = processorManager.getQualifiedName(classOrInterfaceDeclaration);
+        String proxyQualifiedName = processorManager.getQualifiedName(proxyClassOrInterfaceDeclaration);
         Expression supplierExpression;
         if (isSingleton) {
             supplierExpression = new LambdaExpr()
@@ -458,7 +471,7 @@ public class InjectProcessor extends AbstractProcessor {
         } else {
             Expression objectCreateExpression = proxyClassOrInterfaceDeclaration.getMethods().stream()
                     .filter(methodDeclaration -> methodDeclaration.isAnnotationPresent(Produces.class))
-                    .filter(methodDeclaration -> processorManager.getQualifiedName(methodDeclaration.getType()).equals(qualifiedName + "_Proxy"))
+                    .filter(methodDeclaration -> processorManager.getQualifiedName(methodDeclaration.getType()).equals(proxyQualifiedName))
                     .findFirst()
                     .map(methodDeclaration ->
                             (Expression) new MethodCallExpr()
@@ -469,11 +482,11 @@ public class InjectProcessor extends AbstractProcessor {
                                                     .map(methodCallExpr -> (Expression) methodCallExpr)
                                                     .collect(Collectors.toCollection(NodeList::new))
                                     )
-                                    .setScope(new NameExpr(qualifiedName + "_Proxy"))
+                                    .setScope(new NameExpr(proxyQualifiedName))
                     )
                     .orElseGet(() ->
                             new ObjectCreationExpr()
-                                    .setType(qualifiedName + "_Proxy")
+                                    .setType(proxyQualifiedName)
                                     .setArguments(
                                             proxyClassOrInterfaceDeclaration.getConstructors().stream()
                                                     .findFirst()
