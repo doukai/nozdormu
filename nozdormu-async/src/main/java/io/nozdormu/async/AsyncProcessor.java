@@ -1089,7 +1089,6 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                             .ifPresent(expression -> forStmt.setBody(new ReturnStmt(expression)));
                     asyncStatements.add(forStmt);
                 }
-//                asyncStatements.add(statement);
             } else if (statement.isForEachStmt()) {
                 if (statement.asForEachStmt().getBody().isBlockStmt()) {
                     if (hasAwait(statement.asForEachStmt().getBody().asBlockStmt().getStatements())) {
@@ -1142,7 +1141,6 @@ public class AsyncProcessor implements ComponentProxyProcessor {
                             .ifPresent(expression -> forEachStmt.setBody(new ReturnStmt(expression)));
                     asyncStatements.add(forEachStmt);
                 }
-//                asyncStatements.add(statement);
             } else if (statement.isTryStmt()) {
                 TryStmt tryStmt = new TryStmt();
                 tryStmt.setResources(statement.asTryStmt().getResources());
