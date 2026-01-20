@@ -12,7 +12,8 @@ public class TypesafeConfigValue implements ConfigValue {
 
     @Override
     public String getName() {
-        return configValue.valueType().name();
+        String description = configValue.origin().description();
+        return description != null ? description : "";
     }
 
     @Override
@@ -22,7 +23,8 @@ public class TypesafeConfigValue implements ConfigValue {
 
     @Override
     public String getRawValue() {
-        return configValue.origin().resource();
+        Object raw = configValue.unwrapped();
+        return raw != null ? raw.toString() : null;
     }
 
     @Override

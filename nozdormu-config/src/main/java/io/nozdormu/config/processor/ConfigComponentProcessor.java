@@ -68,20 +68,19 @@ public class ConfigComponentProcessor implements ComponentProxyProcessor {
         componentProxyClassDeclaration.getConstructors()
                 .forEach(constructorDeclaration ->
                         methodDeclarationList.forEach(methodDeclaration -> {
-                                    methodDeclaration.getParameters().forEach(constructorDeclaration::addParameter);
-                                    constructorDeclaration
-                                            .getBody()
-                                            .addStatement(
-                                                    new MethodCallExpr()
-                                                            .setName(methodDeclaration.getName())
-                                                            .setArguments(
-                                                                    methodDeclaration.getParameters().stream()
-                                                                            .map(NodeWithSimpleName::getNameAsExpression)
-                                                                            .collect(Collectors.toCollection(NodeList::new))
-                                                            )
-                                            );
-                                }
-                        )
+                            methodDeclaration.getParameters().forEach(constructorDeclaration::addParameter);
+                            constructorDeclaration
+                                    .getBody()
+                                    .addStatement(
+                                            new MethodCallExpr()
+                                                    .setName(methodDeclaration.getName())
+                                                    .setArguments(
+                                                            methodDeclaration.getParameters().stream()
+                                                                    .map(NodeWithSimpleName::getNameAsExpression)
+                                                                    .collect(Collectors.toCollection(NodeList::new))
+                                                    )
+                                    );
+                        })
                 );
         logger.info("{} config component build success", componentClassDeclaration.getFullyQualifiedName().orElseGet(componentClassDeclaration::getNameAsString));
     }

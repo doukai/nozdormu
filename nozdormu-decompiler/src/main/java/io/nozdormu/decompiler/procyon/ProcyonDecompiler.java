@@ -1,4 +1,4 @@
-package io.nozdormu.decompiler;
+package io.nozdormu.decompiler.procyon;
 
 import com.strobel.assembler.metadata.JarTypeLoader;
 import com.strobel.decompiler.Decompiler;
@@ -13,8 +13,8 @@ import java.io.StringWriter;
 import java.net.URISyntaxException;
 import java.nio.file.Paths;
 import java.security.CodeSource;
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.jar.JarFile;
 
 import static io.nozdormu.spi.utils.DecompileUtil.getDecompileClassName;
@@ -23,7 +23,7 @@ public class ProcyonDecompiler implements TypeElementDecompiler {
 
     private final ClassLoader classLoader;
 
-    private static final Map<String, String> DECOMPILED_CACHE = new HashMap<>();
+    private static final Map<String, String> DECOMPILED_CACHE = new ConcurrentHashMap<>();
 
     public ProcyonDecompiler(ClassLoader classLoader) {
         this.classLoader = classLoader;
@@ -31,7 +31,13 @@ public class ProcyonDecompiler implements TypeElementDecompiler {
 
     @Override
     public boolean canLoad(TypeElement typeElement) {
-        return true;
+        String decompileClassName = getDecompileClassName(typeElement.getQualifiedName().toString(), classLoader);
+        try {
+            Class.forName(decompileClassName, false, classLoader);
+            return true;
+        } catch (ClassNotFoundException e) {
+            return false;
+        }
     }
 
     @Override

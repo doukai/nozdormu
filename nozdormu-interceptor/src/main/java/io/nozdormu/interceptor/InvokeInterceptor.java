@@ -2,11 +2,11 @@ package io.nozdormu.interceptor;
 
 import com.google.common.collect.Lists;
 import io.nozdormu.spi.context.BeanContext;
+import io.nozdormu.spi.context.BeanSupplier;
 import jakarta.inject.Named;
-import jakarta.inject.Provider;
 import jakarta.interceptor.InvocationContext;
-import reactor.util.function.Tuple2;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -24,14 +24,14 @@ public interface InvokeInterceptor {
     static List<InvokeInterceptor> getInvokeInterceptorList(String... annotationNames) {
         return Lists
                 .reverse(
-                        BeanContext.getProviderListWithMeta(InvokeInterceptor.class).stream()
-                                .filter(tuple2 -> tuple2.getT1().containsKey(Named.class.getName()))
-                                .filter(tuple2 ->
+                        BeanContext.getImplSupplierMap(InvokeInterceptor.class).values().stream()
+                                .filter(beanSupplier -> beanSupplier.getQualifiers().containsKey(Named.class.getName()))
+                                .filter(beanSupplier ->
                                         Stream.of(annotationNames)
-                                                .anyMatch(annotationName -> tuple2.getT1().get(Named.class.getName()).equals(annotationName))
+                                                .anyMatch(annotationName -> beanSupplier.getQualifiers().get(Named.class.getName()).get("value").equals(annotationName))
                                 )
-                                .map(Tuple2::getT2)
-                                .map(Provider::get)
+                                .sorted(Comparator.comparing(BeanSupplier::getPriority, Comparator.nullsLast(Integer::compareTo)))
+                                .map(beanSupplier -> (InvokeInterceptor) beanSupplier.getSupplier().get())
                                 .collect(Collectors.toList())
                 );
     }

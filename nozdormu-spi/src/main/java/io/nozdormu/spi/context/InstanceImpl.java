@@ -1,90 +1,117 @@
 package io.nozdormu.spi.context;
 
-import jakarta.enterprise.inject.Default;
 import jakarta.enterprise.inject.Instance;
-import jakarta.enterprise.inject.literal.NamedLiteral;
 import jakarta.enterprise.util.TypeLiteral;
-import jakarta.inject.Named;
-import jakarta.inject.Provider;
 import reactor.util.annotation.NonNull;
-import reactor.util.function.Tuple2;
 
 import java.lang.annotation.Annotation;
-import java.util.Arrays;
+import java.util.Comparator;
 import java.util.Iterator;
-import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
+
+import static io.nozdormu.spi.utils.QualifierUtil.toQualifierMap;
 
 public class InstanceImpl<T> implements Instance<T> {
 
-    private final List<Tuple2<Map<String, Object>, Provider<T>>> providerListWithMeta;
+    private final Map<String, BeanSupplier> beanSupplierMap;
 
-    public InstanceImpl(List<Tuple2<Map<String, Object>, Provider<T>>> providerListWithMeta) {
-        this.providerListWithMeta = providerListWithMeta;
+    public InstanceImpl(Map<String, BeanSupplier> beanSupplierMap) {
+        this.beanSupplierMap = beanSupplierMap;
     }
 
     @Override
     public Instance<T> select(Annotation... qualifiers) {
-        if (qualifiers.length > 0) {
-            return new InstanceImpl<>(
-                    providerListWithMeta.stream()
-                            .filter(tuple2 ->
-                                    Arrays.stream(qualifiers)
-                                            .anyMatch(annotation -> {
-                                                        if (annotation instanceof NamedLiteral) {
-                                                            return tuple2.getT1().containsKey(Named.class.getName()) &&
-                                                                    tuple2.getT1().get(Named.class.getName()).equals(((NamedLiteral) annotation).value());
-                                                        } else if (annotation instanceof Default.Literal) {
-                                                            return tuple2.getT1().containsKey(Default.class.getName()) &&
-                                                                    tuple2.getT1().get(Default.class.getName()).equals(true);
-                                                        }
-                                                        return true;
-                                                    }
-                                            )
-                            )
-                            .collect(Collectors.toList())
-            );
+        if (qualifiers == null || qualifiers.length == 0) {
+            return this;
         }
-        return this;
+        Map<String, Map<String, Object>> qualifierMap = toQualifierMap(qualifiers);
+        return new InstanceImpl<>(
+                beanSupplierMap.entrySet().stream()
+                        .filter(entry ->
+                                qualifierMap.entrySet().stream()
+                                        .allMatch(qualifierEntry ->
+                                                entry.getValue().getQualifiers().containsKey(qualifierEntry.getKey()) &&
+                                                        qualifierEntry.getValue().entrySet().stream()
+                                                                .allMatch(attributeEntry ->
+                                                                        entry.getValue().getQualifiers().get(qualifierEntry.getKey()).containsKey(attributeEntry.getKey()) &&
+                                                                                Objects.equals(
+                                                                                        attributeEntry.getValue(),
+                                                                                        entry.getValue().getQualifiers().get(qualifierEntry.getKey()).get(attributeEntry.getKey())
+                                                                                )
+                                                                )
+                                        )
+                        )
+                        .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue))
+        );
     }
 
+    @SuppressWarnings("unchecked")
     @Override
     public <U extends T> Instance<U> select(Class<U> subtype, Annotation... qualifiers) {
-        return null;
+        if (subtype == null) {
+            return (Instance<U>) select(qualifiers);
+        }
+        Map<String, Map<String, Object>> qualifierMap = toQualifierMap(qualifiers);
+        return new InstanceImpl<>(
+                beanSupplierMap.entrySet().stream()
+                        .filter(entry -> entry.getKey().equals(subtype.getName()))
+                        .filter(entry ->
+                                qualifierMap.entrySet().stream()
+                                        .allMatch(qualifierEntry ->
+                                                entry.getValue().getQualifiers().containsKey(qualifierEntry.getKey()) &&
+                                                        qualifierEntry.getValue().entrySet().stream()
+                                                                .allMatch(attributeEntry ->
+                                                                        entry.getValue().getQualifiers().get(qualifierEntry.getKey()).containsKey(attributeEntry.getKey()) &&
+                                                                                Objects.equals(
+                                                                                        attributeEntry.getValue(),
+                                                                                        entry.getValue().getQualifiers().get(qualifierEntry.getKey()).get(attributeEntry.getKey())
+                                                                                )
+                                                                )
+                                        )
+                        )
+                        .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue))
+        );
     }
 
     @Override
     public <U extends T> Instance<U> select(TypeLiteral<U> subtype, Annotation... qualifiers) {
-        return null;
+        return select(subtype.getRawType(), qualifiers);
     }
 
     @Override
     public boolean isUnsatisfied() {
-        return false;
+        return beanSupplierMap.isEmpty();
     }
 
     @Override
     public boolean isAmbiguous() {
-        return false;
+        return beanSupplierMap.size() > 1;
     }
 
     @Override
     public void destroy(T instance) {
-
+        // No-op: no lifecycle hooks tracked for instances.
     }
 
+    @SuppressWarnings("unchecked")
     @Override
     public T get() {
-        if (providerListWithMeta != null && !providerListWithMeta.isEmpty()) {
-            return providerListWithMeta.get(0).getT2().get();
-        }
-        return null;
+        return beanSupplierMap.values().stream()
+                .min(Comparator.comparing(BeanSupplier::getPriority, Comparator.nullsLast(Integer::compareTo)))
+                .map(beanSupplier -> (T) beanSupplier.getSupplier().get())
+                .orElse(null);
     }
 
+    @SuppressWarnings("unchecked")
     @Override
     @NonNull
     public Iterator<T> iterator() {
-        return providerListWithMeta.stream().map(Tuple2::getT2).map(Provider::get).iterator();
+        return beanSupplierMap.values().stream()
+                .sorted(Comparator.comparing(BeanSupplier::getPriority, Comparator.nullsLast(Integer::compareTo)))
+                .map(beanSupplier -> (T) beanSupplier.getSupplier().get())
+                .iterator();
     }
+
 }

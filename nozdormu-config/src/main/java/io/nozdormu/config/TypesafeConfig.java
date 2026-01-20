@@ -59,7 +59,7 @@ public class TypesafeConfig implements Config {
 
     @Override
     public Iterable<ConfigSource> getConfigSources() {
-        return null;
+        return List.of();
     }
 
     @Override
@@ -69,7 +69,10 @@ public class TypesafeConfig implements Config {
 
     @Override
     public <T> T unwrap(Class<T> type) {
-        return null;
+        if (type.isInstance(config)) {
+            return type.cast(config);
+        }
+        throw new IllegalArgumentException("Unsupported unwrap type: " + type.getName());
     }
 
     public void merge(Stream<Path> pathStream) {

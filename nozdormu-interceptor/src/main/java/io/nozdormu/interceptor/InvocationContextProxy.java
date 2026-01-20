@@ -164,6 +164,9 @@ public class InvocationContextProxy implements InvocationContext {
     @Override
     public Method getMethod() {
         if (this.method == null) {
+            if (this.targetClass == null || this.parameterTypeNames == null) {
+                throw new NoSuchMethodError("Method metadata is not initialized");
+            }
             this.method = Arrays.stream(this.targetClass.getMethods())
                     .filter(method -> method.getName().equals(this.methodName))
                     .filter(method -> method.getParameterCount() == this.parameterCount)
@@ -180,6 +183,9 @@ public class InvocationContextProxy implements InvocationContext {
     @Override
     public Constructor<?> getConstructor() {
         if (this.constructor == null) {
+            if (this.targetClass == null || this.parameterTypeNames == null) {
+                throw new NoSuchMethodError("Constructor metadata is not initialized");
+            }
             this.constructor = Arrays.stream(this.targetClass.getConstructors())
                     .filter(constructor -> constructor.getParameterCount() == this.parameterCount)
                     .filter(constructor ->
@@ -194,13 +200,22 @@ public class InvocationContextProxy implements InvocationContext {
 
     @Override
     public Object[] getParameters() {
-        return this.parameterMap.values().toArray();
+        if (this.method == null) {
+            getMethod();
+        }
+        return Arrays.stream(this.method.getParameters())
+                .map(parameter -> this.parameterMap.get(parameter.getName()))
+                .toArray();
     }
 
     @Override
     public void setParameters(Object[] params) {
+        if (this.method == null) {
+            getMethod();
+        }
         if (params != null) {
-            IntStream.range(0, this.method.getParameterCount()).forEach(index -> this.parameterMap.put(this.method.getParameters()[index].getName(), params[index]));
+            IntStream.range(0, this.method.getParameterCount())
+                    .forEach(index -> this.parameterMap.put(this.method.getParameters()[index].getName(), params[index]));
         }
     }
 

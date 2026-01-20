@@ -14,6 +14,7 @@ public enum InjectionProcessErrorType {
     MODULE_PROVIDERS_METHOD_NOT_EXIST(-60646, "can't find module class providers method of %s"),
     COMPONENT_GET_METHOD_NOT_EXIST(-60647, "can't find component class get method of %s"),
     TYPE_ARGUMENT_NOT_EXIST(-60649, "can't find type argument"),
+    ANNOTATION_NOT_EXIST(-60650, "annotation not exist in: %s"),
 
     CONFIG_PROPERTIES_PREFIX_NOT_EXIST(-60700, "prefix not exist in @ConfigProperties in: %s"),
     CONFIG_PROPERTY_NOT_EXIST(-60701, "@ConfigProperty not exist on: %s"),

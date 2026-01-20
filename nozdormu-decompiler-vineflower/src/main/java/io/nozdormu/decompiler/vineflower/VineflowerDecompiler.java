@@ -1,4 +1,4 @@
-package io.nozdormu.decompiler;
+package io.nozdormu.decompiler.vineflower;
 
 import io.nozdormu.spi.decompiler.TypeElementDecompiler;
 import org.jetbrains.java.decompiler.api.Decompiler;
@@ -14,9 +14,8 @@ import java.net.URLClassLoader;
 import java.nio.file.*;
 import java.security.CodeSource;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.Map;
-import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.jar.Manifest;
 
 import static io.nozdormu.spi.utils.DecompileUtil.getDecompileClassName;
@@ -27,7 +26,7 @@ public class VineflowerDecompiler implements TypeElementDecompiler {
 
     private final Path jrtPath = Paths.get(URI.create("jrt:/")).resolve("/modules").resolve("lib").resolve("jrt-fs.jar");
 
-    private static final Map<String, String> DECOMPILED_CACHE = new HashMap<>();
+    private static final Map<String, String> DECOMPILED_CACHE = new ConcurrentHashMap<>();
 
     private static final IResultSaver resultSaver = new IResultSaver() {
 
@@ -98,9 +97,13 @@ public class VineflowerDecompiler implements TypeElementDecompiler {
             if (codeSource != null) {
                 file = Paths.get(codeSource.getLocation().toURI()).toFile();
             } else {
+                URL resource = classLoader.getResource(decompileClass.getName().replace(".", "/") + ".class");
+                if (resource == null) {
+                    throw new RuntimeException("Class resource not found: " + decompileClass.getName());
+                }
                 try (URLClassLoader loader = new URLClassLoader(new URL[]{jrtPath.toUri().toURL()});
                      FileSystem fs = FileSystems.newFileSystem(URI.create("jrt:/"), Collections.emptyMap(), loader)) {
-                    byte[] bytes = Files.readAllBytes(fs.getPath("/modules/" + Objects.requireNonNull(classLoader.getResource(decompileClass.getName().replace(".", "/") + ".class")).getPath()));
+                    byte[] bytes = Files.readAllBytes(fs.getPath("/modules/" + resource.getPath()));
                     file = File.createTempFile(decompileClass.getName(), ".class");
                     file.deleteOnExit();
                     Files.write(file.toPath(), bytes);

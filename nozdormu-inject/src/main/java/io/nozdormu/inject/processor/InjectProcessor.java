@@ -7,33 +7,27 @@ import com.github.javaparser.ast.body.*;
 import com.github.javaparser.ast.expr.*;
 import com.github.javaparser.ast.nodeTypes.NodeWithAnnotations;
 import com.github.javaparser.ast.nodeTypes.NodeWithSimpleName;
+import com.github.javaparser.ast.nodeTypes.modifiers.NodeWithStaticModifier;
 import com.github.javaparser.ast.stmt.BlockStmt;
 import com.github.javaparser.ast.stmt.ExpressionStmt;
+import com.github.javaparser.ast.stmt.ReturnStmt;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import com.github.javaparser.ast.type.Type;
-import com.github.javaparser.ast.type.VoidType;
-import com.github.javaparser.resolution.types.ResolvedReferenceType;
-import com.github.javaparser.resolution.types.ResolvedType;
+import com.github.javaparser.ast.type.UnknownType;
 import com.google.auto.service.AutoService;
 import com.google.common.collect.Streams;
 import io.nozdormu.common.ProcessorManager;
-import io.nozdormu.spi.context.BeanContextLoader;
+import io.nozdormu.spi.context.*;
 import io.nozdormu.spi.error.InjectionProcessException;
-import io.nozdormu.spi.context.BeanContext;
-import io.nozdormu.spi.context.ScopeInstanceFactory;
 import jakarta.annotation.Generated;
 import jakarta.annotation.Priority;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.context.Dependent;
 import jakarta.enterprise.context.RequestScoped;
 import jakarta.enterprise.context.SessionScoped;
-import jakarta.enterprise.inject.Default;
 import jakarta.enterprise.inject.Instance;
 import jakarta.enterprise.inject.Produces;
-import jakarta.inject.Inject;
-import jakarta.inject.Named;
-import jakarta.inject.Provider;
-import jakarta.inject.Singleton;
+import jakarta.inject.*;
 import jakarta.transaction.TransactionScoped;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -115,56 +109,40 @@ public class InjectProcessor extends AbstractProcessor {
         processorManager.setRoundEnv(roundEnv);
         componentProxyProcessors
                 .forEach(componentProxyProcessor -> {
-                            logger.info("{} in process", componentProxyProcessor.getClass().getName());
-                            componentProxyProcessor.inProcess();
-                        }
-                );
-
-        List<CompilationUnit> componentProxyCompilationUnits = new ArrayList<>();
+                    logger.info("{} in process", componentProxyProcessor.getClass().getName());
+                    componentProxyProcessor.inProcess();
+                });
 
         List<CompilationUnit> componentCompilationUnits = typeElements.stream()
-                .map(typeElement -> buildComponentProxy(typeElement, componentProxyCompilationUnits))
+                .flatMap(typeElement -> {
+                    CompilationUnit proxyCompilationUnit = buildComponentProxy(typeElement);
+                    CompilationUnit suppliersCompilationUnit = buildComponentSuppliers(typeElement, processorManager.getPublicClassOrInterfaceDeclarationOrError(proxyCompilationUnit));
+                    return Stream.of(proxyCompilationUnit, suppliersCompilationUnit);
+                })
                 .collect(Collectors.toList());
-        componentProxyCompilationUnits.forEach(compilationUnit -> processorManager.writeToFiler(compilationUnit));
 
-        CompilationUnit moduleContextCompilationUnit = buildModuleContext(
-                typeElements.stream()
-                        .flatMap(typeElement -> processorManager.getCompilationUnit(typeElement).stream())
-                        .collect(Collectors.toList()),
-                componentCompilationUnits
-        );
-        processorManager.writeToFiler(moduleContextCompilationUnit);
-
-        List<CompilationUnit> producesContextCompilationUnits = buildProducesContextStream(singletonSet, dependentSet, applicationScopedSet, requestScopedSet, sessionScopedSet, transactionScopedSet).collect(Collectors.toList());
-        producesContextCompilationUnits.forEach(producesModuleCompilationUnit -> processorManager.writeToFiler(producesModuleCompilationUnit));
+        componentCompilationUnits.forEach(compilationUnit -> processorManager.writeToFiler(compilationUnit));
 
         return false;
     }
 
-    private CompilationUnit buildComponentProxy(TypeElement typeElement, List<CompilationUnit> componentProxyCompilationUnits) {
+    private CompilationUnit buildComponentProxy(TypeElement typeElement) {
         return processorManager.getCompilationUnit(typeElement)
-                .map(compilationUnit -> buildComponentProxy(compilationUnit, componentProxyCompilationUnits))
+                .map(this::buildComponentProxy)
                 .orElseThrow(() -> new InjectionProcessException(CANNOT_GET_COMPILATION_UNIT.bind(typeElement.getQualifiedName().toString())));
     }
 
-    private CompilationUnit buildComponentProxy(CompilationUnit componentCompilationUnit, List<CompilationUnit> componentProxyCompilationUnits) {
+    private CompilationUnit buildComponentProxy(CompilationUnit componentCompilationUnit) {
         return buildComponentProxy(
                 componentCompilationUnit,
-                processorManager.getPublicClassOrInterfaceDeclarationOrError(componentCompilationUnit),
-                componentProxyCompilationUnits
+                processorManager.getPublicClassOrInterfaceDeclarationOrError(componentCompilationUnit)
         );
     }
 
-    private CompilationUnit buildComponentProxy(CompilationUnit componentCompilationUnit, ClassOrInterfaceDeclaration componentClassDeclaration, List<CompilationUnit> componentProxyCompilationUnits) {
-        if (componentClassDeclaration.getMembers().stream()
-                .filter(bodyDeclaration -> bodyDeclaration.isMethodDeclaration() || bodyDeclaration.isFieldDeclaration())
-                .noneMatch(bodyDeclaration -> bodyDeclaration.isAnnotationPresent(Inject.class)) &&
-                componentProxyProcessors.stream().noneMatch(componentProxyProcessor -> componentProxyProcessor.match(componentCompilationUnit, componentClassDeclaration))
-        ) {
-            return componentCompilationUnit;
-        }
+    private CompilationUnit buildComponentProxy(CompilationUnit componentCompilationUnit, ClassOrInterfaceDeclaration componentClassDeclaration) {
+        String qualifiedName = processorManager.getQualifiedName(componentClassDeclaration);
 
-        logger.info("{} proxy class build start", componentClassDeclaration.getFullyQualifiedName().orElseGet(componentClassDeclaration::getNameAsString));
+        logger.info("{} proxy class build start", qualifiedName);
 
         ClassOrInterfaceDeclaration proxyClassDeclaration = new ClassOrInterfaceDeclaration()
                 .addModifier(Modifier.Keyword.PUBLIC)
@@ -197,59 +175,58 @@ public class InjectProcessor extends AbstractProcessor {
 
         componentClassDeclaration.getConstructors()
                 .forEach(constructorDeclaration -> {
-                            ConstructorDeclaration proxyConstructorDeclaration = proxyClassDeclaration
-                                    .addConstructor(Modifier.Keyword.PUBLIC)
-                                    .setAnnotations(constructorDeclaration.getAnnotations())
-                                    .setParameters(constructorDeclaration.getParameters());
+                    ConstructorDeclaration proxyConstructorDeclaration = proxyClassDeclaration
+                            .addConstructor(Modifier.Keyword.PUBLIC)
+                            .setAnnotations(constructorDeclaration.getAnnotations())
+                            .setParameters(constructorDeclaration.getParameters());
 
-                            BlockStmt blockStmt = proxyConstructorDeclaration
-                                    .createBody()
-                                    .addStatement(
-                                            new MethodCallExpr()
-                                                    .setName(new SuperExpr().toString())
-                                                    .setArguments(
-                                                            constructorDeclaration.getParameters().stream()
-                                                                    .map(NodeWithSimpleName::getNameAsExpression)
-                                                                    .collect(Collectors.toCollection(NodeList::new))
-                                                    )
-                                    );
-
-                            privateFieldDeclarationList.stream()
-                                    .filter(fieldDeclaration ->
-                                            constructorDeclaration.getParameters().stream()
-                                                    .map(NodeWithSimpleName::getNameAsString)
-                                                    .anyMatch(name -> fieldDeclaration.getVariable(0).getNameAsString().equals(name))
-                                    )
-                                    .forEach(fieldDeclaration ->
-                                            blockStmt.addStatement(
-                                                    new AssignExpr()
-                                                            .setTarget(new FieldAccessExpr().setName(fieldDeclaration.getVariable(0).getNameAsString()).setScope(new ThisExpr()))
-                                                            .setValue(fieldDeclaration.getVariable(0).getNameAsExpression())
-                                                            .setOperator(AssignExpr.Operator.ASSIGN)
+                    BlockStmt blockStmt = proxyConstructorDeclaration
+                            .createBody()
+                            .addStatement(
+                                    new MethodCallExpr()
+                                            .setName(new SuperExpr().toString())
+                                            .setArguments(
+                                                    constructorDeclaration.getParameters().stream()
+                                                            .map(NodeWithSimpleName::getNameAsExpression)
+                                                            .collect(Collectors.toCollection(NodeList::new))
                                             )
-                                    );
+                            );
 
-                            componentClassDeclaration.getMethods().stream()
-                                    .filter(methodDeclaration ->
-                                            methodDeclaration.isAnnotationPresent(Inject.class) ||
-                                                    processorManager.isInjectFieldSetter(methodDeclaration)
+                    privateFieldDeclarationList.stream()
+                            .filter(fieldDeclaration ->
+                                    constructorDeclaration.getParameters().stream()
+                                            .map(NodeWithSimpleName::getNameAsString)
+                                            .anyMatch(name -> fieldDeclaration.getVariable(0).getNameAsString().equals(name))
+                            )
+                            .forEach(fieldDeclaration ->
+                                    blockStmt.addStatement(
+                                            new AssignExpr()
+                                                    .setTarget(new FieldAccessExpr().setName(fieldDeclaration.getVariable(0).getNameAsString()).setScope(new ThisExpr()))
+                                                    .setValue(fieldDeclaration.getVariable(0).getNameAsExpression())
+                                                    .setOperator(AssignExpr.Operator.ASSIGN)
                                     )
-                                    .forEach(methodDeclaration -> {
-                                                methodDeclaration.getParameters().forEach(proxyConstructorDeclaration::addParameter);
-                                                blockStmt
-                                                        .addStatement(
-                                                                new MethodCallExpr()
-                                                                        .setName(methodDeclaration.getName())
-                                                                        .setArguments(
-                                                                                methodDeclaration.getParameters().stream()
-                                                                                        .map(NodeWithSimpleName::getNameAsExpression)
-                                                                                        .collect(Collectors.toCollection(NodeList::new))
-                                                                        )
-                                                        );
-                                            }
-                                    );
-                        }
-                );
+                            );
+
+                    componentClassDeclaration.getMethods().stream()
+                            .filter(methodDeclaration ->
+                                    methodDeclaration.isAnnotationPresent(Inject.class) ||
+                                            processorManager.isInjectFieldSetter(methodDeclaration)
+                            )
+                            .forEach(methodDeclaration -> {
+                                        methodDeclaration.getParameters().forEach(proxyConstructorDeclaration::addParameter);
+                                        blockStmt
+                                                .addStatement(
+                                                        new MethodCallExpr()
+                                                                .setName(methodDeclaration.getName())
+                                                                .setArguments(
+                                                                        methodDeclaration.getParameters().stream()
+                                                                                .map(NodeWithSimpleName::getNameAsExpression)
+                                                                                .collect(Collectors.toCollection(NodeList::new))
+                                                                )
+                                                );
+                                    }
+                            );
+                });
 
         componentClassDeclaration.getAnnotations().stream()
                 .filter(annotationExpr ->
@@ -257,400 +234,603 @@ public class InjectProcessor extends AbstractProcessor {
                                 .noneMatch(exist -> exist.getNameAsString().equals(annotationExpr.getNameAsString()))
                 )
                 .filter(annotationExpr -> {
-                            String qualifiedName = processorManager.getQualifiedName(annotationExpr);
-                            return !qualifiedName.equals(Singleton.class.getName()) &&
-                                    !qualifiedName.equals(Dependent.class.getName()) &&
-                                    !qualifiedName.equals(ApplicationScoped.class.getName()) &&
-                                    !qualifiedName.equals(SessionScoped.class.getName()) &&
-                                    !qualifiedName.equals(RequestScoped.class.getName()) &&
-                                    !qualifiedName.equals(TransactionScoped.class.getName());
-                        }
-                )
+                    String scopedAnnotationName = processorManager.getQualifiedName(annotationExpr);
+                    return !scopedAnnotationName.equals(Singleton.class.getName()) &&
+                            !scopedAnnotationName.equals(Dependent.class.getName()) &&
+                            !scopedAnnotationName.equals(ApplicationScoped.class.getName()) &&
+                            !scopedAnnotationName.equals(SessionScoped.class.getName()) &&
+                            !scopedAnnotationName.equals(RequestScoped.class.getName()) &&
+                            !scopedAnnotationName.equals(TransactionScoped.class.getName());
+                })
                 .forEach(proxyClassDeclaration::addAnnotation);
 
         componentProxyProcessors
                 .forEach(componentProxyProcessor -> {
-                            logger.info("{} process component proxy", componentProxyProcessor.getClass().getName());
-                            componentProxyProcessor.processComponentProxy(componentCompilationUnit, componentClassDeclaration, proxyCompilationUnit, proxyClassDeclaration);
-                        }
-                );
-        logger.info("{} proxy class build success", componentClassDeclaration.getFullyQualifiedName().orElseGet(componentClassDeclaration::getNameAsString));
-        componentProxyCompilationUnits.add(proxyCompilationUnit);
+                    logger.info("{} process component proxy", componentProxyProcessor.getClass().getName());
+                    componentProxyProcessor.processComponentProxy(componentCompilationUnit, componentClassDeclaration, proxyCompilationUnit, proxyClassDeclaration);
+                });
+
+        logger.info("{} proxy class build success", qualifiedName);
         return proxyCompilationUnit;
     }
 
-    private CompilationUnit buildModuleContext(List<CompilationUnit> componentCompilationUnits, List<CompilationUnit> componentProxyCompilationUnits) {
-        String rootPackageName = processorManager.getRootPackageName();
-        logger.info("{} module context class build start", rootPackageName);
+    private CompilationUnit buildComponentSuppliers(TypeElement typeElement, ClassOrInterfaceDeclaration proxyClassDeclaration) {
+        return processorManager.getCompilationUnit(typeElement)
+                .map(compilationUnit -> buildComponentSuppliers(compilationUnit, proxyClassDeclaration))
+                .orElseThrow(() -> new InjectionProcessException(CANNOT_GET_COMPILATION_UNIT.bind(typeElement.getQualifiedName().toString())));
+    }
 
-        ClassOrInterfaceDeclaration contextClassDeclaration = new ClassOrInterfaceDeclaration()
-                .setPublic(true)
-                .setName(rootPackageName.replaceAll("\\.", "_") + "_Context" + "_" + System.currentTimeMillis())
-                .addAnnotation(
-                        new SingleMemberAnnotationExpr()
-                                .setMemberValue(new ClassExpr().setType(BeanContextLoader.class))
-                                .setName(AutoService.class.getSimpleName())
-                )
-                .addAnnotation(
-                        new NormalAnnotationExpr()
-                                .addPair("value", new StringLiteralExpr(getClass().getName()))
-                                .setName(Generated.class.getSimpleName())
-                )
-                .addImplementedType(BeanContextLoader.class);
+    private CompilationUnit buildComponentSuppliers(CompilationUnit componentCompilationUnit, ClassOrInterfaceDeclaration proxyClassDeclaration) {
+        return buildComponentSuppliers(
+                componentCompilationUnit,
+                processorManager.getPublicClassOrInterfaceDeclarationOrError(componentCompilationUnit),
+                proxyClassDeclaration
+        );
+    }
 
-        CompilationUnit contextCompilationUnit = new CompilationUnit()
-                .addType(contextClassDeclaration)
-                .addImport(AutoService.class)
+    private CompilationUnit buildComponentSuppliers(CompilationUnit componentCompilationUnit, ClassOrInterfaceDeclaration componentClassDeclaration, ClassOrInterfaceDeclaration proxyClassDeclaration) {
+        String qualifiedName = processorManager.getQualifiedName(componentClassDeclaration);
+
+        logger.info("{} suppliers class build start", qualifiedName);
+
+        ClassOrInterfaceDeclaration suppliersClassDeclaration = new ClassOrInterfaceDeclaration()
+                .addModifier(Modifier.Keyword.PUBLIC)
+                .setName(componentClassDeclaration.getNameAsString() + "_Suppliers")
+                .addAnnotation(new NormalAnnotationExpr().addPair("value", new StringLiteralExpr(getClass().getName())).setName(Generated.class.getSimpleName()))
+                .addAnnotation(new SingleMemberAnnotationExpr().setMemberValue(new ClassExpr().setType(BeanSuppliers.class)).setName(AutoService.class.getSimpleName()))
+                .addImplementedType(BeanSuppliers.class);
+
+        CompilationUnit suppliersCompilationUnit = new CompilationUnit()
+                .addType(suppliersClassDeclaration)
                 .addImport(Generated.class)
-                .addImport(BeanContextLoader.class)
-                .addImport(BeanContext.class);
+                .addImport(AutoService.class)
+                .addImport(BeanSuppliers.class)
+                .addImport(BeanContext.class)
+                .addImport(BeanSupplier.class)
+                .addImport(Map.class)
+                .addImport(HashMap.class);
 
-        MethodDeclaration loadMethod = new MethodDeclaration()
-                .setName("load")
-                .setModifiers(Modifier.Keyword.PUBLIC)
-                .setType(new VoidType())
-                .addAnnotation(Override.class);
+        componentCompilationUnit.getPackageDeclaration()
+                .ifPresent(suppliersCompilationUnit::setPackageDeclaration);
 
-        contextClassDeclaration.addMember(loadMethod);
-        BlockStmt staticInitializer = loadMethod.createBody();
+        processorManager.importAllClassOrInterfaceType(suppliersClassDeclaration, componentClassDeclaration);
 
-        componentCompilationUnits.forEach(compilationUnit ->
-                processorManager.getPublicClassOrInterfaceDeclaration(compilationUnit)
-                        .ifPresent(classOrInterfaceDeclaration -> {
-                                    String qualifiedName = processorManager.getQualifiedName(classOrInterfaceDeclaration);
-                                    ClassOrInterfaceDeclaration proxyClassOrInterfaceDeclaration = componentProxyCompilationUnits.stream()
-                                            .map(processorManager::getPublicClassOrInterfaceDeclarationOrError)
-                                            .filter(proxyClassDeclaration ->
-                                                    processorManager.getQualifiedName(proxyClassDeclaration).equals(qualifiedName) ||
-                                                            proxyClassDeclaration.getExtendedTypes().stream()
-                                                                    .anyMatch(classOrInterfaceType ->
-                                                                            processorManager.getQualifiedName(classOrInterfaceType).equals(qualifiedName)
-                                                                    )
-                                            )
-                                            .findFirst()
-                                            .orElseThrow(() -> new RuntimeException(qualifiedName + "_Proxy not found"));
-
-                                    String proxyQualifiedName = processorManager.getQualifiedName(proxyClassOrInterfaceDeclaration);
-
-                                    Optional<Expression> nameExpr = classOrInterfaceDeclaration.getAnnotationByClass(Named.class)
-                                            .flatMap(processorManager::findAnnotationValue)
-                                            .map(expression -> {
-                                                        if (expression.isStringLiteralExpr()) {
-                                                            return expression.asStringLiteralExpr();
-                                                        } else {
-                                                            expression.findAll(NameExpr.class).stream()
-                                                                    .map(expr -> processorManager.calculateType(expr))
-                                                                    .filter(ResolvedType::isReferenceType)
-                                                                    .map(ResolvedType::asReferenceType)
-                                                                    .map(ResolvedReferenceType::getQualifiedName)
-                                                                    .forEach(contextCompilationUnit::addImport);
-                                                            if (expression.isNameExpr() && processorManager.getResolvedDeclaration(expression.asNameExpr()).isField()) {
-                                                                return new FieldAccessExpr()
-                                                                        .setName(expression.asNameExpr().getName())
-                                                                        .setScope(new NameExpr(processorManager.getResolvedDeclaration(expression.asNameExpr()).asField().declaringType().getQualifiedName()));
-                                                            }
-                                                            return expression;
-                                                        }
-                                                    }
-                                            );
-
-                                    Optional<StringLiteralExpr> defaultExpr = classOrInterfaceDeclaration.getAnnotationByClass(Default.class)
-                                            .map(annotationExpr -> new StringLiteralExpr(Default.class.getName()));
-
-                                    Optional<Expression> priorityExpr = classOrInterfaceDeclaration.getAnnotationByClass(Priority.class)
-                                            .flatMap(processorManager::findAnnotationValue)
-                                            .map(expression -> {
-                                                        if (expression.isIntegerLiteralExpr()) {
-                                                            return expression.asIntegerLiteralExpr();
-                                                        } else {
-                                                            expression.findAll(NameExpr.class).stream()
-                                                                    .map(expr -> processorManager.calculateType(expr))
-                                                                    .filter(ResolvedType::isReferenceType)
-                                                                    .map(ResolvedType::asReferenceType)
-                                                                    .map(ResolvedReferenceType::getQualifiedName)
-                                                                    .forEach(contextCompilationUnit::addImport);
-                                                            if (expression.isNameExpr() && processorManager.getResolvedDeclaration(expression.asNameExpr()).isField()) {
-                                                                return new FieldAccessExpr()
-                                                                        .setName(expression.asNameExpr().getName())
-                                                                        .setScope(new NameExpr(processorManager.getResolvedDeclaration(expression.asNameExpr()).asField().declaringType().getQualifiedName()));
-                                                            }
-                                                            return expression;
-                                                        }
-                                                    }
-                                            );
-
-                                    if (classOrInterfaceDeclaration.isAnnotationPresent(Singleton.class) || classOrInterfaceDeclaration.isAnnotationPresent(ApplicationScoped.class)) {
-                                        ClassOrInterfaceDeclaration holderClassDeclaration = new ClassOrInterfaceDeclaration()
-                                                .setName(qualifiedName.replaceAll("\\.", "_") + "Holder")
-                                                .setModifiers(Modifier.Keyword.PRIVATE, Modifier.Keyword.STATIC);
-
-                                        Expression objectCreateExpression = proxyClassOrInterfaceDeclaration.getMethods().stream()
-                                                .filter(methodDeclaration -> methodDeclaration.isAnnotationPresent(Produces.class))
-                                                .filter(methodDeclaration -> processorManager.getQualifiedName(methodDeclaration.getType()).equals(proxyQualifiedName))
-                                                .findFirst()
-                                                .map(methodDeclaration ->
-                                                        (Expression) new MethodCallExpr()
-                                                                .setName(methodDeclaration.getName())
-                                                                .setArguments(
-                                                                        methodDeclaration.getParameters().stream()
-                                                                                .map(parameter -> getBeanGetMethodCallExpr(parameter, contextCompilationUnit, parameter.getType().asClassOrInterfaceType()))
-                                                                                .map(methodCallExpr -> (Expression) methodCallExpr)
-                                                                                .collect(Collectors.toCollection(NodeList::new))
-                                                                )
-                                                                .setScope(new NameExpr(proxyQualifiedName))
-                                                )
-                                                .orElseGet(() ->
-                                                        new ObjectCreationExpr()
-                                                                .setType(proxyQualifiedName)
-                                                                .setArguments(
-                                                                        proxyClassOrInterfaceDeclaration.getConstructors().stream()
-                                                                                .findFirst()
-                                                                                .map(constructorDeclaration ->
-                                                                                        constructorDeclaration.getParameters().stream()
-                                                                                                .map(parameter -> getBeanGetMethodCallExpr(parameter, contextCompilationUnit, parameter.getType().asClassOrInterfaceType()))
-                                                                                                .map(methodCallExpr -> (Expression) methodCallExpr)
-                                                                                                .collect(Collectors.toCollection(NodeList::new))
-                                                                                )
-                                                                                .orElseGet(NodeList::new)
-                                                                )
-                                                );
-
-                                        holderClassDeclaration.addFieldWithInitializer(
-                                                        qualifiedName,
-                                                        "INSTANCE",
-                                                        objectCreateExpression
-                                                )
-                                                .setModifiers(Modifier.Keyword.PRIVATE, Modifier.Keyword.STATIC, Modifier.Keyword.FINAL);
-
-                                        contextClassDeclaration.addMember(holderClassDeclaration);
-                                        addPutTypeStatement(staticInitializer, qualifiedName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, nameExpr.orElse(null), priorityExpr.orElse(null), defaultExpr.isPresent(), true);
-                                        processorManager.getExtendedTypes(classOrInterfaceDeclaration)
-                                                .filter(extendedTypeName -> processorManager.getClassOrInterfaceDeclarationOrError(extendedTypeName).hasModifier(Modifier.Keyword.PUBLIC))
-                                                .forEach(extendedTypeName -> addPutTypeStatement(staticInitializer, extendedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, nameExpr.orElse(null), priorityExpr.orElse(null), defaultExpr.isPresent(), true));
-
-                                        processorManager.getImplementedTypes(classOrInterfaceDeclaration)
-                                                .filter(implementedTypeName -> processorManager.getClassOrInterfaceDeclarationOrError(implementedTypeName).hasModifier(Modifier.Keyword.PUBLIC))
-                                                .forEach(implementedTypeName -> addPutTypeStatement(staticInitializer, implementedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, nameExpr.orElse(null), priorityExpr.orElse(null), defaultExpr.isPresent(), true));
-                                    } else {
-                                        addPutTypeStatement(staticInitializer, qualifiedName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, nameExpr.orElse(null), priorityExpr.orElse(null), defaultExpr.isPresent(), false);
-                                        processorManager.getExtendedTypes(classOrInterfaceDeclaration)
-                                                .filter(extendedTypeName -> processorManager.getClassOrInterfaceDeclarationOrError(extendedTypeName).hasModifier(Modifier.Keyword.PUBLIC))
-                                                .forEach(extendedTypeName -> addPutTypeStatement(staticInitializer, extendedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, nameExpr.orElse(null), priorityExpr.orElse(null), defaultExpr.isPresent(), false));
-
-                                        processorManager.getImplementedTypes(classOrInterfaceDeclaration)
-                                                .filter(implementedTypeName -> processorManager.getClassOrInterfaceDeclarationOrError(implementedTypeName).hasModifier(Modifier.Keyword.PUBLIC))
-                                                .forEach(implementedTypeName -> addPutTypeStatement(staticInitializer, implementedTypeName, contextCompilationUnit, classOrInterfaceDeclaration, proxyClassOrInterfaceDeclaration, nameExpr.orElse(null), priorityExpr.orElse(null), defaultExpr.isPresent(), false));
-                                    }
-                                }
-                        )
-        );
-        componentProxyProcessors.forEach(componentProxyProcessor -> {
-                    logger.info("{} process module context", componentProxyProcessor.getClass().getName());
-                    componentProxyProcessor.processModuleContext(contextCompilationUnit, contextClassDeclaration, staticInitializer);
-                }
-        );
-        logger.info("{} module context class build success", rootPackageName);
-        return contextCompilationUnit;
-    }
-
-    private void addPutTypeStatement(BlockStmt staticInitializer, String putClassQualifiedName, CompilationUnit contextCompilationUnit, ClassOrInterfaceDeclaration classOrInterfaceDeclaration, ClassOrInterfaceDeclaration proxyClassOrInterfaceDeclaration, Expression nameExpr, Expression priorityExpr, boolean isDefault, boolean isSingleton) {
-        String qualifiedName = processorManager.getQualifiedName(classOrInterfaceDeclaration);
-        String proxyQualifiedName = processorManager.getQualifiedName(proxyClassOrInterfaceDeclaration);
-        Expression supplierExpression;
-        if (isSingleton) {
-            supplierExpression = new LambdaExpr()
-                    .setEnclosingParameters(true)
-                    .setBody(
-                            new ExpressionStmt()
-                                    .setExpression(
-                                            new FieldAccessExpr()
-                                                    .setName("INSTANCE")
-                                                    .setScope(new NameExpr(qualifiedName.replaceAll("\\.", "_") + "Holder"))
-                                    )
-                    );
-        } else {
-            Expression objectCreateExpression = proxyClassOrInterfaceDeclaration.getMethods().stream()
-                    .filter(methodDeclaration -> methodDeclaration.isAnnotationPresent(Produces.class))
-                    .filter(methodDeclaration -> processorManager.getQualifiedName(methodDeclaration.getType()).equals(proxyQualifiedName))
-                    .findFirst()
-                    .map(methodDeclaration ->
-                            (Expression) new MethodCallExpr()
-                                    .setName(methodDeclaration.getName())
-                                    .setArguments(
-                                            methodDeclaration.getParameters().stream()
-                                                    .map(parameter -> getBeanGetMethodCallExpr(parameter, contextCompilationUnit, parameter.getType().asClassOrInterfaceType()))
-                                                    .map(methodCallExpr -> (Expression) methodCallExpr)
-                                                    .collect(Collectors.toCollection(NodeList::new))
-                                    )
-                                    .setScope(new NameExpr(proxyQualifiedName))
-                    )
-                    .orElseGet(() ->
-                            new ObjectCreationExpr()
-                                    .setType(proxyQualifiedName)
-                                    .setArguments(
-                                            proxyClassOrInterfaceDeclaration.getConstructors().stream()
-                                                    .findFirst()
-                                                    .map(constructorDeclaration ->
-                                                            constructorDeclaration.getParameters().stream()
-                                                                    .map(parameter -> getBeanGetMethodCallExpr(parameter, contextCompilationUnit, parameter.getType().asClassOrInterfaceType()))
-                                                                    .map(methodCallExpr -> (Expression) methodCallExpr)
-                                                                    .collect(Collectors.toCollection(NodeList::new))
-                                                    )
-                                                    .orElseGet(NodeList::new)
-                                    )
-                    );
-
-            String scopedAnnotationName = processorManager.getScopedAnnotationName(classOrInterfaceDeclaration).orElse(null);
-            if (scopedAnnotationName != null) {
-                contextCompilationUnit
-                        .addImport(ScopeInstanceFactory.class)
-                        .addImport(Mono.class);
-
-                MethodCallExpr getScopeInstanceFactory = new MethodCallExpr()
-                        .setName("get")
-                        .setScope(new NameExpr("BeanContext"))
-                        .addArgument(new ClassExpr().setType(ScopeInstanceFactory.class))
-                        .addArgument(new MethodCallExpr("getName").setScope(new ClassExpr().setType(scopedAnnotationName)));
-
-                supplierExpression = new LambdaExpr()
-                        .setEnclosingParameters(true)
-                        .setBody(
-                                new ExpressionStmt()
-                                        .setExpression(
-                                                new MethodCallExpr()
-                                                        .setName("get")
-                                                        .addArgument(new ClassExpr().setType(qualifiedName))
-                                                        .addArgument(
-                                                                new LambdaExpr()
-                                                                        .setEnclosingParameters(true)
-                                                                        .setBody(
-                                                                                new ExpressionStmt()
-                                                                                        .setExpression(
-                                                                                                new MethodCallExpr()
-                                                                                                        .setName("just")
-                                                                                                        .setScope(new NameExpr().setName("Mono"))
-                                                                                                        .addArgument(objectCreateExpression)
-                                                                                        )
-                                                                        )
-                                                        )
-                                                        .setScope(getScopeInstanceFactory)
-                                        )
-                        );
-            } else {
-                supplierExpression = new LambdaExpr()
-                        .setEnclosingParameters(true)
-                        .setBody(
-                                new ExpressionStmt()
-                                        .setExpression(objectCreateExpression)
-                        );
-            }
-        }
-        if (nameExpr != null && priorityExpr != null && isDefault) {
-            staticInitializer.addStatement(
-                    new MethodCallExpr()
-                            .setName("put")
-                            .addArgument(new ClassExpr().setType(putClassQualifiedName))
-                            .addArgument(nameExpr)
-                            .addArgument(priorityExpr)
-                            .addArgument(new BooleanLiteralExpr(true))
-                            .addArgument(supplierExpression)
-                            .setScope(new NameExpr("BeanContext"))
-            );
-        } else if (nameExpr != null && priorityExpr != null) {
-            staticInitializer.addStatement(
-                    new MethodCallExpr()
-                            .setName("put")
-                            .addArgument(new ClassExpr().setType(putClassQualifiedName))
-                            .addArgument(nameExpr)
-                            .addArgument(priorityExpr)
-                            .addArgument(supplierExpression)
-                            .setScope(new NameExpr("BeanContext"))
-            );
-        } else if (nameExpr != null && isDefault) {
-            staticInitializer.addStatement(
-                    new MethodCallExpr()
-                            .setName("put")
-                            .addArgument(new ClassExpr().setType(putClassQualifiedName))
-                            .addArgument(nameExpr)
-                            .addArgument(new BooleanLiteralExpr(true))
-                            .addArgument(supplierExpression)
-                            .setScope(new NameExpr("BeanContext"))
-            );
-        } else if (priorityExpr != null && isDefault) {
-            staticInitializer.addStatement(
-                    new MethodCallExpr()
-                            .setName("put")
-                            .addArgument(new ClassExpr().setType(putClassQualifiedName))
-                            .addArgument(priorityExpr)
-                            .addArgument(new BooleanLiteralExpr(true))
-                            .addArgument(supplierExpression)
-                            .setScope(new NameExpr("BeanContext"))
-            );
-        } else if (nameExpr != null) {
-            staticInitializer.addStatement(
-                    new MethodCallExpr()
-                            .setName("put")
-                            .addArgument(new ClassExpr().setType(putClassQualifiedName))
-                            .addArgument(nameExpr)
-                            .addArgument(supplierExpression)
-                            .setScope(new NameExpr("BeanContext"))
-            );
-        } else if (priorityExpr != null) {
-            staticInitializer.addStatement(
-                    new MethodCallExpr()
-                            .setName("put")
-                            .addArgument(new ClassExpr().setType(putClassQualifiedName))
-                            .addArgument(priorityExpr)
-                            .addArgument(supplierExpression)
-                            .setScope(new NameExpr("BeanContext"))
-            );
-        } else if (isDefault) {
-            staticInitializer.addStatement(
-                    new MethodCallExpr()
-                            .setName("put")
-                            .addArgument(new ClassExpr().setType(putClassQualifiedName))
-                            .addArgument(new BooleanLiteralExpr(true))
-                            .addArgument(supplierExpression)
-                            .setScope(new NameExpr("BeanContext"))
-            );
-        } else {
-            staticInitializer.addStatement(
-                    new MethodCallExpr()
-                            .setName("put")
-                            .addArgument(new ClassExpr().setType(putClassQualifiedName))
-                            .addArgument(supplierExpression)
-                            .setScope(new NameExpr("BeanContext"))
-            );
-        }
-    }
-
-    private MethodCallExpr getBeanGetMethodCallExpr(NodeWithAnnotations<?> nodeWithAnnotations, CompilationUnit compilationUnit, ClassOrInterfaceType classOrInterfaceType) {
-        Optional<Expression> nameExpr = nodeWithAnnotations.getAnnotationByClass(Default.class)
-                .map(annotationExpr -> (Expression) new StringLiteralExpr(Default.class.getName()))
+        Expression objectCreateExpression = proxyClassDeclaration.getMethods().stream()
+                .filter(NodeWithStaticModifier::isStatic)
+                .filter(methodDeclaration -> methodDeclaration.isAnnotationPresent(Produces.class))
+                .filter(producesMethodDeclaration -> processorManager.getQualifiedName(producesMethodDeclaration.getType()).equals(qualifiedName + "_Proxy"))
+                .findFirst()
+                .map(producesMethodDeclaration ->
+                        (Expression) new MethodCallExpr()
+                                .setName(producesMethodDeclaration.getName())
+                                .setArguments(
+                                        producesMethodDeclaration.getParameters().stream()
+                                                .map(parameter -> getBeanGetMethodCallExpr(suppliersCompilationUnit, parameter, parameter.getType().asClassOrInterfaceType()))
+                                                .map(methodCallExpr -> (Expression) methodCallExpr)
+                                                .collect(Collectors.toCollection(NodeList::new))
+                                )
+                                .setScope(new NameExpr(proxyClassDeclaration.getNameAsString()))
+                )
                 .or(() ->
-                        nodeWithAnnotations.getAnnotationByClass(Named.class)
-                                .flatMap(processorManager::findAnnotationValue)
-                                .map(expression -> {
-                                            if (expression.isStringLiteralExpr()) {
-                                                return expression.asStringLiteralExpr();
-                                            } else {
-                                                expression.findAll(NameExpr.class).stream()
-                                                        .map(expr -> processorManager.calculateType(expr))
-                                                        .filter(ResolvedType::isReferenceType)
-                                                        .map(ResolvedType::asReferenceType)
-                                                        .map(ResolvedReferenceType::getQualifiedName)
-                                                        .forEach(compilationUnit::addImport);
-                                                if (expression.isNameExpr() && processorManager.getResolvedDeclaration(expression.asNameExpr()).isField()) {
-                                                    return new FieldAccessExpr()
-                                                            .setName(expression.asNameExpr().getName())
-                                                            .setScope(new NameExpr(processorManager.getResolvedDeclaration(expression.asNameExpr()).asField().declaringType().getQualifiedName()));
-                                                }
-                                                return expression;
-                                            }
-                                        }
+                        componentClassDeclaration.getMethods().stream()
+                                .filter(NodeWithStaticModifier::isStatic)
+                                .filter(methodDeclaration -> methodDeclaration.isAnnotationPresent(Produces.class))
+                                .filter(producesMethodDeclaration -> processorManager.getQualifiedName(producesMethodDeclaration.getType()).equals(qualifiedName))
+                                .findFirst()
+                                .map(producesMethodDeclaration ->
+                                        (Expression) new MethodCallExpr()
+                                                .setName(producesMethodDeclaration.getName())
+                                                .setArguments(
+                                                        producesMethodDeclaration.getParameters().stream()
+                                                                .map(parameter -> getBeanGetMethodCallExpr(suppliersCompilationUnit, parameter, parameter.getType().asClassOrInterfaceType()))
+                                                                .map(methodCallExpr -> (Expression) methodCallExpr)
+                                                                .collect(Collectors.toCollection(NodeList::new))
+                                                )
+                                                .setScope(new NameExpr(componentClassDeclaration.getNameAsString()))
+                                )
+                )
+                .orElseGet(() ->
+                        new ObjectCreationExpr()
+                                .setType(proxyClassDeclaration.getNameAsString())
+                                .setArguments(
+                                        proxyClassDeclaration.getConstructors().stream()
+                                                .findFirst()
+                                                .map(constructorDeclaration ->
+                                                        constructorDeclaration.getParameters().stream()
+                                                                .map(parameter -> getBeanGetMethodCallExpr(suppliersCompilationUnit, parameter, parameter.getType().asClassOrInterfaceType()))
+                                                                .map(methodCallExpr -> (Expression) methodCallExpr)
+                                                                .collect(Collectors.toCollection(NodeList::new))
+                                                )
+                                                .orElseGet(NodeList::new)
                                 )
                 );
 
+        Expression getInstanceExpression;
+        if (componentClassDeclaration.isAnnotationPresent(Singleton.class) || componentClassDeclaration.isAnnotationPresent(ApplicationScoped.class)) {
+            ClassOrInterfaceDeclaration holderClassDeclaration = new ClassOrInterfaceDeclaration()
+                    .setName("Holder")
+                    .setModifiers(Modifier.Keyword.PRIVATE, Modifier.Keyword.STATIC);
+
+            holderClassDeclaration.addFieldWithInitializer(
+                            componentClassDeclaration.getNameAsString(),
+                            "INSTANCE",
+                            objectCreateExpression
+                    )
+                    .setModifiers(Modifier.Keyword.PRIVATE, Modifier.Keyword.STATIC, Modifier.Keyword.FINAL);
+
+            suppliersClassDeclaration.addMember(holderClassDeclaration);
+
+            getInstanceExpression = new FieldAccessExpr()
+                    .setName("INSTANCE")
+                    .setScope(new NameExpr("Holder"));
+
+        } else if (componentClassDeclaration.isAnnotationPresent(RequestScoped.class) || componentClassDeclaration.isAnnotationPresent(SessionScoped.class) || componentClassDeclaration.isAnnotationPresent(TransactionScoped.class)) {
+            String scopedAnnotationName = processorManager.getScopedAnnotationName(componentClassDeclaration)
+                    .orElseThrow(() -> new InjectionProcessException(ANNOTATION_NOT_EXIST.bind(qualifiedName)));
+
+            suppliersCompilationUnit.addImport(ReactorBeanScoped.class)
+                    .addImport(Mono.class);
+
+            getInstanceExpression = new MethodCallExpr()
+                    .setName("get")
+                    .addArgument(new ClassExpr().setType(componentClassDeclaration.getNameAsString()))
+                    .addArgument(
+                            new LambdaExpr()
+                                    .setEnclosingParameters(true)
+                                    .setBody(new ExpressionStmt(objectCreateExpression))
+                    )
+                    .setScope(
+                            new MethodCallExpr()
+                                    .setName("get")
+                                    .addArgument(new ClassExpr().setType(ReactorBeanScoped.class))
+                                    .addArgument(
+                                            new MethodCallExpr()
+                                                    .setName("of")
+                                                    .addArgument(new StringLiteralExpr(Named.class.getName()))
+                                                    .addArgument(new MethodCallExpr()
+                                                            .setName("of")
+                                                            .addArgument(new StringLiteralExpr("value"))
+                                                            .addArgument(new StringLiteralExpr(scopedAnnotationName))
+                                                            .setScope(new NameExpr("Map"))
+                                                    )
+                                                    .setScope(new NameExpr("Map"))
+                                    )
+                                    .setScope(new NameExpr(BeanContext.class.getSimpleName()))
+                    );
+        } else {
+            getInstanceExpression = objectCreateExpression;
+        }
+
+        componentClassDeclaration.getMethods().stream()
+                .filter(methodDeclaration -> methodDeclaration.isAnnotationPresent(Produces.class))
+                .filter(producesMethodDeclaration -> !processorManager.getQualifiedName(producesMethodDeclaration.getType()).equals(qualifiedName))
+                .filter(producesMethodDeclaration -> producesMethodDeclaration.isAnnotationPresent(Singleton.class) || producesMethodDeclaration.isAnnotationPresent(ApplicationScoped.class))
+                .forEach(producesMethodDeclaration -> {
+                    String methodTypeQualifiedName = processorManager.getQualifiedName(producesMethodDeclaration);
+                    String prefix = methodTypeQualifiedName.replaceAll("\\.", "_");
+                    ClassOrInterfaceDeclaration holderClassOrInterfaceDeclaration = new ClassOrInterfaceDeclaration();
+                    holderClassOrInterfaceDeclaration
+                            .setName(prefix + "Holder" + componentClassDeclaration.getMethods().indexOf(producesMethodDeclaration))
+                            .setModifiers(Modifier.Keyword.PRIVATE, Modifier.Keyword.STATIC)
+                            .addFieldWithInitializer(
+                                    producesMethodDeclaration.getTypeAsString(),
+                                    "INSTANCE",
+                                    new MethodCallExpr()
+                                            .setName(producesMethodDeclaration.getName())
+                                            .setArguments(
+                                                    producesMethodDeclaration.getParameters().stream()
+                                                            .map(parameter -> getBeanGetMethodCallExpr(suppliersCompilationUnit, parameter, parameter.getType().asClassOrInterfaceType()))
+                                                            .map(methodCallExpr -> (Expression) methodCallExpr)
+                                                            .collect(Collectors.toCollection(NodeList::new))
+                                            )
+                                            .setScope(
+                                                    new MethodCallExpr()
+                                                            .setName("get")
+                                                            .addArgument(new ClassExpr().setType(processorManager.getQualifiedName(componentClassDeclaration)))
+                                                            .setScope(new NameExpr().setName("BeanContext"))
+                                            )
+                            )
+                            .setModifiers(Modifier.Keyword.PRIVATE, Modifier.Keyword.STATIC, Modifier.Keyword.FINAL);
+
+                    suppliersClassDeclaration.addMember(holderClassOrInterfaceDeclaration);
+                });
+
+        ClassOrInterfaceType beanSuppliersType = new ClassOrInterfaceType()
+                .setName(Map.class.getSimpleName())
+                .setTypeArguments(
+                        new NodeList<>(
+                                new ClassOrInterfaceType().setName(String.class.getSimpleName()),
+                                new ClassOrInterfaceType().setName(Map.class.getSimpleName())
+                                        .setTypeArguments(
+                                                new NodeList<>(
+                                                        new ClassOrInterfaceType().setName(String.class.getSimpleName()),
+                                                        new ClassOrInterfaceType().setName(BeanSupplier.class.getSimpleName())
+                                                )
+                                        )
+                        )
+                );
+
+        suppliersClassDeclaration.addMember(
+                new FieldDeclaration()
+                        .addModifier(Modifier.Keyword.PRIVATE, Modifier.Keyword.STATIC, Modifier.Keyword.FINAL)
+                        .addVariable(
+                                new VariableDeclarator()
+                                        .setName("beanSuppliers")
+                                        .setType(beanSuppliersType)
+                                        .setInitializer(
+                                                new ObjectCreationExpr()
+                                                        .setType(new ClassOrInterfaceType().setName(HashMap.class.getSimpleName()).setTypeArguments())
+                                        )
+                        )
+        );
+
+        MethodDeclaration getBeanSuppliers = new MethodDeclaration()
+                .setName("getBeanSuppliers")
+                .setModifiers(Modifier.Keyword.PUBLIC)
+                .setType(beanSuppliersType)
+                .addAnnotation(Override.class);
+
+        BlockStmt staticInitializer = new BlockStmt()
+                .addStatement(
+                        new VariableDeclarationExpr()
+                                .addVariable(
+                                        new VariableDeclarator().setName("beanSupplier")
+                                                .setType(BeanSupplier.class)
+                                                .setInitializer(
+                                                        new ObjectCreationExpr()
+                                                                .setType(BeanSupplier.class)
+                                                )
+                                )
+                );
+
+        MethodCallExpr mapOf = new MethodCallExpr()
+                .setName("of")
+                .setScope(new NameExpr("Map"));
+
+        componentClassDeclaration.getAnnotations()
+                .forEach(annotationExpr ->
+                        processorManager.getCompilationUnit(annotationExpr)
+                                .flatMap(compilationUnit -> processorManager.getPublicAnnotationDeclaration(compilationUnit))
+                                .ifPresent(annotationDeclaration -> {
+                                    if (annotationDeclaration.getAnnotations().stream()
+                                            .anyMatch(subAnnotationExpr -> processorManager.getQualifiedName(subAnnotationExpr).equals(Qualifier.class.getName()))) {
+                                        mapOf.addArgument(new StringLiteralExpr(annotationDeclaration.getFullyQualifiedName().orElseGet(annotationDeclaration::getNameAsString)));
+                                        mapOf.addArgument(qualifierToExpression(annotationExpr));
+                                    }
+                                })
+                );
+
+        staticInitializer.addStatement(
+                new MethodCallExpr().setName("setQualifiers")
+                        .addArgument(mapOf)
+                        .setScope(new NameExpr("beanSupplier"))
+        );
+
+        staticInitializer.addStatement(
+                new MethodCallExpr().setName("setSupplier")
+                        .addArgument(
+                                new LambdaExpr()
+                                        .setEnclosingParameters(true)
+                                        .setBody(new ExpressionStmt(getInstanceExpression))
+                        )
+                        .setScope(new NameExpr("beanSupplier"))
+        );
+
+        componentClassDeclaration.getAnnotationByClass(Priority.class)
+                .ifPresent(annotation -> {
+                    if (annotation.isNormalAnnotationExpr()) {
+                        staticInitializer.addStatement(
+                                new MethodCallExpr().setName("setPriority")
+                                        .addArgument(annotation.asNormalAnnotationExpr().getPairs().get(0).getValue())
+                                        .setScope(new NameExpr("beanSupplier"))
+                        );
+                    } else if (annotation.isSingleMemberAnnotationExpr()) {
+                        staticInitializer.addStatement(
+                                new MethodCallExpr().setName("setPriority")
+                                        .addArgument(annotation.asSingleMemberAnnotationExpr().getMemberValue())
+                                        .setScope(new NameExpr("beanSupplier"))
+                        );
+                    }
+                });
+
+        staticInitializer.addStatement(
+                new MethodCallExpr().setName("put")
+                        .addArgument(new StringLiteralExpr(qualifiedName))
+                        .addArgument(new NameExpr("beanSupplier"))
+                        .setScope(
+                                new MethodCallExpr().setName("computeIfAbsent")
+                                        .addArgument(new StringLiteralExpr(qualifiedName))
+                                        .addArgument(
+                                                new LambdaExpr()
+                                                        .addParameter(new Parameter().setName("k").setType(new UnknownType()))
+                                                        .setBody(new ExpressionStmt(new ObjectCreationExpr().setType(HashMap.class).setTypeArguments()))
+                                        )
+                                        .setScope(new NameExpr("beanSuppliers"))
+                        )
+        );
+
+        processorManager.getExtendedTypes(componentClassDeclaration)
+                .forEach(extendedTypeName ->
+                        staticInitializer.addStatement(
+                                new MethodCallExpr().setName("put")
+                                        .addArgument(new StringLiteralExpr(qualifiedName))
+                                        .addArgument(new NameExpr("beanSupplier"))
+                                        .setScope(
+                                                new MethodCallExpr().setName("computeIfAbsent")
+                                                        .addArgument(new StringLiteralExpr(extendedTypeName))
+                                                        .addArgument(
+                                                                new LambdaExpr()
+                                                                        .addParameter(new Parameter().setName("k").setType(new UnknownType()))
+                                                                        .setBody(new ExpressionStmt(new ObjectCreationExpr().setType(HashMap.class).setTypeArguments()))
+                                                        )
+                                                        .setScope(new NameExpr("beanSuppliers"))
+                                        )
+                        )
+                );
+
+        processorManager.getImplementedTypes(componentClassDeclaration)
+                .forEach(implementedTypeName ->
+                        staticInitializer.addStatement(
+                                new MethodCallExpr().setName("put")
+                                        .addArgument(new StringLiteralExpr(qualifiedName))
+                                        .addArgument(new NameExpr("beanSupplier"))
+                                        .setScope(
+                                                new MethodCallExpr().setName("computeIfAbsent")
+                                                        .addArgument(new StringLiteralExpr(implementedTypeName))
+                                                        .addArgument(
+                                                                new LambdaExpr()
+                                                                        .addParameter(new Parameter().setName("k").setType(new UnknownType()))
+                                                                        .setBody(new ExpressionStmt(new ObjectCreationExpr().setType(HashMap.class).setTypeArguments()))
+                                                        )
+                                                        .setScope(new NameExpr("beanSuppliers"))
+                                        )
+                        )
+                );
+
+        componentClassDeclaration.getMethods().stream()
+                .filter(methodDeclaration -> methodDeclaration.isAnnotationPresent(Produces.class))
+                .filter(producesMethodDeclaration -> !processorManager.getQualifiedName(producesMethodDeclaration.getType()).equals(qualifiedName))
+                .forEach(producesMethodDeclaration -> {
+                    String methodTypeQualifiedName = processorManager.getQualifiedName(producesMethodDeclaration);
+                    String prefix = methodTypeQualifiedName.replaceAll("\\.", "_");
+
+                    MethodCallExpr mapOfProduces = new MethodCallExpr()
+                            .setName("of")
+                            .setScope(new NameExpr("Map"));
+
+                    producesMethodDeclaration.getAnnotations()
+                            .forEach(annotationExpr ->
+                                    processorManager.getCompilationUnit(annotationExpr)
+                                            .flatMap(compilationUnit -> processorManager.getPublicAnnotationDeclaration(compilationUnit))
+                                            .ifPresent(annotationDeclaration -> {
+                                                if (annotationDeclaration.getAnnotations().stream()
+                                                        .anyMatch(subAnnotationExpr -> processorManager.getQualifiedName(subAnnotationExpr).equals(Qualifier.class.getName()))) {
+                                                    mapOfProduces.addArgument(new StringLiteralExpr(annotationDeclaration.getFullyQualifiedName().orElseGet(annotationDeclaration::getNameAsString)));
+                                                    mapOfProduces.addArgument(qualifierToExpression(annotationExpr));
+                                                }
+                                            })
+                            );
+
+                    Expression producesCreateExpression;
+                    if (producesMethodDeclaration.isAnnotationPresent(Singleton.class) || producesMethodDeclaration.isAnnotationPresent(ApplicationScoped.class)) {
+                        producesCreateExpression = new FieldAccessExpr()
+                                .setName("INSTANCE")
+                                .setScope(new NameExpr(prefix + "Holder" + componentClassDeclaration.getMethods().indexOf(producesMethodDeclaration)));
+                    } else if (producesMethodDeclaration.isAnnotationPresent(RequestScoped.class) || producesMethodDeclaration.isAnnotationPresent(SessionScoped.class) || producesMethodDeclaration.isAnnotationPresent(TransactionScoped.class)) {
+                        String scopedAnnotationName = processorManager.getScopedAnnotationName(producesMethodDeclaration)
+                                .orElseThrow(() -> new InjectionProcessException(ANNOTATION_NOT_EXIST.bind(qualifiedName)));
+
+                        suppliersCompilationUnit.addImport(ReactorBeanScoped.class)
+                                .addImport(Mono.class);
+
+                        producesCreateExpression = new MethodCallExpr()
+                                .setName("get")
+                                .addArgument(new ClassExpr().setType(methodTypeQualifiedName))
+                                .addArgument(
+                                        new LambdaExpr()
+                                                .setEnclosingParameters(true)
+                                                .setBody(
+                                                        new ExpressionStmt(
+                                                                new MethodCallExpr()
+                                                                        .setName(producesMethodDeclaration.getName())
+                                                                        .setArguments(
+                                                                                producesMethodDeclaration.getParameters().stream()
+                                                                                        .map(parameter -> getBeanGetMethodCallExpr(suppliersCompilationUnit, parameter, parameter.getType().asClassOrInterfaceType()))
+                                                                                        .map(methodCallExpr -> (Expression) methodCallExpr)
+                                                                                        .collect(Collectors.toCollection(NodeList::new))
+                                                                        )
+                                                                        .setScope(
+                                                                                new MethodCallExpr()
+                                                                                        .setName("get")
+                                                                                        .addArgument(new ClassExpr().setType(processorManager.getQualifiedName(componentClassDeclaration)))
+                                                                                        .setScope(new NameExpr().setName("BeanContext"))
+                                                                        )
+
+                                                        )
+                                                )
+                                )
+                                .setScope(
+                                        new MethodCallExpr()
+                                                .setName("get")
+                                                .addArgument(new ClassExpr().setType(ReactorBeanScoped.class))
+                                                .addArgument(
+                                                        new MethodCallExpr()
+                                                                .setName("of")
+                                                                .addArgument(new StringLiteralExpr(Named.class.getName()))
+                                                                .addArgument(new MethodCallExpr()
+                                                                        .setName("of")
+                                                                        .addArgument(new StringLiteralExpr("value"))
+                                                                        .addArgument(new StringLiteralExpr(scopedAnnotationName))
+                                                                        .setScope(new NameExpr("Map"))
+                                                                )
+                                                                .setScope(new NameExpr("Map"))
+                                                )
+                                                .setScope(new NameExpr(BeanContext.class.getSimpleName()))
+                                );
+                    } else {
+                        producesCreateExpression = new MethodCallExpr()
+                                .setName(producesMethodDeclaration.getName())
+                                .setArguments(
+                                        producesMethodDeclaration.getParameters().stream()
+                                                .map(parameter -> getBeanGetMethodCallExpr(suppliersCompilationUnit, parameter, parameter.getType().asClassOrInterfaceType()))
+                                                .map(methodCallExpr -> (Expression) methodCallExpr)
+                                                .collect(Collectors.toCollection(NodeList::new))
+                                )
+                                .setScope(
+                                        new MethodCallExpr()
+                                                .setName("get")
+                                                .addArgument(new ClassExpr().setType(processorManager.getQualifiedName(componentClassDeclaration)))
+                                                .setScope(new NameExpr().setName("BeanContext"))
+                                );
+                    }
+
+                    staticInitializer.addStatement(
+                            new VariableDeclarationExpr()
+                                    .addVariable(
+                                            new VariableDeclarator().setName(prefix + "_beanSupplier")
+                                                    .setType(BeanSupplier.class)
+                                                    .setInitializer(
+                                                            new ObjectCreationExpr()
+                                                                    .setType(BeanSupplier.class)
+                                                    )
+                                    )
+                    );
+
+                    staticInitializer.addStatement(
+                            new MethodCallExpr().setName("setQualifiers")
+                                    .addArgument(mapOfProduces)
+                                    .setScope(new NameExpr(prefix + "_beanSupplier"))
+                    );
+
+                    staticInitializer.addStatement(
+                            new MethodCallExpr().setName("setSupplier")
+                                    .addArgument(
+                                            new LambdaExpr()
+                                                    .setEnclosingParameters(true)
+                                                    .setBody(new ExpressionStmt(producesCreateExpression))
+                                    )
+                                    .setScope(new NameExpr(prefix + "_beanSupplier"))
+                    );
+
+                    producesMethodDeclaration.getAnnotationByClass(Priority.class)
+                            .ifPresent(annotation -> {
+                                if (annotation.isNormalAnnotationExpr()) {
+                                    staticInitializer.addStatement(
+                                            new MethodCallExpr().setName("setPriority")
+                                                    .addArgument(annotation.asNormalAnnotationExpr().getPairs().get(0).getValue())
+                                                    .setScope(new NameExpr(prefix + "_beanSupplier"))
+                                    );
+                                } else if (annotation.isSingleMemberAnnotationExpr()) {
+                                    staticInitializer.addStatement(
+                                            new MethodCallExpr().setName("setPriority")
+                                                    .addArgument(annotation.asSingleMemberAnnotationExpr().getMemberValue())
+                                                    .setScope(new NameExpr(prefix + "_beanSupplier"))
+                                    );
+                                }
+                            });
+                    staticInitializer.addStatement(
+                            new MethodCallExpr().setName("put")
+                                    .addArgument(new StringLiteralExpr(methodTypeQualifiedName))
+                                    .addArgument(new NameExpr(prefix + "_beanSupplier"))
+                                    .setScope(
+                                            new MethodCallExpr().setName("computeIfAbsent")
+                                                    .addArgument(new StringLiteralExpr(methodTypeQualifiedName))
+                                                    .addArgument(
+                                                            new LambdaExpr()
+                                                                    .addParameter(new Parameter().setName("k").setType(new UnknownType()))
+                                                                    .setBody(new ExpressionStmt(new ObjectCreationExpr().setType(HashMap.class).setTypeArguments()))
+                                                    )
+                                                    .setScope(new NameExpr("beanSuppliers"))
+                                    )
+                    );
+
+                    processorManager.getClassOrInterfaceDeclaration(methodTypeQualifiedName)
+                            .ifPresent(returnTypeClassOrInterfaceDeclaration -> {
+                                processorManager.getExtendedTypes(returnTypeClassOrInterfaceDeclaration)
+                                        .forEach(extendedTypeName ->
+                                                staticInitializer.addStatement(
+                                                        new MethodCallExpr().setName("put")
+                                                                .addArgument(new StringLiteralExpr(methodTypeQualifiedName))
+                                                                .addArgument(new NameExpr(prefix + "_beanSupplier"))
+                                                                .setScope(
+                                                                        new MethodCallExpr().setName("computeIfAbsent")
+                                                                                .addArgument(new StringLiteralExpr(extendedTypeName))
+                                                                                .addArgument(
+                                                                                        new LambdaExpr()
+                                                                                                .addParameter(new Parameter().setName("k").setType(new UnknownType()))
+                                                                                                .setBody(new ExpressionStmt(new ObjectCreationExpr().setType(HashMap.class).setTypeArguments()))
+                                                                                )
+                                                                                .setScope(new NameExpr("beanSuppliers"))
+                                                                )
+                                                )
+                                        );
+
+                                processorManager.getImplementedTypes(returnTypeClassOrInterfaceDeclaration)
+                                        .forEach(implementedTypeName ->
+                                                staticInitializer.addStatement(
+                                                        new MethodCallExpr().setName("put")
+                                                                .addArgument(new StringLiteralExpr(methodTypeQualifiedName))
+                                                                .addArgument(new NameExpr(prefix + "_beanSupplier"))
+                                                                .setScope(
+                                                                        new MethodCallExpr().setName("computeIfAbsent")
+                                                                                .addArgument(new StringLiteralExpr(implementedTypeName))
+                                                                                .addArgument(
+                                                                                        new LambdaExpr()
+                                                                                                .addParameter(new Parameter().setName("k").setType(new UnknownType()))
+                                                                                                .setBody(new ExpressionStmt(new ObjectCreationExpr().setType(HashMap.class).setTypeArguments()))
+                                                                                )
+                                                                                .setScope(new NameExpr("beanSuppliers"))
+                                                                )
+                                                )
+                                        );
+                            });
+                });
+
+        suppliersClassDeclaration.addMember(new InitializerDeclaration(true, staticInitializer));
+
+        getBeanSuppliers.createBody()
+                .addStatement(new ReturnStmt().setExpression(new NameExpr("beanSuppliers")));
+
+        suppliersClassDeclaration.addMember(getBeanSuppliers);
+
+        logger.info("{} suppliers class build success", qualifiedName);
+        return suppliersCompilationUnit;
+    }
+
+    private Expression qualifierToExpression(AnnotationExpr qualifier) {
+        MethodCallExpr mapOf = new MethodCallExpr()
+                .setName("of")
+                .setScope(new NameExpr("Map"));
+        if (qualifier.isNormalAnnotationExpr()) {
+            qualifier.asNormalAnnotationExpr().getPairs()
+                    .forEach(pair -> {
+                        mapOf.addArgument(new StringLiteralExpr(pair.getNameAsString()));
+                        mapOf.addArgument(pair.getValue());
+                    });
+        } else if (qualifier.isSingleMemberAnnotationExpr()) {
+            mapOf.addArgument(new StringLiteralExpr("value"));
+            mapOf.addArgument(qualifier.asSingleMemberAnnotationExpr().getMemberValue());
+        }
+        return mapOf;
+    }
+
+    private MethodCallExpr getBeanGetMethodCallExpr(CompilationUnit proxyCompilationUnit, NodeWithAnnotations<?> annotations, ClassOrInterfaceType classOrInterfaceType) {
+        MethodCallExpr mapOf = new MethodCallExpr()
+                .setName("of")
+                .setScope(new NameExpr("Map"));
+
+        annotations.getAnnotations()
+                .forEach(annotationExpr ->
+                        processorManager.getCompilationUnit(annotationExpr)
+                                .flatMap(compilationUnit -> processorManager.getPublicAnnotationDeclaration(compilationUnit))
+                                .ifPresent(annotationDeclaration -> {
+                                    if (annotationDeclaration.getAnnotations().stream()
+                                            .anyMatch(subAnnotationExpr -> processorManager.getQualifiedName(subAnnotationExpr).equals(Qualifier.class.getName()))) {
+                                        mapOf.addArgument(new StringLiteralExpr(annotationDeclaration.getFullyQualifiedName().orElseGet(annotationDeclaration::getNameAsString)));
+                                        mapOf.addArgument(qualifierToExpression(annotationExpr));
+                                    }
+                                })
+                );
 
         MethodCallExpr methodCallExpr;
         String qualifiedName = processorManager.getQualifiedName(classOrInterfaceType);
@@ -668,7 +848,7 @@ public class InjectProcessor extends AbstractProcessor {
                         .setScope(new NameExpr().setName("BeanContext"))
                         .addArgument(new ClassExpr().setType(processorManager.getQualifiedName(type)));
             }
-            compilationUnit.addImport(Provider.class);
+            proxyCompilationUnit.addImport(Provider.class);
         } else if (qualifiedName.equals(Instance.class.getName())) {
             Type type = classOrInterfaceType.getTypeArguments().orElseThrow(() -> new InjectionProcessException(PROVIDER_TYPE_NOT_EXIST)).get(0);
             if (type.isClassOrInterfaceType() && processorManager.getQualifiedName(type).equals(Mono.class.getName())) {
@@ -683,7 +863,7 @@ public class InjectProcessor extends AbstractProcessor {
                         .setScope(new NameExpr().setName("BeanContext"))
                         .addArgument(new ClassExpr().setType(processorManager.getQualifiedName(type)));
             }
-            compilationUnit.addImport(Instance.class);
+            proxyCompilationUnit.addImport(Instance.class);
         } else {
             if (qualifiedName.equals(Mono.class.getName())) {
                 methodCallExpr = new MethodCallExpr()
@@ -697,342 +877,7 @@ public class InjectProcessor extends AbstractProcessor {
                         .addArgument(new ClassExpr().setType(qualifiedName));
             }
         }
-        nameExpr.ifPresent(methodCallExpr::addArgument);
+        methodCallExpr.addArgument(mapOf);
         return methodCallExpr;
-    }
-
-    private Stream<CompilationUnit> buildProducesContextStream(Set<? extends Element> singletonSet,
-                                                               Set<? extends Element> dependentSet,
-                                                               Set<? extends Element> applicationScopedSet,
-                                                               Set<? extends Element> requestScopedSet,
-                                                               Set<? extends Element> sessionScopedSet,
-                                                               Set<? extends Element> transactionScopedSet) {
-
-        return Streams.concat(singletonSet.stream(), dependentSet.stream(), applicationScopedSet.stream(), requestScopedSet.stream(), sessionScopedSet.stream(), transactionScopedSet.stream())
-                .filter(element -> element.getAnnotation(Generated.class) == null)
-                .filter(element -> element.getKind().isClass())
-                .map(element -> (TypeElement) element)
-                .map(typeElement -> processorManager.getCompilationUnitOrError(typeElement))
-                .filter(compilationUnit ->
-                        processorManager.getPublicClassOrInterfaceDeclarationOrError(compilationUnit).getMethods().stream()
-                                .anyMatch(methodDeclaration -> methodDeclaration.isAnnotationPresent(Produces.class))
-                )
-                .map(compilationUnit -> {
-                            ClassOrInterfaceDeclaration classOrInterfaceDeclaration = processorManager.getPublicClassOrInterfaceDeclarationOrError(compilationUnit);
-
-                            logger.info("{} produces context class build start", classOrInterfaceDeclaration.getFullyQualifiedName().orElseGet(classOrInterfaceDeclaration::getNameAsString));
-
-                            ClassOrInterfaceDeclaration producesContextClassDeclaration = new ClassOrInterfaceDeclaration()
-                                    .setPublic(true)
-                                    .setName(classOrInterfaceDeclaration.getNameAsString() + "_Context")
-                                    .addAnnotation(
-                                            new SingleMemberAnnotationExpr()
-                                                    .setMemberValue(new ClassExpr().setType(BeanContextLoader.class))
-                                                    .setName(AutoService.class.getSimpleName())
-                                    )
-                                    .addAnnotation(
-                                            new NormalAnnotationExpr()
-                                                    .addPair("value", new StringLiteralExpr(getClass().getName()))
-                                                    .setName(Generated.class.getSimpleName())
-                                    )
-                                    .addImplementedType(BeanContextLoader.class);
-
-                            CompilationUnit producesContextCompilationUnit = new CompilationUnit()
-                                    .addType(producesContextClassDeclaration)
-                                    .addImport(AutoService.class)
-                                    .addImport(Generated.class)
-                                    .addImport(BeanContextLoader.class)
-                                    .addImport(BeanContext.class);
-
-                            processorManager.importAllClassOrInterfaceType(producesContextClassDeclaration, classOrInterfaceDeclaration);
-
-                            compilationUnit.getPackageDeclaration()
-                                    .ifPresent(packageDeclaration -> producesContextCompilationUnit.setPackageDeclaration(packageDeclaration.getNameAsString()));
-
-                            MethodDeclaration loadMethod = new MethodDeclaration()
-                                    .setName("load")
-                                    .setModifiers(Modifier.Keyword.PUBLIC)
-                                    .setType(new VoidType())
-                                    .addAnnotation(Override.class);
-
-                            producesContextClassDeclaration.addMember(loadMethod);
-                            BlockStmt staticInitializer = loadMethod.createBody();
-
-                            classOrInterfaceDeclaration.getMethods().stream()
-                                    .filter(methodDeclaration -> methodDeclaration.isAnnotationPresent(Produces.class))
-                                    .forEach(producesMethodDeclaration -> {
-                                                String qualifiedName = processorManager.getQualifiedName(producesMethodDeclaration);
-
-                                                Optional<Expression> nameExpr = producesMethodDeclaration.getAnnotationByClass(Named.class)
-                                                        .flatMap(processorManager::findAnnotationValue)
-                                                        .map(expression -> {
-                                                                    if (expression.isStringLiteralExpr()) {
-                                                                        return expression.asStringLiteralExpr();
-                                                                    } else {
-                                                                        expression.findAll(NameExpr.class).stream()
-                                                                                .map(expr -> processorManager.calculateType(expr))
-                                                                                .filter(ResolvedType::isReferenceType)
-                                                                                .map(ResolvedType::asReferenceType)
-                                                                                .map(ResolvedReferenceType::getQualifiedName)
-                                                                                .forEach(producesContextCompilationUnit::addImport);
-                                                                        if (expression.isNameExpr() && processorManager.getResolvedDeclaration(expression.asNameExpr()).isField()) {
-                                                                            return new FieldAccessExpr()
-                                                                                    .setName(expression.asNameExpr().getName())
-                                                                                    .setScope(new NameExpr(processorManager.getResolvedDeclaration(expression.asNameExpr()).asField().declaringType().getQualifiedName()));
-                                                                        }
-                                                                        return expression;
-                                                                    }
-                                                                }
-                                                        );
-
-                                                Optional<StringLiteralExpr> defaultExpr = producesMethodDeclaration.getAnnotationByClass(Default.class)
-                                                        .map(annotationExpr -> new StringLiteralExpr(Default.class.getName()));
-
-                                                Optional<Expression> priorityExpr = classOrInterfaceDeclaration.getAnnotationByClass(Priority.class)
-                                                        .flatMap(processorManager::findAnnotationValue)
-                                                        .map(expression -> {
-                                                                    if (expression.isIntegerLiteralExpr()) {
-                                                                        return expression.asIntegerLiteralExpr();
-                                                                    } else {
-                                                                        expression.findAll(NameExpr.class).stream()
-                                                                                .map(expr -> processorManager.calculateType(expr))
-                                                                                .filter(ResolvedType::isReferenceType)
-                                                                                .map(ResolvedType::asReferenceType)
-                                                                                .map(ResolvedReferenceType::getQualifiedName)
-                                                                                .forEach(producesContextCompilationUnit::addImport);
-                                                                        if (expression.isNameExpr() && processorManager.getResolvedDeclaration(expression.asNameExpr()).isField()) {
-                                                                            return new FieldAccessExpr()
-                                                                                    .setName(expression.asNameExpr().getName())
-                                                                                    .setScope(new NameExpr(processorManager.getResolvedDeclaration(expression.asNameExpr()).asField().declaringType().getQualifiedName()));
-                                                                        }
-                                                                        return expression;
-                                                                    }
-                                                                }
-                                                        );
-
-                                                if (producesMethodDeclaration.isAnnotationPresent(Singleton.class) || producesMethodDeclaration.isAnnotationPresent(ApplicationScoped.class)) {
-                                                    ClassOrInterfaceDeclaration holderClassOrInterfaceDeclaration = new ClassOrInterfaceDeclaration();
-                                                    holderClassOrInterfaceDeclaration
-                                                            .setName(qualifiedName.replaceAll("\\.", "_") + "Holder" + classOrInterfaceDeclaration.getMethods().indexOf(producesMethodDeclaration))
-                                                            .setModifiers(Modifier.Keyword.PRIVATE, Modifier.Keyword.STATIC)
-                                                            .addFieldWithInitializer(
-                                                                    producesMethodDeclaration.getType(),
-                                                                    "INSTANCE",
-                                                                    new MethodCallExpr()
-                                                                            .setName(producesMethodDeclaration.getName())
-                                                                            .setArguments(
-                                                                                    producesMethodDeclaration.getParameters().stream()
-                                                                                            .map(parameter -> getBeanGetMethodCallExpr(parameter, producesContextCompilationUnit, parameter.getType().asClassOrInterfaceType()))
-                                                                                            .map(methodCallExpr -> (Expression) methodCallExpr)
-                                                                                            .collect(Collectors.toCollection(NodeList::new))
-                                                                            )
-                                                                            .setScope(
-                                                                                    new MethodCallExpr()
-                                                                                            .setName("get")
-                                                                                            .setScope(new NameExpr().setName("BeanContext"))
-                                                                                            .addArgument(new ClassExpr().setType(processorManager.getQualifiedName(classOrInterfaceDeclaration)))
-                                                                            )
-                                                            )
-                                                            .setModifiers(Modifier.Keyword.PRIVATE, Modifier.Keyword.STATIC, Modifier.Keyword.FINAL);
-
-                                                    producesContextClassDeclaration.addMember(holderClassOrInterfaceDeclaration);
-
-                                                    addPutTypeProducerStatement(staticInitializer, qualifiedName, producesContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, nameExpr.orElse(null), priorityExpr.orElse(null), defaultExpr.isPresent(), true);
-                                                    processorManager.getNodeReturnResolvedReferenceType(producesMethodDeclaration)
-                                                            .filter(resolvedReferenceType -> !resolvedReferenceType.getQualifiedName().equals(qualifiedName))
-                                                            .forEach(resolvedReferenceType ->
-                                                                    addPutTypeProducerStatement(staticInitializer, resolvedReferenceType.getQualifiedName(), producesContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, nameExpr.orElse(null), priorityExpr.orElse(null), defaultExpr.isPresent(), true)
-                                                            );
-
-                                                    processorManager.getClassOrInterfaceDeclaration(qualifiedName)
-                                                            .ifPresent(returnTypeClassOrInterfaceDeclaration -> {
-                                                                        processorManager.getExtendedTypes(returnTypeClassOrInterfaceDeclaration)
-                                                                                .filter(extendedTypeName -> processorManager.getClassOrInterfaceDeclarationOrError(extendedTypeName).hasModifier(Modifier.Keyword.PUBLIC))
-                                                                                .forEach(extendedTypeName -> addPutTypeProducerStatement(staticInitializer, extendedTypeName, producesContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, nameExpr.orElse(null), priorityExpr.orElse(null), defaultExpr.isPresent(), true));
-
-                                                                        processorManager.getImplementedTypes(returnTypeClassOrInterfaceDeclaration)
-                                                                                .filter(implementedTypeName -> processorManager.getClassOrInterfaceDeclarationOrError(implementedTypeName).hasModifier(Modifier.Keyword.PUBLIC))
-                                                                                .forEach(implementedTypeName -> addPutTypeProducerStatement(staticInitializer, implementedTypeName, producesContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, nameExpr.orElse(null), priorityExpr.orElse(null), defaultExpr.isPresent(), true));
-
-                                                                    }
-                                                            );
-                                                } else {
-                                                    addPutTypeProducerStatement(staticInitializer, qualifiedName, producesContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, nameExpr.orElse(null), priorityExpr.orElse(null), defaultExpr.isPresent(), false);
-                                                    processorManager.getNodeReturnResolvedReferenceType(producesMethodDeclaration)
-                                                            .filter(resolvedReferenceType -> !resolvedReferenceType.getQualifiedName().equals(qualifiedName))
-                                                            .forEach(resolvedReferenceType ->
-                                                                    addPutTypeProducerStatement(staticInitializer, resolvedReferenceType.getQualifiedName(), producesContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, nameExpr.orElse(null), priorityExpr.orElse(null), defaultExpr.isPresent(), true)
-                                                            );
-
-                                                    processorManager.getClassOrInterfaceDeclaration(qualifiedName)
-                                                            .ifPresent(returnTypeClassOrInterfaceDeclaration -> {
-                                                                        processorManager.getExtendedTypes(returnTypeClassOrInterfaceDeclaration)
-                                                                                .filter(extendedTypeName -> processorManager.getClassOrInterfaceDeclarationOrError(extendedTypeName).hasModifier(Modifier.Keyword.PUBLIC))
-                                                                                .forEach(extendedTypeName -> addPutTypeProducerStatement(staticInitializer, extendedTypeName, producesContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, nameExpr.orElse(null), priorityExpr.orElse(null), defaultExpr.isPresent(), false));
-
-                                                                        processorManager.getImplementedTypes(returnTypeClassOrInterfaceDeclaration)
-                                                                                .filter(implementedTypeName -> processorManager.getClassOrInterfaceDeclarationOrError(implementedTypeName).hasModifier(Modifier.Keyword.PUBLIC))
-                                                                                .forEach(implementedTypeName -> addPutTypeProducerStatement(staticInitializer, implementedTypeName, producesContextCompilationUnit, classOrInterfaceDeclaration, producesMethodDeclaration, nameExpr.orElse(null), priorityExpr.orElse(null), defaultExpr.isPresent(), false));
-                                                                    }
-                                                            );
-                                                }
-                                            }
-                                    );
-
-                            logger.info("{} produces context class build success", classOrInterfaceDeclaration.getFullyQualifiedName().orElseGet(classOrInterfaceDeclaration::getNameAsString));
-                            return producesContextCompilationUnit;
-                        }
-                );
-    }
-
-    private void addPutTypeProducerStatement(BlockStmt staticInitializer, String putClassQualifiedName, CompilationUnit moduleContextCompilationUnit, ClassOrInterfaceDeclaration classOrInterfaceDeclaration, MethodDeclaration methodDeclaration, Expression nameExpr, Expression priorityExpr, boolean isDefault, boolean isSingleton) {
-        String qualifiedName = processorManager.getQualifiedName(methodDeclaration);
-
-        Expression supplierExpression;
-        if (isSingleton) {
-            supplierExpression = new LambdaExpr()
-                    .setEnclosingParameters(true)
-                    .setBody(
-                            new ExpressionStmt()
-                                    .setExpression(
-                                            new FieldAccessExpr()
-                                                    .setName("INSTANCE")
-                                                    .setScope(new NameExpr(qualifiedName.replaceAll("\\.", "_") + "Holder" + classOrInterfaceDeclaration.getMethods().indexOf(methodDeclaration)))
-                                    )
-                    );
-        } else {
-            Expression expression = new MethodCallExpr()
-                    .setName(methodDeclaration.getName())
-                    .setArguments(
-                            methodDeclaration.getParameters().stream()
-                                    .map(parameter -> getBeanGetMethodCallExpr(parameter, moduleContextCompilationUnit, parameter.getType().asClassOrInterfaceType()))
-                                    .map(methodCallExpr -> (Expression) methodCallExpr)
-                                    .collect(Collectors.toCollection(NodeList::new))
-                    )
-                    .setScope(
-                            new MethodCallExpr()
-                                    .setName("get")
-                                    .setScope(new NameExpr().setName("BeanContext"))
-                                    .addArgument(new ClassExpr().setType(processorManager.getQualifiedName(classOrInterfaceDeclaration)))
-                    );
-
-            String scopedAnnotationName = processorManager.getScopedAnnotationName(methodDeclaration).orElse(null);
-            if (scopedAnnotationName != null) {
-                moduleContextCompilationUnit.addImport(ScopeInstanceFactory.class)
-                        .addImport(Mono.class);
-
-                if (!processorManager.getQualifiedName(methodDeclaration.getType()).equals(Mono.class.getName())) {
-                    moduleContextCompilationUnit.addImport(Mono.class);
-                    expression = new MethodCallExpr()
-                            .setName("just")
-                            .setScope(new NameExpr().setName("Mono"))
-                            .addArgument(expression);
-                }
-
-                MethodCallExpr getScopeInstanceFactory = new MethodCallExpr()
-                        .setName("get")
-                        .setScope(new NameExpr("BeanContext"))
-                        .addArgument(new ClassExpr().setType(ScopeInstanceFactory.class))
-                        .addArgument(new MethodCallExpr("getName").setScope(new ClassExpr().setType(scopedAnnotationName)));
-
-                supplierExpression = new LambdaExpr()
-                        .setEnclosingParameters(true)
-                        .setBody(
-                                new ExpressionStmt()
-                                        .setExpression(
-                                                new MethodCallExpr()
-                                                        .setName("get")
-                                                        .addArgument(new ClassExpr().setType(qualifiedName))
-                                                        .addArgument(
-                                                                new LambdaExpr()
-                                                                        .setEnclosingParameters(true)
-                                                                        .setBody(new ExpressionStmt().setExpression(expression))
-                                                        )
-                                                        .setScope(getScopeInstanceFactory)
-                                        )
-                        );
-            } else {
-                supplierExpression = new LambdaExpr()
-                        .setEnclosingParameters(true)
-                        .setBody(new ExpressionStmt().setExpression(expression));
-            }
-        }
-        if (nameExpr != null && priorityExpr != null && isDefault) {
-            staticInitializer.addStatement(
-                    new MethodCallExpr()
-                            .setName("put")
-                            .addArgument(new ClassExpr().setType(putClassQualifiedName))
-                            .addArgument(nameExpr)
-                            .addArgument(priorityExpr)
-                            .addArgument(new BooleanLiteralExpr(true))
-                            .addArgument(supplierExpression)
-                            .setScope(new NameExpr("BeanContext"))
-            );
-        } else if (nameExpr != null && priorityExpr != null) {
-            staticInitializer.addStatement(
-                    new MethodCallExpr()
-                            .setName("put")
-                            .addArgument(new ClassExpr().setType(putClassQualifiedName))
-                            .addArgument(nameExpr)
-                            .addArgument(priorityExpr)
-                            .addArgument(supplierExpression)
-                            .setScope(new NameExpr("BeanContext"))
-            );
-        } else if (nameExpr != null && isDefault) {
-            staticInitializer.addStatement(
-                    new MethodCallExpr()
-                            .setName("put")
-                            .addArgument(new ClassExpr().setType(putClassQualifiedName))
-                            .addArgument(nameExpr)
-                            .addArgument(new BooleanLiteralExpr(true))
-                            .addArgument(supplierExpression)
-                            .setScope(new NameExpr("BeanContext"))
-            );
-        } else if (priorityExpr != null && isDefault) {
-            staticInitializer.addStatement(
-                    new MethodCallExpr()
-                            .setName("put")
-                            .addArgument(new ClassExpr().setType(putClassQualifiedName))
-                            .addArgument(priorityExpr)
-                            .addArgument(new BooleanLiteralExpr(true))
-                            .addArgument(supplierExpression)
-                            .setScope(new NameExpr("BeanContext"))
-            );
-        } else if (nameExpr != null) {
-            staticInitializer.addStatement(
-                    new MethodCallExpr()
-                            .setName("put")
-                            .addArgument(new ClassExpr().setType(putClassQualifiedName))
-                            .addArgument(nameExpr)
-                            .addArgument(supplierExpression)
-                            .setScope(new NameExpr("BeanContext"))
-            );
-        } else if (priorityExpr != null) {
-            staticInitializer.addStatement(
-                    new MethodCallExpr()
-                            .setName("put")
-                            .addArgument(new ClassExpr().setType(putClassQualifiedName))
-                            .addArgument(priorityExpr)
-                            .addArgument(supplierExpression)
-                            .setScope(new NameExpr("BeanContext"))
-            );
-        } else if (isDefault) {
-            staticInitializer.addStatement(
-                    new MethodCallExpr()
-                            .setName("put")
-                            .addArgument(new ClassExpr().setType(putClassQualifiedName))
-                            .addArgument(new BooleanLiteralExpr(true))
-                            .addArgument(supplierExpression)
-                            .setScope(new NameExpr("BeanContext"))
-            );
-        } else {
-            staticInitializer.addStatement(
-                    new MethodCallExpr()
-                            .setName("put")
-                            .addArgument(new ClassExpr().setType(putClassQualifiedName))
-                            .addArgument(supplierExpression)
-                            .setScope(new NameExpr("BeanContext"))
-            );
-        }
     }
 }

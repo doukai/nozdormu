@@ -13,6 +13,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.CodeSource;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 import static io.nozdormu.spi.utils.DecompileUtil.getDecompileClassName;
@@ -21,7 +22,7 @@ public class CFRDecompiler implements TypeElementDecompiler {
 
     private final ClassLoader classLoader;
 
-    private static final Map<String, String> DECOMPILED_CACHE = new HashMap<>();
+    private static final Map<String, String> DECOMPILED_CACHE = new ConcurrentHashMap<>();
 
     public CFRDecompiler(ClassLoader classLoader) {
         this.classLoader = classLoader;

@@ -1,324 +1,251 @@
 package io.nozdormu.spi.context;
 
-import jakarta.enterprise.inject.Default;
 import jakarta.enterprise.inject.Instance;
-import jakarta.enterprise.inject.literal.NamedLiteral;
-import jakarta.inject.Named;
 import jakarta.inject.Provider;
 import reactor.core.publisher.Mono;
-import reactor.util.function.Tuple2;
-import reactor.util.function.Tuples;
 
-import java.lang.annotation.Annotation;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public class BeanContext {
 
-    private static final BeanProviders CONTEXT = new BeanProviders();
-
-    private static final BeanImplProviders IMPL_CONTEXT = new BeanImplProviders();
-
-    private static final BeanImplMeta IMPL_META = new BeanImplMeta();
-
-    static {
-        load(BeanContext.class.getClassLoader());
-    }
+    private static final Map<String, Map<String, BeanSupplier>> BEAN_IMPL_SUPPLIER_MAP = new ConcurrentHashMap<>();
 
     private BeanContext() {
     }
 
-    public static void load(ClassLoader classLoader) {
-        Thread.currentThread().setContextClassLoader(classLoader);
-        ServiceLoader.load(BeanContextLoader.class, classLoader).forEach(BeanContextLoader::load);
-    }
-
-    public static void put(Class<?> beanClass, Supplier<?> supplier) {
-        put(beanClass, null, null, false, supplier, Map.of());
-    }
-
-    public static void put(Class<?> beanClass, Supplier<?> supplier, Map<String, Object> meta) {
-        put(beanClass, null, null, false, supplier, meta);
-    }
-
-    public static void put(Class<?> beanClass, String name, Supplier<?> supplier) {
-        put(beanClass, name, null, false, supplier, Map.of(Named.class.getName(), name));
-    }
-
-    public static void put(Class<?> beanClass, String name, Supplier<?> supplier, Map<String, Object> meta) {
-        put(beanClass, name, null, false, supplier, meta);
-    }
-
-    public static void put(Class<?> beanClass, boolean isDefault, Supplier<?> supplier) {
-        put(beanClass, null, null, isDefault, supplier, Map.of(Default.class.getName(), isDefault));
-    }
-
-    public static void put(Class<?> beanClass, boolean isDefault, Supplier<?> supplier, Map<String, Object> meta) {
-        put(beanClass, null, null, isDefault, supplier, meta);
-    }
-
-    public static void put(Class<?> beanClass, Integer priority, Supplier<?> supplier) {
-        put(beanClass, priority, false, supplier);
-    }
-
-    public static void put(Class<?> beanClass, String name, Integer priority, Supplier<?> supplier) {
-        put(beanClass, name, priority, false, supplier, Map.of(Named.class.getName(), name));
-    }
-
-    public static void put(Class<?> beanClass, String name, Integer priority, Supplier<?> supplier, Map<String, Object> meta) {
-        put(beanClass, name, priority, false, supplier, meta);
-    }
-
-    public static void put(Class<?> beanClass, String name, boolean isDefault, Supplier<?> supplier) {
-        put(beanClass, name, null, isDefault, supplier, Map.of(Named.class.getName(), name, Default.class.getName(), isDefault));
-    }
-
-    public static void put(Class<?> beanClass, String name, boolean isDefault, Supplier<?> supplier, Map<String, Object> meta) {
-        put(beanClass, name, null, isDefault, supplier, meta);
-    }
-
-    public static void put(Class<?> beanClass, Integer priority, boolean isDefault, Supplier<?> supplier) {
-        put(beanClass, null, priority, isDefault, supplier, Map.of(Default.class.getName(), isDefault));
-    }
-
-    public static void put(Class<?> beanClass, Integer priority, boolean isDefault, Supplier<?> supplier, Map<String, Object> meta) {
-        put(beanClass, null, priority, isDefault, supplier, meta);
-    }
-
-    public static void put(Class<?> beanClass, String name, Integer priority, boolean isDefault, Supplier<?> supplier, Map<String, Object> meta) {
-        CONTEXT.get(beanClass).put(beanClass.getName(), supplier);
-        if (name != null) {
-            CONTEXT.get(beanClass).put(name, supplier);
-        }
-        Integer indexedPriority = IMPL_CONTEXT.put(beanClass, Objects.requireNonNullElse(priority, Integer.MAX_VALUE), supplier);
-        if (meta != null) {
-            IMPL_META.get(beanClass).put(indexedPriority, meta);
-        }
-        if (isDefault) {
-            CONTEXT.get(beanClass).put(Default.class.getName(), supplier);
-        }
-    }
-
     public static <T> T get(Class<T> beanClass) {
-        return get(beanClass, beanClass.getName());
+        return get(beanClass, Map.of());
     }
 
-    public static <T> T get(Class<T> beanClass, String name) {
-        return Optional.ofNullable(getSupplier(beanClass, name))
+    public static <T> T get(Class<T> beanClass, Map<String, Map<String, Object>> qualifiers) {
+        return getSupplierOptional(beanClass, qualifiers)
                 .map(Supplier::get)
                 .orElse(null);
     }
 
     public static <T> Mono<T> getMono(Class<T> beanClass) {
-        return getMono(beanClass, beanClass.getName());
+        return getMono(beanClass, Map.of());
     }
 
-    public static <T> Mono<T> getMono(Class<T> beanClass, String name) {
-        return getMonoSupplier(beanClass, name).get();
+    public static <T> Mono<T> getMono(Class<T> beanClass, Map<String, Map<String, Object>> qualifiers) {
+        return getMonoSupplierOptional(beanClass, qualifiers)
+                .map(Supplier::get)
+                .orElseGet(Mono::empty);
     }
 
     public static <T> Provider<T> getProvider(Class<T> beanClass) {
-        return getProvider(beanClass, beanClass.getName());
+        return getProvider(beanClass, Map.of());
     }
 
-    public static <T> Provider<T> getProvider(Class<T> beanClass, String name) {
-        return Optional.ofNullable(getSupplier(beanClass, name))
-                .map(supplier -> (Provider<T>) supplier::get)
-                .orElse(null);
+    public static <T> Provider<T> getProvider(Class<T> beanClass, Map<String, Map<String, Object>> qualifiers) {
+        return getSupplierOptional(beanClass, qualifiers)
+                .map(Supplier::get)
+                ::get;
     }
 
     public static <T> Provider<Mono<T>> getMonoProvider(Class<T> beanClass) {
-        return getMonoProvider(beanClass, beanClass.getName());
+        return getMonoProvider(beanClass, Map.of());
     }
 
-    public static <T> Provider<Mono<T>> getMonoProvider(Class<T> beanClass, String name) {
-        return getMonoSupplier(beanClass, name)::get;
+    public static <T> Provider<Mono<T>> getMonoProvider(Class<T> beanClass, Map<String, Map<String, Object>> qualifiers) {
+        return getMonoSupplierOptional(beanClass, qualifiers)
+                .map(Supplier::get)
+                ::get;
     }
 
-    public static <T> Instance<T> getInstance(Class<T> beanClass, String... names) {
-        return new InstanceImpl<>(getProviderListWithMeta(beanClass)).select(Arrays.stream(names).map(NamedLiteral::of).toArray(Annotation[]::new));
+    public static <T> Instance<T> getInstance(Class<T> beanClass) {
+        return getInstance(beanClass, Map.of());
     }
 
-    public static <T> Instance<T> getInstance(Class<T> beanClass, String name) {
-        return new SingletonInstanceImpl<>(getProvider(beanClass, name));
+    public static <T> Instance<T> getInstance(Class<T> beanClass, Map<String, Map<String, Object>> qualifiers) {
+        return new InstanceImpl<>(getImplSupplierMap(beanClass, qualifiers));
     }
 
-    public static <T> Instance<Mono<T>> getMonoInstance(Class<T> beanClass, String... names) {
-        return new InstanceImpl<>(getMonoProviderListWithMeta(beanClass)).select(Arrays.stream(names).map(NamedLiteral::of).toArray(Annotation[]::new));
+    public static <T> Instance<T> getInstance(Map<String, Map<String, Object>> qualifiers) {
+        return new InstanceImpl<>(getImplSupplierMap(qualifiers));
     }
 
-    public static <T> Instance<Mono<T>> getMonoInstance(Class<T> beanClass, String name) {
-        return new SingletonInstanceImpl<>(getMonoProvider(beanClass, name));
+    public static <T> Instance<Mono<T>> getMonoInstance(Class<T> beanClass) {
+        return getMonoInstance(beanClass, Map.of());
+    }
+
+    public static <T> Instance<Mono<T>> getMonoInstance(Class<T> beanClass, Map<String, Map<String, Object>> qualifiers) {
+        return new InstanceImpl<>(getImplSupplierMap(beanClass, qualifiers));
+    }
+
+    public static <T> Instance<Mono<T>> getMonoInstance(Map<String, Map<String, Object>> qualifiers) {
+        return new InstanceImpl<>(getImplSupplierMap(qualifiers));
     }
 
     public static <T> Optional<T> getOptional(Class<T> beanClass) {
-        return getOptional(beanClass, beanClass.getName());
+        return getOptional(beanClass, Map.of());
     }
 
-    public static <T> Optional<T> getOptional(Class<T> beanClass, String name) {
-        return getSupplierOptional(beanClass, name).map(Supplier::get);
+    public static <T> Optional<T> getOptional(Class<T> beanClass, Map<String, Map<String, Object>> qualifiers) {
+        return getSupplierOptional(beanClass, qualifiers).map(Supplier::get);
     }
 
     public static <T> Optional<Mono<T>> getMonoOptional(Class<T> beanClass) {
-        return getMonoOptional(beanClass, beanClass.getName());
+        return getMonoOptional(beanClass, Map.of());
     }
 
-    public static <T> Optional<Mono<T>> getMonoOptional(Class<T> beanClass, String name) {
-        return getMonoSupplierOptional(beanClass, name).map(Supplier::get);
+    public static <T> Optional<Mono<T>> getMonoOptional(Class<T> beanClass, Map<String, Map<String, Object>> qualifiers) {
+        return getMonoSupplierOptional(beanClass, qualifiers).map(Supplier::get);
     }
 
     public static <T> Optional<Provider<T>> getProviderOptional(Class<T> beanClass) {
-        return getProviderOptional(beanClass, beanClass.getName());
+        return getProviderOptional(beanClass, Map.of());
     }
 
-    public static <T> Optional<Provider<T>> getProviderOptional(Class<T> beanClass, String name) {
-        return getSupplierOptional(beanClass, name).map(supplier -> supplier::get);
+    public static <T> Optional<Provider<T>> getProviderOptional(Class<T> beanClass, Map<String, Map<String, Object>> qualifiers) {
+        return getSupplierOptional(beanClass, qualifiers)
+                .map(supplier -> supplier::get);
     }
 
     public static <T> Optional<Provider<Mono<T>>> getMonoProviderOptional(Class<T> beanClass) {
-        return getMonoProviderOptional(beanClass, beanClass.getName());
+        return getMonoProviderOptional(beanClass, Map.of());
     }
 
-    public static <T> Optional<Provider<Mono<T>>> getMonoProviderOptional(Class<T> beanClass, String name) {
-        return getMonoSupplierOptional(beanClass, name).map(supplier -> supplier::get);
-    }
-
-    private static <T> Supplier<T> getSupplier(Class<T> beanClass, String name) {
-        return getSupplierOptional(beanClass, name).orElse(null);
-    }
-
-    private static <T> Supplier<Mono<T>> getMonoSupplier(Class<T> beanClass, String name) {
-        return getMonoSupplierOptional(beanClass, name).orElse(null);
+    public static <T> Optional<Provider<Mono<T>>> getMonoProviderOptional(Class<T> beanClass, Map<String, Map<String, Object>> qualifiers) {
+        return getMonoSupplierOptional(beanClass, qualifiers)
+                .map(supplier -> supplier::get);
     }
 
     @SuppressWarnings("unchecked")
-    private static <T> Optional<Supplier<T>> getSupplierOptional(Class<T> beanClass, String name) {
-        Supplier<?> supplier = CONTEXT.get(beanClass).get(name);
-        return Optional.ofNullable((Supplier<T>) supplier);
+    private static <T> Stream<Supplier<T>> getSupplierStream(Class<T> beanClass, Map<String, Map<String, Object>> qualifiers) {
+        return Stream.ofNullable(
+                        BEAN_IMPL_SUPPLIER_MAP.computeIfAbsent(
+                                beanClass.getName(),
+                                k ->
+                                        ServiceLoader.load(BeanSuppliers.class, Thread.currentThread().getContextClassLoader()).stream()
+                                                .filter(provider -> provider.get().getBeanSuppliers().containsKey(beanClass.getName()))
+                                                .flatMap(provider -> provider.get().getBeanSuppliers().get(beanClass.getName()).entrySet().stream())
+                                                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (x, y) -> y))
+                        )
+                )
+                .flatMap(implMap -> implMap.entrySet().stream())
+                .filter(implEntry ->
+                        qualifiers.entrySet().stream()
+                                .allMatch(qualifierEntry ->
+                                        implEntry.getValue().getQualifiers().containsKey(qualifierEntry.getKey()) &&
+                                                qualifierEntry.getValue().entrySet().stream()
+                                                        .allMatch(attributesEntry ->
+                                                                implEntry.getValue().getQualifiers().get(qualifierEntry.getKey()).containsKey(attributesEntry.getKey()) &&
+                                                                        attributesEntry.getValue().equals(implEntry.getValue().getQualifiers().get(qualifierEntry.getKey()).get(attributesEntry.getKey()))
+                                                        )
+                                )
+                )
+                .sorted(Comparator.comparing(implEntry -> implEntry.getValue().getPriority(), Comparator.nullsLast(Integer::compareTo)))
+                .map(implEntry -> (Supplier<T>) implEntry.getValue().getSupplier());
     }
 
     @SuppressWarnings("unchecked")
-    private static <T> Optional<Supplier<Mono<T>>> getMonoSupplierOptional(Class<T> beanClass, String name) {
-        Supplier<?> supplier = CONTEXT.get(beanClass).get(name);
-        return Optional.ofNullable((Supplier<Mono<T>>) supplier);
+    private static <T> Stream<Supplier<Mono<T>>> getMonoSupplierStream(Class<T> beanClass, Map<String, Map<String, Object>> qualifiers) {
+        return getSupplierStream(beanClass, qualifiers)
+                .map(supplier -> (Supplier<Mono<T>>) supplier);
     }
 
-    @SuppressWarnings("unchecked")
-    public static <T> List<T> getList(Class<T> beanClass, String... names) {
-        if (names != null && names.length > 0) {
-            return getListWithMeta(beanClass).stream()
-                    .filter(tuple2 ->
-                            Arrays.stream(names)
-                                    .anyMatch(name ->
-                                            tuple2.getT1().containsKey(Named.class.getName()) &&
-                                                    tuple2.getT1().get(Named.class.getName()).equals(name)
-                                    )
-                    )
-                    .map(Tuple2::getT2)
-                    .collect(Collectors.toList());
-        }
-        return IMPL_CONTEXT.get(beanClass).values().stream()
-                .map(supplier -> (T) supplier.get())
+    private static <T> Optional<Supplier<T>> getSupplierOptional(Class<T> beanClass, Map<String, Map<String, Object>> qualifiers) {
+        return getSupplierStream(beanClass, qualifiers).findFirst();
+    }
+
+    private static <T> Optional<Supplier<Mono<T>>> getMonoSupplierOptional(Class<T> beanClass, Map<String, Map<String, Object>> qualifiers) {
+        return getMonoSupplierStream(beanClass, qualifiers).findFirst();
+    }
+
+    public static <T> List<T> getList(Class<T> beanClass) {
+        return getList(beanClass, Map.of());
+    }
+
+    public static <T> List<T> getList(Class<T> beanClass, Map<String, Map<String, Object>> qualifiers) {
+        return getSupplierStream(beanClass, qualifiers)
+                .map(Supplier::get)
                 .collect(Collectors.toList());
     }
 
-    @SuppressWarnings("unchecked")
-    public static <T> List<Mono<T>> getMonoList(Class<T> beanClass, String... names) {
-        if (names != null && names.length > 0) {
-            return getMonoListWithMeta(beanClass).stream()
-                    .filter(tuple2 ->
-                            Arrays.stream(names)
-                                    .anyMatch(name ->
-                                            tuple2.getT1().containsKey(Named.class.getName()) &&
-                                                    tuple2.getT1().get(Named.class.getName()).equals(name)
-                                    )
-                    )
-                    .map(Tuple2::getT2)
-                    .collect(Collectors.toList());
-        }
-        return IMPL_CONTEXT.get(beanClass).values().stream()
-                .map(supplier -> (Mono<T>) supplier.get())
+    public static <T> List<Mono<T>> getMonoList(Class<T> beanClass) {
+        return getMonoList(beanClass, Map.of());
+    }
+
+    public static <T> List<Mono<T>> getMonoList(Class<T> beanClass, Map<String, Map<String, Object>> qualifiers) {
+        return getMonoSupplierStream(beanClass, qualifiers)
+                .map(Supplier::get)
                 .collect(Collectors.toList());
     }
 
-    @SuppressWarnings("unchecked")
-    public static <T> List<Provider<T>> getProviderList(Class<T> beanClass, String... names) {
-        if (names != null && names.length > 0) {
-            return getProviderListWithMeta(beanClass).stream()
-                    .filter(tuple2 ->
-                            Arrays.stream(names)
-                                    .anyMatch(name ->
-                                            tuple2.getT1().containsKey(Named.class.getName()) &&
-                                                    tuple2.getT1().get(Named.class.getName()).equals(name)
-                                    )
-                    )
-                    .map(Tuple2::getT2)
-                    .collect(Collectors.toList());
-        }
-        return IMPL_CONTEXT.get(beanClass).values().stream()
+    public static <T> List<Provider<T>> getProviderList(Class<T> beanClass) {
+        return getProviderList(beanClass, Map.of());
+    }
+
+    public static <T> List<Provider<T>> getProviderList(Class<T> beanClass, Map<String, Map<String, Object>> qualifiers) {
+        return getSupplierStream(beanClass, qualifiers)
                 .map(supplier -> (Provider<T>) ((Supplier<T>) supplier)::get)
                 .collect(Collectors.toList());
     }
 
-    @SuppressWarnings("unchecked")
-    public static <T> List<Provider<Mono<T>>> getMonoProviderList(Class<T> beanClass, String... names) {
-        if (names != null && names.length > 0) {
-            return getMonoProviderListWithMeta(beanClass).stream()
-                    .filter(tuple2 ->
-                            Arrays.stream(names)
-                                    .anyMatch(name ->
-                                            tuple2.getT1().containsKey(Named.class.getName()) &&
-                                                    tuple2.getT1().get(Named.class.getName()).equals(name)
-                                    )
-                    )
-                    .map(Tuple2::getT2)
-                    .collect(Collectors.toList());
-        }
-        return IMPL_CONTEXT.get(beanClass).values().stream()
+    public static <T> List<Provider<Mono<T>>> getMonoProviderList(Class<T> beanClass) {
+        return getMonoProviderList(beanClass, Map.of());
+    }
+
+    public static <T> List<Provider<Mono<T>>> getMonoProviderList(Class<T> beanClass, Map<String, Map<String, Object>> qualifiers) {
+        return getMonoSupplierStream(beanClass, qualifiers)
                 .map(supplier -> (Provider<Mono<T>>) ((Supplier<Mono<T>>) supplier)::get)
                 .collect(Collectors.toList());
     }
 
-    @SuppressWarnings("unchecked")
-    public static <T> List<Tuple2<Map<String, Object>, T>> getListWithMeta(Class<T> beanClass) {
-        return IMPL_CONTEXT.get(beanClass).entrySet().stream()
-                .map(entry -> Tuples.of(IMPL_META.get(beanClass).get(entry.getKey()), (T) entry.getValue().get()))
-                .collect(Collectors.toList());
+    public static <T> Map<String, BeanSupplier> getImplSupplierMap(Class<T> beanClass) {
+        return getImplSupplierMap(beanClass, Map.of());
     }
 
-    @SuppressWarnings("unchecked")
-    public static <T> List<Tuple2<Map<String, Object>, Provider<T>>> getProviderListWithMeta(Class<T> beanClass) {
-        return IMPL_CONTEXT.get(beanClass).entrySet().stream()
-                .map(entry -> Tuples.of(IMPL_META.get(beanClass).get(entry.getKey()), (Provider<T>) ((Supplier<T>) entry.getValue())::get))
-                .collect(Collectors.toList());
+    public static <T> Map<String, BeanSupplier> getImplSupplierMap(Class<T> beanClass, Map<String, Map<String, Object>> qualifiers) {
+        return Stream.ofNullable(
+                        BEAN_IMPL_SUPPLIER_MAP.computeIfAbsent(
+                                beanClass.getName(),
+                                k ->
+                                        ServiceLoader.load(BeanSuppliers.class, Thread.currentThread().getContextClassLoader()).stream()
+                                                .filter(provider -> provider.get().getBeanSuppliers().containsKey(beanClass.getName()))
+                                                .flatMap(provider -> provider.get().getBeanSuppliers().get(beanClass.getName()).entrySet().stream())
+                                                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (x, y) -> y))
+                        )
+                )
+                .flatMap(implMap -> implMap.entrySet().stream())
+                .filter(implEntry ->
+                        qualifiers.entrySet().stream()
+                                .allMatch(qualifierEntry ->
+                                        implEntry.getValue().getQualifiers().containsKey(qualifierEntry.getKey()) &&
+                                                qualifierEntry.getValue().entrySet().stream()
+                                                        .allMatch(attributesEntry ->
+                                                                implEntry.getValue().getQualifiers().get(qualifierEntry.getKey()).containsKey(attributesEntry.getKey()) &&
+                                                                        attributesEntry.getValue().equals(implEntry.getValue().getQualifiers().get(qualifierEntry.getKey()).get(attributesEntry.getKey()))
+                                                        )
+                                )
+                )
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (x, y) -> y));
     }
 
-    @SuppressWarnings("unchecked")
-    private static <T> List<Tuple2<Map<String, Object>, Supplier<T>>> getSupplierListWithMeta(Class<T> beanClass) {
-        return IMPL_CONTEXT.get(beanClass).entrySet().stream()
-                .map(entry -> Tuples.of(IMPL_META.get(beanClass).get(entry.getKey()), (Supplier<T>) entry.getValue()))
-                .collect(Collectors.toList());
+    public static Map<String, BeanSupplier> getImplSupplierMap(Map<String, Map<String, Object>> qualifiers) {
+        return ServiceLoader.load(BeanSuppliers.class, Thread.currentThread().getContextClassLoader()).stream()
+                .flatMap(provider -> provider.get().getBeanSuppliers().values().stream())
+                .flatMap(entry -> entry.entrySet().stream())
+                .filter(entry ->
+                        qualifiers.entrySet().stream()
+                                .allMatch(qualifierEntry ->
+                                        entry.getValue().getQualifiers().containsKey(qualifierEntry.getKey()) &&
+                                                qualifierEntry.getValue().entrySet().stream()
+                                                        .allMatch(attributesEntry ->
+                                                                entry.getValue().getQualifiers().get(qualifierEntry.getKey()).containsKey(attributesEntry.getKey()) &&
+                                                                        attributesEntry.getValue().equals(entry.getValue().getQualifiers().get(qualifierEntry.getKey()).get(attributesEntry.getKey()))
+                                                        )
+                                )
+                )
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (x, y) -> y));
     }
 
-    @SuppressWarnings("unchecked")
-    public static <T> List<Tuple2<Map<String, Object>, Mono<T>>> getMonoListWithMeta(Class<T> beanClass) {
-        return IMPL_CONTEXT.get(beanClass).entrySet().stream()
-                .map(entry -> Tuples.of(IMPL_META.get(beanClass).get(entry.getKey()), (Mono<T>) entry.getValue().get()))
-                .collect(Collectors.toList());
-    }
-
-    @SuppressWarnings("unchecked")
-    public static <T> List<Tuple2<Map<String, Object>, Provider<Mono<T>>>> getMonoProviderListWithMeta(Class<T> beanClass) {
-        return IMPL_CONTEXT.get(beanClass).entrySet().stream()
-                .map(entry -> Tuples.of(IMPL_META.get(beanClass).get(entry.getKey()), (Provider<Mono<T>>) ((Supplier<Mono<T>>) entry.getValue())::get))
-                .collect(Collectors.toList());
-    }
-
-    @SuppressWarnings("unchecked")
-    private static <T> List<Tuple2<Map<String, Object>, Supplier<Mono<T>>>> getMonoSupplierListWithMeta(Class<T> beanClass) {
-        return IMPL_CONTEXT.get(beanClass).entrySet().stream()
-                .map(entry -> Tuples.of(IMPL_META.get(beanClass).get(entry.getKey()), (Supplier<Mono<T>>) entry.getValue()))
-                .collect(Collectors.toList());
+    public static Map<String, Map<String, BeanSupplier>> getBeanImplSupplierMap() {
+        return BEAN_IMPL_SUPPLIER_MAP;
     }
 }
