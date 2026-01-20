@@ -35,20 +35,6 @@ public class InterceptorComponentProcessor implements ComponentProxyProcessor {
     }
 
     @Override
-    public boolean match(CompilationUnit componentCompilationUnit, ClassOrInterfaceDeclaration componentClassDeclaration) {
-        return componentClassDeclaration.getMethods().stream()
-                .anyMatch(methodDeclaration ->
-                        methodDeclaration.getAnnotations().stream()
-                                .anyMatch(annotationExpr ->
-                                        processorManager.getCompilationUnit(annotationExpr)
-                                                .flatMap(compilationUnit -> processorManager.getPublicAnnotationDeclaration(compilationUnit)).stream()
-                                                .flatMap(annotationDeclaration -> annotationDeclaration.getAnnotations().stream())
-                                                .anyMatch(subAnnotationExpr -> processorManager.getQualifiedName(subAnnotationExpr).equals(InterceptorBinding.class.getName()))
-                                )
-                );
-    }
-
-    @Override
     public void processComponentProxy(CompilationUnit componentCompilationUnit, ClassOrInterfaceDeclaration componentClassDeclaration, CompilationUnit componentProxyCompilationUnit, ClassOrInterfaceDeclaration componentProxyClassDeclaration) {
         logger.info("{} interceptor component build start", componentClassDeclaration.getFullyQualifiedName().orElseGet(componentClassDeclaration::getNameAsString));
         buildMethod(componentClassDeclaration, componentProxyCompilationUnit, componentProxyClassDeclaration);

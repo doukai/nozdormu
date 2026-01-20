@@ -33,21 +33,15 @@ import static com.github.javaparser.ast.expr.BinaryExpr.Operator.NOT_EQUALS;
 import static io.nozdormu.spi.async.Asyncable.ASYNC_METHOD_NAME_SUFFIX;
 
 @AutoService(ComponentProxyProcessor.class)
-public class AsyncProcessor implements ComponentProxyProcessor {
+public class AsyncComponentProcessor implements ComponentProxyProcessor {
 
-    private static final Logger logger = LoggerFactory.getLogger(AsyncProcessor.class);
+    private static final Logger logger = LoggerFactory.getLogger(AsyncComponentProcessor.class);
 
     private ProcessorManager processorManager;
 
     @Override
     public void init(ProcessorManager processorManager) {
         this.processorManager = processorManager;
-    }
-
-    @Override
-    public boolean match(CompilationUnit componentCompilationUnit, ClassOrInterfaceDeclaration componentClassDeclaration) {
-        return componentClassDeclaration.getMethods().stream()
-                .anyMatch(methodDeclaration -> methodDeclaration.isAnnotationPresent(Async.class));
     }
 
     @Override

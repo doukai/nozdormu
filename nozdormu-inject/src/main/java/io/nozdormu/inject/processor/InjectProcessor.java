@@ -14,17 +14,19 @@ import com.github.javaparser.ast.stmt.ReturnStmt;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import com.github.javaparser.ast.type.Type;
 import com.github.javaparser.ast.type.UnknownType;
+import com.github.javaparser.ast.type.VoidType;
 import com.google.auto.service.AutoService;
 import com.google.common.collect.Streams;
 import io.nozdormu.common.ProcessorManager;
 import io.nozdormu.spi.context.*;
 import io.nozdormu.spi.error.InjectionProcessException;
+import io.nozdormu.spi.event.ScopeEventAsyncObserver;
+import io.nozdormu.spi.event.ScopeEventObserver;
 import jakarta.annotation.Generated;
 import jakarta.annotation.Priority;
-import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.enterprise.context.Dependent;
-import jakarta.enterprise.context.RequestScoped;
-import jakarta.enterprise.context.SessionScoped;
+import jakarta.enterprise.context.*;
+import jakarta.enterprise.event.Observes;
+import jakarta.enterprise.event.ObservesAsync;
 import jakarta.enterprise.inject.Instance;
 import jakarta.enterprise.inject.Produces;
 import jakarta.inject.*;
@@ -107,6 +109,7 @@ public class InjectProcessor extends AbstractProcessor {
         }
 
         processorManager.setRoundEnv(roundEnv);
+
         componentProxyProcessors
                 .forEach(componentProxyProcessor -> {
                     logger.info("{} in process", componentProxyProcessor.getClass().getName());
@@ -243,6 +246,184 @@ public class InjectProcessor extends AbstractProcessor {
                             !scopedAnnotationName.equals(TransactionScoped.class.getName());
                 })
                 .forEach(proxyClassDeclaration::addAnnotation);
+
+        List<MethodDeclaration> observesMethods = componentClassDeclaration.getMethods().stream()
+                .filter(methodDeclaration ->
+                        methodDeclaration.getParameters().stream()
+                                .anyMatch(parameter -> parameter.isAnnotationPresent(Observes.class))
+                )
+                .collect(Collectors.toList());
+
+        if (!observesMethods.isEmpty()) {
+            proxyCompilationUnit.addImport(ScopeEventObserver.class);
+
+            observesMethods.forEach(methodDeclaration -> {
+                ClassOrInterfaceDeclaration observerClassDeclaration = new ClassOrInterfaceDeclaration()
+                        .addModifier(Modifier.Keyword.FINAL)
+                        .addImplementedType(ScopeEventObserver.class.getSimpleName())
+                        .setName(componentClassDeclaration.getNameAsString() + "_" + methodDeclaration.getNameAsString() + "_Observer");
+
+                methodDeclaration.getParameters().stream()
+                        .filter(parameter -> parameter.isAnnotationPresent(Observes.class))
+                        .findFirst()
+                        .flatMap(parameter -> parameter.getAnnotationByClass(Initialized.class))
+                        .ifPresent(observerClassDeclaration::addAnnotation);
+
+                methodDeclaration.getParameters().stream()
+                        .filter(parameter -> parameter.isAnnotationPresent(Observes.class))
+                        .findFirst()
+                        .flatMap(parameter -> parameter.getAnnotationByClass(BeforeDestroyed.class))
+                        .ifPresent(observerClassDeclaration::addAnnotation);
+
+                methodDeclaration.getParameters().stream()
+                        .filter(parameter -> parameter.isAnnotationPresent(Observes.class))
+                        .findFirst()
+                        .flatMap(parameter -> parameter.getAnnotationByClass(Destroyed.class))
+                        .ifPresent(observerClassDeclaration::addAnnotation);
+
+                methodDeclaration.getParameters().stream()
+                        .filter(parameter -> parameter.isAnnotationPresent(Observes.class))
+                        .findFirst()
+                        .flatMap(parameter -> parameter.getAnnotationByClass(Priority.class))
+                        .ifPresent(observerClassDeclaration::addAnnotation);
+
+                if (processorManager.getQualifiedName(methodDeclaration.getType()).equals(Mono.class.getName())) {
+                    proxyCompilationUnit.addImport(Void.class);
+
+                    MethodDeclaration onEvent = new MethodDeclaration()
+                            .setName("onEventAsync")
+                            .setModifiers(Modifier.Keyword.PUBLIC)
+                            .addParameter(new Parameter().setName("event").setType(Object.class.getSimpleName()))
+                            .setType(
+                                    new ClassOrInterfaceType()
+                                            .setName(Mono.class.getSimpleName())
+                                            .setTypeArguments(new ClassOrInterfaceType().setName(Void.class.getSimpleName()))
+                            )
+                            .addAnnotation(Override.class);
+
+                    onEvent.setBody(
+                            new BlockStmt()
+                                    .addStatement(
+                                            new ReturnStmt(
+                                                    new MethodCallExpr()
+                                                            .setName(methodDeclaration.getName())
+                                                            .addArgument(methodDeclaration.getParameter(0).getNameAsExpression())
+                                            )
+                                    )
+                    );
+
+                    observerClassDeclaration.addMember(onEvent);
+                } else {
+                    MethodDeclaration onEvent = new MethodDeclaration()
+                            .setName("onEvent")
+                            .setModifiers(Modifier.Keyword.PUBLIC)
+                            .addParameter(new Parameter().setName("event").setType(Object.class.getSimpleName()))
+                            .setType(new VoidType())
+                            .addAnnotation(Override.class);
+
+                    onEvent.setBody(
+                            new BlockStmt()
+                                    .addStatement(
+                                            new MethodCallExpr()
+                                                    .setName(methodDeclaration.getName())
+                                                    .addArgument(methodDeclaration.getParameter(0).getNameAsExpression())
+                                    )
+                    );
+
+                    observerClassDeclaration.addMember(onEvent);
+                }
+                proxyClassDeclaration.addMember(observerClassDeclaration);
+            });
+        }
+
+        List<MethodDeclaration> observesAsyncMethods = componentClassDeclaration.getMethods().stream()
+                .filter(methodDeclaration ->
+                        methodDeclaration.getParameters().stream()
+                                .anyMatch(parameter -> parameter.isAnnotationPresent(ObservesAsync.class))
+                )
+                .collect(Collectors.toList());
+
+        if (!observesAsyncMethods.isEmpty()) {
+            proxyCompilationUnit.addImport(ScopeEventAsyncObserver.class);
+
+            observesAsyncMethods.forEach(methodDeclaration -> {
+                ClassOrInterfaceDeclaration observerClassDeclaration = new ClassOrInterfaceDeclaration()
+                        .addModifier(Modifier.Keyword.FINAL)
+                        .addImplementedType(ScopeEventAsyncObserver.class.getSimpleName())
+                        .setName(componentClassDeclaration.getNameAsString() + "_" + methodDeclaration.getNameAsString() + "_Observer");
+
+                methodDeclaration.getParameters().stream()
+                        .filter(parameter -> parameter.isAnnotationPresent(ObservesAsync.class))
+                        .findFirst()
+                        .flatMap(parameter -> parameter.getAnnotationByClass(Initialized.class))
+                        .ifPresent(observerClassDeclaration::addAnnotation);
+
+                methodDeclaration.getParameters().stream()
+                        .filter(parameter -> parameter.isAnnotationPresent(ObservesAsync.class))
+                        .findFirst()
+                        .flatMap(parameter -> parameter.getAnnotationByClass(BeforeDestroyed.class))
+                        .ifPresent(observerClassDeclaration::addAnnotation);
+
+                methodDeclaration.getParameters().stream()
+                        .filter(parameter -> parameter.isAnnotationPresent(ObservesAsync.class))
+                        .findFirst()
+                        .flatMap(parameter -> parameter.getAnnotationByClass(Destroyed.class))
+                        .ifPresent(observerClassDeclaration::addAnnotation);
+
+                methodDeclaration.getParameters().stream()
+                        .filter(parameter -> parameter.isAnnotationPresent(ObservesAsync.class))
+                        .findFirst()
+                        .flatMap(parameter -> parameter.getAnnotationByClass(Priority.class))
+                        .ifPresent(observerClassDeclaration::addAnnotation);
+
+                if (processorManager.getQualifiedName(methodDeclaration.getType()).equals(Mono.class.getName())) {
+                    proxyCompilationUnit.addImport(Void.class);
+
+                    MethodDeclaration onEvent = new MethodDeclaration()
+                            .setName("onEventAsync")
+                            .setModifiers(Modifier.Keyword.PUBLIC)
+                            .addParameter(new Parameter().setName("event").setType(Object.class.getSimpleName()))
+                            .setType(
+                                    new ClassOrInterfaceType()
+                                            .setName(Mono.class.getSimpleName())
+                                            .setTypeArguments(new ClassOrInterfaceType().setName(Void.class.getSimpleName()))
+                            )
+                            .addAnnotation(Override.class);
+
+                    onEvent.setBody(
+                            new BlockStmt()
+                                    .addStatement(
+                                            new ReturnStmt(
+                                                    new MethodCallExpr()
+                                                            .setName(methodDeclaration.getName())
+                                                            .addArgument(methodDeclaration.getParameter(0).getNameAsExpression())
+                                            )
+                                    )
+                    );
+
+                    observerClassDeclaration.addMember(onEvent);
+                } else {
+                    MethodDeclaration onEvent = new MethodDeclaration()
+                            .setName("onEvent")
+                            .setModifiers(Modifier.Keyword.PUBLIC)
+                            .addParameter(new Parameter().setName("event").setType(Object.class.getSimpleName()))
+                            .setType(new VoidType())
+                            .addAnnotation(Override.class);
+
+                    onEvent.setBody(
+                            new BlockStmt()
+                                    .addStatement(
+                                            new MethodCallExpr()
+                                                    .setName(methodDeclaration.getName())
+                                                    .addArgument(methodDeclaration.getParameter(0).getNameAsExpression())
+                                    )
+                    );
+
+                    observerClassDeclaration.addMember(onEvent);
+                }
+                proxyClassDeclaration.addMember(observerClassDeclaration);
+            });
+        }
 
         componentProxyProcessors
                 .forEach(componentProxyProcessor -> {
@@ -728,6 +909,7 @@ public class InjectProcessor extends AbstractProcessor {
                                     );
                                 }
                             });
+
                     staticInitializer.addStatement(
                             new MethodCallExpr().setName("put")
                                     .addArgument(new StringLiteralExpr(methodTypeQualifiedName))
@@ -787,6 +969,258 @@ public class InjectProcessor extends AbstractProcessor {
                 });
 
         suppliersClassDeclaration.addMember(new InitializerDeclaration(true, staticInitializer));
+
+        List<MethodDeclaration> observesMethods = componentClassDeclaration.getMethods().stream()
+                .filter(methodDeclaration ->
+                        methodDeclaration.getParameters().stream()
+                                .anyMatch(parameter -> parameter.isAnnotationPresent(Observes.class))
+                )
+                .collect(Collectors.toList());
+
+        if (!observesMethods.isEmpty()) {
+            observesMethods.forEach(methodDeclaration -> {
+                String prefix = componentClassDeclaration.getNameAsString() + "_" + methodDeclaration.getNameAsString() + "_Observer";
+                suppliersCompilationUnit.addImport(ScopeEventObserver.class);
+                ClassOrInterfaceDeclaration holderClassOrInterfaceDeclaration = new ClassOrInterfaceDeclaration();
+
+                holderClassOrInterfaceDeclaration
+                        .setName(prefix + "Holder")
+                        .setModifiers(Modifier.Keyword.PRIVATE, Modifier.Keyword.STATIC)
+                        .addFieldWithInitializer(
+                                ScopeEventObserver.class.getSimpleName(),
+                                "INSTANCE",
+                                new ObjectCreationExpr()
+                                        .setType(
+                                                new ClassOrInterfaceType()
+                                                        .setName(prefix)
+                                        )
+                                        .setScope(
+                                                new MethodCallExpr()
+                                                        .setName("get")
+                                                        .addArgument(new ClassExpr().setType(qualifiedName + "_Proxy"))
+                                                        .setScope(new NameExpr().setName("BeanContext"))
+                                        )
+                        )
+                        .setModifiers(Modifier.Keyword.PRIVATE, Modifier.Keyword.STATIC, Modifier.Keyword.FINAL);
+
+                suppliersClassDeclaration.addMember(holderClassOrInterfaceDeclaration);
+
+                MethodCallExpr mapOfProduces = new MethodCallExpr()
+                        .setName("of")
+                        .setScope(new NameExpr("Map"));
+
+                methodDeclaration.getParameters().stream()
+                        .filter(parameter -> parameter.isAnnotationPresent(Observes.class))
+                        .flatMap(parameter -> parameter.getAnnotations().stream())
+                        .forEach(annotationExpr ->
+                                processorManager.getCompilationUnit(annotationExpr)
+                                        .flatMap(compilationUnit -> processorManager.getPublicAnnotationDeclaration(compilationUnit))
+                                        .ifPresent(annotationDeclaration -> {
+                                            if (annotationDeclaration.getAnnotations().stream()
+                                                    .anyMatch(subAnnotationExpr -> processorManager.getQualifiedName(subAnnotationExpr).equals(Qualifier.class.getName()))) {
+                                                mapOfProduces.addArgument(new StringLiteralExpr(annotationDeclaration.getFullyQualifiedName().orElseGet(annotationDeclaration::getNameAsString)));
+                                                mapOfProduces.addArgument(qualifierToExpression(annotationExpr));
+                                            }
+                                        })
+                        );
+
+                staticInitializer.addStatement(
+                        new VariableDeclarationExpr()
+                                .addVariable(
+                                        new VariableDeclarator().setName(prefix + "_beanSupplier")
+                                                .setType(BeanSupplier.class)
+                                                .setInitializer(
+                                                        new ObjectCreationExpr()
+                                                                .setType(BeanSupplier.class)
+                                                )
+                                )
+                );
+
+                staticInitializer.addStatement(
+                        new MethodCallExpr().setName("setQualifiers")
+                                .addArgument(mapOfProduces)
+                                .setScope(new NameExpr(prefix + "_beanSupplier"))
+                );
+
+                staticInitializer.addStatement(
+                        new MethodCallExpr().setName("setSupplier")
+                                .addArgument(
+                                        new LambdaExpr()
+                                                .setEnclosingParameters(true)
+                                                .setBody(
+                                                        new ExpressionStmt(
+                                                                new FieldAccessExpr()
+                                                                        .setName("INSTANCE")
+                                                                        .setScope(new NameExpr(prefix + "Holder"))
+                                                        )
+                                                )
+                                )
+                                .setScope(new NameExpr(prefix + "_beanSupplier"))
+                );
+
+                methodDeclaration.getParameters().stream()
+                        .filter(parameter -> parameter.isAnnotationPresent(Observes.class))
+                        .findFirst()
+                        .flatMap(parameter -> parameter.getAnnotationByClass(Priority.class))
+                        .ifPresent(annotation -> {
+                            if (annotation.isNormalAnnotationExpr()) {
+                                staticInitializer.addStatement(
+                                        new MethodCallExpr().setName("setPriority")
+                                                .addArgument(annotation.asNormalAnnotationExpr().getPairs().get(0).getValue())
+                                                .setScope(new NameExpr(prefix + "_beanSupplier"))
+                                );
+                            } else if (annotation.isSingleMemberAnnotationExpr()) {
+                                staticInitializer.addStatement(
+                                        new MethodCallExpr().setName("setPriority")
+                                                .addArgument(annotation.asSingleMemberAnnotationExpr().getMemberValue())
+                                                .setScope(new NameExpr(prefix + "_beanSupplier"))
+                                );
+                            }
+                        });
+
+                staticInitializer.addStatement(
+                        new MethodCallExpr().setName("put")
+                                .addArgument(new StringLiteralExpr(ScopeEventObserver.class.getName()))
+                                .addArgument(new NameExpr(prefix + "_beanSupplier"))
+                                .setScope(
+                                        new MethodCallExpr().setName("computeIfAbsent")
+                                                .addArgument(new StringLiteralExpr(prefix))
+                                                .addArgument(
+                                                        new LambdaExpr()
+                                                                .addParameter(new Parameter().setName("k").setType(new UnknownType()))
+                                                                .setBody(new ExpressionStmt(new ObjectCreationExpr().setType(HashMap.class).setTypeArguments()))
+                                                )
+                                                .setScope(new NameExpr("beanSuppliers"))
+                                )
+                );
+            });
+        }
+
+        List<MethodDeclaration> observesAsyncMethods = componentClassDeclaration.getMethods().stream()
+                .filter(methodDeclaration ->
+                        methodDeclaration.getParameters().stream()
+                                .anyMatch(parameter -> parameter.isAnnotationPresent(ObservesAsync.class))
+                )
+                .collect(Collectors.toList());
+
+        if (!observesAsyncMethods.isEmpty()) {
+            observesAsyncMethods.forEach(methodDeclaration -> {
+                String prefix = componentClassDeclaration.getNameAsString() + "_" + methodDeclaration.getNameAsString() + "_Observer";
+                suppliersCompilationUnit.addImport(ScopeEventAsyncObserver.class);
+                ClassOrInterfaceDeclaration holderClassOrInterfaceDeclaration = new ClassOrInterfaceDeclaration();
+
+                holderClassOrInterfaceDeclaration
+                        .setName(prefix + "Holder")
+                        .setModifiers(Modifier.Keyword.PRIVATE, Modifier.Keyword.STATIC)
+                        .addFieldWithInitializer(
+                                ScopeEventAsyncObserver.class.getSimpleName(),
+                                "INSTANCE",
+                                new ObjectCreationExpr()
+                                        .setType(
+                                                new ClassOrInterfaceType()
+                                                        .setName(prefix)
+                                        )
+                                        .setScope(
+                                                new MethodCallExpr()
+                                                        .setName("get")
+                                                        .addArgument(new ClassExpr().setType(qualifiedName + "_Proxy"))
+                                                        .setScope(new NameExpr().setName("BeanContext"))
+                                        )
+                        )
+                        .setModifiers(Modifier.Keyword.PRIVATE, Modifier.Keyword.STATIC, Modifier.Keyword.FINAL);
+
+                suppliersClassDeclaration.addMember(holderClassOrInterfaceDeclaration);
+
+                MethodCallExpr mapOfProduces = new MethodCallExpr()
+                        .setName("of")
+                        .setScope(new NameExpr("Map"));
+
+                methodDeclaration.getParameters().stream()
+                        .filter(parameter -> parameter.isAnnotationPresent(ObservesAsync.class))
+                        .flatMap(parameter -> parameter.getAnnotations().stream())
+                        .forEach(annotationExpr ->
+                                processorManager.getCompilationUnit(annotationExpr)
+                                        .flatMap(compilationUnit -> processorManager.getPublicAnnotationDeclaration(compilationUnit))
+                                        .ifPresent(annotationDeclaration -> {
+                                            if (annotationDeclaration.getAnnotations().stream()
+                                                    .anyMatch(subAnnotationExpr -> processorManager.getQualifiedName(subAnnotationExpr).equals(Qualifier.class.getName()))) {
+                                                mapOfProduces.addArgument(new StringLiteralExpr(annotationDeclaration.getFullyQualifiedName().orElseGet(annotationDeclaration::getNameAsString)));
+                                                mapOfProduces.addArgument(qualifierToExpression(annotationExpr));
+                                            }
+                                        })
+                        );
+
+                staticInitializer.addStatement(
+                        new VariableDeclarationExpr()
+                                .addVariable(
+                                        new VariableDeclarator().setName(prefix + "_beanSupplier")
+                                                .setType(BeanSupplier.class)
+                                                .setInitializer(
+                                                        new ObjectCreationExpr()
+                                                                .setType(BeanSupplier.class)
+                                                )
+                                )
+                );
+
+                staticInitializer.addStatement(
+                        new MethodCallExpr().setName("setQualifiers")
+                                .addArgument(mapOfProduces)
+                                .setScope(new NameExpr(prefix + "_beanSupplier"))
+                );
+
+                staticInitializer.addStatement(
+                        new MethodCallExpr().setName("setSupplier")
+                                .addArgument(
+                                        new LambdaExpr()
+                                                .setEnclosingParameters(true)
+                                                .setBody(
+                                                        new ExpressionStmt(
+                                                                new FieldAccessExpr()
+                                                                        .setName("INSTANCE")
+                                                                        .setScope(new NameExpr(prefix + "Holder"))
+                                                        )
+                                                )
+                                )
+                                .setScope(new NameExpr(prefix + "_beanSupplier"))
+                );
+
+                methodDeclaration.getParameters().stream()
+                        .filter(parameter -> parameter.isAnnotationPresent(ObservesAsync.class))
+                        .findFirst()
+                        .flatMap(parameter -> parameter.getAnnotationByClass(Priority.class))
+                        .ifPresent(annotation -> {
+                            if (annotation.isNormalAnnotationExpr()) {
+                                staticInitializer.addStatement(
+                                        new MethodCallExpr().setName("setPriority")
+                                                .addArgument(annotation.asNormalAnnotationExpr().getPairs().get(0).getValue())
+                                                .setScope(new NameExpr(prefix + "_beanSupplier"))
+                                );
+                            } else if (annotation.isSingleMemberAnnotationExpr()) {
+                                staticInitializer.addStatement(
+                                        new MethodCallExpr().setName("setPriority")
+                                                .addArgument(annotation.asSingleMemberAnnotationExpr().getMemberValue())
+                                                .setScope(new NameExpr(prefix + "_beanSupplier"))
+                                );
+                            }
+                        });
+
+                staticInitializer.addStatement(
+                        new MethodCallExpr().setName("put")
+                                .addArgument(new StringLiteralExpr(ScopeEventAsyncObserver.class.getName()))
+                                .addArgument(new NameExpr(prefix + "_beanSupplier"))
+                                .setScope(
+                                        new MethodCallExpr().setName("computeIfAbsent")
+                                                .addArgument(new StringLiteralExpr(prefix))
+                                                .addArgument(
+                                                        new LambdaExpr()
+                                                                .addParameter(new Parameter().setName("k").setType(new UnknownType()))
+                                                                .setBody(new ExpressionStmt(new ObjectCreationExpr().setType(HashMap.class).setTypeArguments()))
+                                                )
+                                                .setScope(new NameExpr("beanSuppliers"))
+                                )
+                );
+            });
+        }
 
         getBeanSuppliers.createBody()
                 .addStatement(new ReturnStmt().setExpression(new NameExpr("beanSuppliers")));

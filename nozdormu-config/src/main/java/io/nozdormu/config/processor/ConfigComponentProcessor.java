@@ -36,15 +36,6 @@ public class ConfigComponentProcessor implements ComponentProxyProcessor {
     }
 
     @Override
-    public boolean match(CompilationUnit componentCompilationUnit, ClassOrInterfaceDeclaration componentClassDeclaration) {
-        return componentClassDeclaration.getMethods().stream()
-                .anyMatch(methodDeclaration ->
-                        methodDeclaration.isAnnotationPresent(ConfigProperty.class) ||
-                                isConfigPropertyFieldSetter(methodDeclaration)
-                );
-    }
-
-    @Override
     public void processComponentProxy(CompilationUnit componentCompilationUnit, ClassOrInterfaceDeclaration componentClassDeclaration, CompilationUnit componentProxyCompilationUnit, ClassOrInterfaceDeclaration componentProxyClassDeclaration) {
         logger.info("{} config component build start", componentClassDeclaration.getFullyQualifiedName().orElseGet(componentClassDeclaration::getNameAsString));
         List<MethodDeclaration> methodDeclarationList = componentClassDeclaration.getMethods().stream()
