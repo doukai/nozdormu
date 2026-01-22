@@ -23,7 +23,6 @@ dependencies {
     testAnnotationProcessor project(':nozdormu-inject')
     testAnnotationProcessor project(':nozdormu-config')
     testAnnotationProcessor 'com.google.auto.service:auto-service'
-    testAnnotationProcessor 'com.typesafe:config'
 }
 
 test {

@@ -9,12 +9,20 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 public class BeanContext {
 
     private static final Map<String, Map<String, BeanSupplier>> BEAN_IMPL_SUPPLIER_MAP = new ConcurrentHashMap<>();
 
+    private static ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
+
     private BeanContext() {
+    }
+
+    public static void setClassLoader(ClassLoader classLoader) {
+        contextClassLoader = classLoader;
+        Thread.currentThread().setContextClassLoader(classLoader);
     }
 
     public static <T> T get(Class<T> beanClass) {
@@ -43,8 +51,8 @@ public class BeanContext {
 
     public static <T> Provider<T> getProvider(Class<T> beanClass, Map<String, Map<String, Object>> qualifiers) {
         return getSupplierOptional(beanClass, qualifiers)
-                .map(Supplier::get)
-                ::get;
+                .map(supplier -> (Provider<T>) supplier::get)
+                .orElse(null);
     }
 
     public static <T> Provider<Mono<T>> getMonoProvider(Class<T> beanClass) {
@@ -53,8 +61,8 @@ public class BeanContext {
 
     public static <T> Provider<Mono<T>> getMonoProvider(Class<T> beanClass, Map<String, Map<String, Object>> qualifiers) {
         return getMonoSupplierOptional(beanClass, qualifiers)
-                .map(Supplier::get)
-                ::get;
+                .map(supplier -> (Provider<Mono<T>>) supplier::get)
+                .orElse(null);
     }
 
     public static <T> Instance<T> getInstance(Class<T> beanClass) {
@@ -121,9 +129,9 @@ public class BeanContext {
                         BEAN_IMPL_SUPPLIER_MAP.computeIfAbsent(
                                 beanClass.getName(),
                                 k ->
-                                        ServiceLoader.load(BeanSuppliers.class, Thread.currentThread().getContextClassLoader()).stream()
-                                                .filter(provider -> provider.get().getBeanSuppliers().containsKey(beanClass.getName()))
-                                                .flatMap(provider -> provider.get().getBeanSuppliers().get(beanClass.getName()).entrySet().stream())
+                                        StreamSupport.stream(ServiceLoader.load(BeanSuppliers.class, contextClassLoader).spliterator(), false)
+                                                .filter(provider -> provider.getBeanSuppliers().containsKey(beanClass.getName()))
+                                                .flatMap(provider -> provider.getBeanSuppliers().get(beanClass.getName()).entrySet().stream())
                                                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (x, y) -> y))
                         )
                 )
@@ -206,7 +214,7 @@ public class BeanContext {
                         BEAN_IMPL_SUPPLIER_MAP.computeIfAbsent(
                                 beanClass.getName(),
                                 k ->
-                                        ServiceLoader.load(BeanSuppliers.class, Thread.currentThread().getContextClassLoader()).stream()
+                                        ServiceLoader.load(BeanSuppliers.class, contextClassLoader).stream()
                                                 .filter(provider -> provider.get().getBeanSuppliers().containsKey(beanClass.getName()))
                                                 .flatMap(provider -> provider.get().getBeanSuppliers().get(beanClass.getName()).entrySet().stream())
                                                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (x, y) -> y))
@@ -228,7 +236,7 @@ public class BeanContext {
     }
 
     public static Map<String, BeanSupplier> getImplSupplierMap(Map<String, Map<String, Object>> qualifiers) {
-        return ServiceLoader.load(BeanSuppliers.class, Thread.currentThread().getContextClassLoader()).stream()
+        return ServiceLoader.load(BeanSuppliers.class, contextClassLoader).stream()
                 .flatMap(provider -> provider.get().getBeanSuppliers().values().stream())
                 .flatMap(entry -> entry.entrySet().stream())
                 .filter(entry ->

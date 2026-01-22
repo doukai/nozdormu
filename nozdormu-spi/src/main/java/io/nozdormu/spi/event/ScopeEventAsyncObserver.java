@@ -4,10 +4,10 @@ import reactor.core.publisher.Mono;
 
 public interface ScopeEventAsyncObserver {
 
-    default void onEvent(Object context) {
+    default void onEvent(Object event) {
     }
 
-    default Mono<Void> onEventAsync(Object context) {
-        return Mono.fromRunnable(() -> onEvent(context));
+    default Mono<Void> onEventAsync(Object event) {
+        return Mono.fromRunnable(() -> onEvent(event));
     }
 }

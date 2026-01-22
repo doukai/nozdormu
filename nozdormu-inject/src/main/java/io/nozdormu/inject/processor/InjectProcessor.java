@@ -293,7 +293,7 @@ public class InjectProcessor extends AbstractProcessor {
                     MethodDeclaration onEvent = new MethodDeclaration()
                             .setName("onEventAsync")
                             .setModifiers(Modifier.Keyword.PUBLIC)
-                            .addParameter(new Parameter().setName("event").setType(Object.class.getSimpleName()))
+                            .addParameter(new Parameter().setName(methodDeclaration.getParameter(0).getName()).setType(Object.class.getSimpleName()))
                             .setType(
                                     new ClassOrInterfaceType()
                                             .setName(Mono.class.getSimpleName())
@@ -317,7 +317,7 @@ public class InjectProcessor extends AbstractProcessor {
                     MethodDeclaration onEvent = new MethodDeclaration()
                             .setName("onEvent")
                             .setModifiers(Modifier.Keyword.PUBLIC)
-                            .addParameter(new Parameter().setName("event").setType(Object.class.getSimpleName()))
+                            .addParameter(new Parameter().setName(methodDeclaration.getParameter(0).getName()).setType(Object.class.getSimpleName()))
                             .setType(new VoidType())
                             .addAnnotation(Override.class);
 
@@ -382,7 +382,7 @@ public class InjectProcessor extends AbstractProcessor {
                     MethodDeclaration onEvent = new MethodDeclaration()
                             .setName("onEventAsync")
                             .setModifiers(Modifier.Keyword.PUBLIC)
-                            .addParameter(new Parameter().setName("event").setType(Object.class.getSimpleName()))
+                            .addParameter(new Parameter().setName(methodDeclaration.getParameter(0).getName()).setType(Object.class.getSimpleName()))
                             .setType(
                                     new ClassOrInterfaceType()
                                             .setName(Mono.class.getSimpleName())
@@ -406,7 +406,7 @@ public class InjectProcessor extends AbstractProcessor {
                     MethodDeclaration onEvent = new MethodDeclaration()
                             .setName("onEvent")
                             .setModifiers(Modifier.Keyword.PUBLIC)
-                            .addParameter(new Parameter().setName("event").setType(Object.class.getSimpleName()))
+                            .addParameter(new Parameter().setName(methodDeclaration.getParameter(0).getName()).setType(Object.class.getSimpleName()))
                             .setType(new VoidType())
                             .addAnnotation(Override.class);
 
@@ -716,11 +716,27 @@ public class InjectProcessor extends AbstractProcessor {
 
         staticInitializer.addStatement(
                 new MethodCallExpr().setName("put")
-                        .addArgument(new StringLiteralExpr(qualifiedName))
+                        .addArgument(new StringLiteralExpr(qualifiedName + "_Proxy"))
                         .addArgument(new NameExpr("beanSupplier"))
                         .setScope(
                                 new MethodCallExpr().setName("computeIfAbsent")
                                         .addArgument(new StringLiteralExpr(qualifiedName))
+                                        .addArgument(
+                                                new LambdaExpr()
+                                                        .addParameter(new Parameter().setName("k").setType(new UnknownType()))
+                                                        .setBody(new ExpressionStmt(new ObjectCreationExpr().setType(HashMap.class).setTypeArguments()))
+                                        )
+                                        .setScope(new NameExpr("beanSuppliers"))
+                        )
+        );
+
+        staticInitializer.addStatement(
+                new MethodCallExpr().setName("put")
+                        .addArgument(new StringLiteralExpr(qualifiedName + "_Proxy"))
+                        .addArgument(new NameExpr("beanSupplier"))
+                        .setScope(
+                                new MethodCallExpr().setName("computeIfAbsent")
+                                        .addArgument(new StringLiteralExpr(qualifiedName + "_Proxy"))
                                         .addArgument(
                                                 new LambdaExpr()
                                                         .addParameter(new Parameter().setName("k").setType(new UnknownType()))
@@ -805,7 +821,7 @@ public class InjectProcessor extends AbstractProcessor {
                                 .addImport(Mono.class);
 
                         producesCreateExpression = new MethodCallExpr()
-                                .setName("get")
+                                .setName(processorManager.getQualifiedName(producesMethodDeclaration.getType()).equals(Mono.class.getName()) ? "getMono" : "get")
                                 .addArgument(new ClassExpr().setType(methodTypeQualifiedName))
                                 .addArgument(
                                         new LambdaExpr()
@@ -1080,11 +1096,11 @@ public class InjectProcessor extends AbstractProcessor {
 
                 staticInitializer.addStatement(
                         new MethodCallExpr().setName("put")
-                                .addArgument(new StringLiteralExpr(ScopeEventObserver.class.getName()))
+                                .addArgument(new StringLiteralExpr(qualifiedName + "_Proxy." + componentClassDeclaration.getNameAsString() + "_" + methodDeclaration.getNameAsString() + "_Observer"))
                                 .addArgument(new NameExpr(prefix + "_beanSupplier"))
                                 .setScope(
                                         new MethodCallExpr().setName("computeIfAbsent")
-                                                .addArgument(new StringLiteralExpr(prefix))
+                                                .addArgument(new StringLiteralExpr(ScopeEventObserver.class.getName()))
                                                 .addArgument(
                                                         new LambdaExpr()
                                                                 .addParameter(new Parameter().setName("k").setType(new UnknownType()))
@@ -1206,11 +1222,11 @@ public class InjectProcessor extends AbstractProcessor {
 
                 staticInitializer.addStatement(
                         new MethodCallExpr().setName("put")
-                                .addArgument(new StringLiteralExpr(ScopeEventAsyncObserver.class.getName()))
+                                .addArgument(new StringLiteralExpr(qualifiedName + "_Proxy." + componentClassDeclaration.getNameAsString() + "_" + methodDeclaration.getNameAsString() + "_Observer"))
                                 .addArgument(new NameExpr(prefix + "_beanSupplier"))
                                 .setScope(
                                         new MethodCallExpr().setName("computeIfAbsent")
-                                                .addArgument(new StringLiteralExpr(prefix))
+                                                .addArgument(new StringLiteralExpr(ScopeEventAsyncObserver.class.getName()))
                                                 .addArgument(
                                                         new LambdaExpr()
                                                                 .addParameter(new Parameter().setName("k").setType(new UnknownType()))

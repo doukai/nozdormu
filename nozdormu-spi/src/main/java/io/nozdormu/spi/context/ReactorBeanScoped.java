@@ -2,30 +2,21 @@ package io.nozdormu.spi.context;
 
 import reactor.core.publisher.Mono;
 
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 
-public abstract class ReactorBeanScoped {
+public interface ReactorBeanScoped {
 
-    private final Map<String, Map<String, Object>> beanContext = new ConcurrentHashMap<>();
+    Mono<String> getScopedKey();
 
-    protected abstract Mono<String> getScopedKey();
+    <T, R extends T> Mono<T> get(Class<T> beanClass, Supplier<R> supplier);
 
-    @SuppressWarnings("unchecked")
-    public <T> Mono<T> get(Class<T> beanClass, Supplier<T> supplier) {
-        return getScopedKey()
-                .mapNotNull(key -> {
-                    if (key == null) {
-                        return null;
-                    }
-                    Map<String, Object> scopedMap = beanContext.computeIfAbsent(key, k -> new ConcurrentHashMap<>());
-                    return (T) scopedMap.computeIfAbsent(beanClass.getName(), k -> supplier.get());
-                });
-    }
+    <T, R extends T> Mono<T> getMono(Class<T> beanClass, Supplier<Mono<R>> supplier);
 
-    public Mono<Boolean> remove() {
-        return getScopedKey()
-                .map(key -> beanContext.remove(key) != null);
-    }
+    <T, R extends T> Mono<Boolean> put(Class<T> beanClass, R bean);
+
+    <T, R extends T> boolean put(String key, Class<T> beanClass, R bean);
+
+    Mono<Boolean> destroy();
+
+    boolean destroy(String key);
 }

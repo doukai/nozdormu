@@ -9,7 +9,7 @@ import reactor.util.context.Context;
 
 import java.util.UUID;
 
-import static io.nozdormu.inject.test.context.RequestScopeInstanceFactory.REQUEST_ID;
+import static io.nozdormu.inject.test.context.RequestBeanScoped.REQUEST_ID;
 import static org.junit.jupiter.api.Assertions.*;
 
 public class InjectTest {
