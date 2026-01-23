@@ -26,10 +26,7 @@ import javax.annotation.processing.*;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.TypeElement;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 import static io.nozdormu.spi.error.InjectionProcessErrorType.CANNOT_GET_COMPILATION_UNIT;
@@ -73,28 +70,24 @@ public class ConfigProcessor extends AbstractProcessor {
         }
 
         processorManager.setRoundEnv(roundEnv);
-        List<CompilationUnit> componentCompilationUnits = typeElements.stream()
-                .map(this::buildConfigSuppliers)
-                .collect(Collectors.toList());
-
-        componentCompilationUnits.forEach(compilationUnit -> processorManager.writeToFiler(compilationUnit));
+        typeElements.forEach(typeElement -> {
+            CompilationUnit suppliersCompilationUnit = buildConfigSuppliers(typeElement);
+            processorManager.writeToFiler(suppliersCompilationUnit);
+        });
         return false;
     }
 
     private CompilationUnit buildConfigSuppliers(TypeElement typeElement) {
         return processorManager.getCompilationUnit(typeElement)
-                .map(this::buildConfigSuppliers)
+                .map(compilationUnit -> buildConfigSuppliers(
+                        typeElement,
+                        compilationUnit,
+                        processorManager.getPublicClassOrInterfaceDeclarationOrError(compilationUnit)
+                ))
                 .orElseThrow(() -> new InjectionProcessException(CANNOT_GET_COMPILATION_UNIT.bind(typeElement.getQualifiedName().toString())));
     }
 
-    private CompilationUnit buildConfigSuppliers(CompilationUnit componentCompilationUnit) {
-        return buildConfigSuppliers(
-                componentCompilationUnit,
-                processorManager.getPublicClassOrInterfaceDeclarationOrError(componentCompilationUnit)
-        );
-    }
-
-    private CompilationUnit buildConfigSuppliers(CompilationUnit configCompilationUnit, ClassOrInterfaceDeclaration configClassDeclaration) {
+    private CompilationUnit buildConfigSuppliers(TypeElement typeElement, CompilationUnit configCompilationUnit, ClassOrInterfaceDeclaration configClassDeclaration) {
         String qualifiedName = processorManager.getQualifiedName(configClassDeclaration);
 
         logger.info("{} suppliers class build start", qualifiedName);
@@ -122,13 +115,12 @@ public class ConfigProcessor extends AbstractProcessor {
 
         processorManager.importAllClassOrInterfaceType(suppliersClassDeclaration, configClassDeclaration);
 
-        StringLiteralExpr propertyName = configClassDeclaration.getAnnotationByClass(ConfigProperties.class)
-                .flatMap(annotationExpr ->
-                        annotationExpr.asNormalAnnotationExpr().getPairs().stream()
-                                .filter(memberValuePair -> memberValuePair.getNameAsString().equals("prefix"))
-                                .findFirst()
-                                .map(memberValuePair -> memberValuePair.getValue().asStringLiteralExpr())
+        StringLiteralExpr propertyName = processorManager.getExplicitAnnotationValueAsString(
+                        typeElement,
+                        ConfigProperties.class.getName(),
+                        "prefix"
                 )
+                .map(StringLiteralExpr::new)
                 .orElseThrow(() -> new InjectionProcessException(CONFIG_PROPERTIES_PREFIX_NOT_EXIST.bind(qualifiedName)));
 
         ClassOrInterfaceDeclaration holderClassOrInterfaceDeclaration = new ClassOrInterfaceDeclaration()

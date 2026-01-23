@@ -116,15 +116,13 @@ public class InjectProcessor extends AbstractProcessor {
                     componentProxyProcessor.inProcess();
                 });
 
-        List<CompilationUnit> componentCompilationUnits = typeElements.stream()
-                .flatMap(typeElement -> {
-                    CompilationUnit proxyCompilationUnit = buildComponentProxy(typeElement);
-                    CompilationUnit suppliersCompilationUnit = buildComponentSuppliers(typeElement, processorManager.getPublicClassOrInterfaceDeclarationOrError(proxyCompilationUnit));
-                    return Stream.of(proxyCompilationUnit, suppliersCompilationUnit);
-                })
-                .collect(Collectors.toList());
+        typeElements.forEach(typeElement -> {
+            CompilationUnit proxyCompilationUnit = buildComponentProxy(typeElement);
+            CompilationUnit suppliersCompilationUnit = buildComponentSuppliers(typeElement, processorManager.getPublicClassOrInterfaceDeclarationOrError(proxyCompilationUnit));
 
-        componentCompilationUnits.forEach(compilationUnit -> processorManager.writeToFiler(compilationUnit));
+            processorManager.writeToFiler(proxyCompilationUnit);
+            processorManager.writeToFiler(suppliersCompilationUnit);
+        });
 
         return false;
     }
@@ -669,17 +667,12 @@ public class InjectProcessor extends AbstractProcessor {
                 .setScope(new NameExpr("Map"));
 
         componentClassDeclaration.getAnnotations()
-                .forEach(annotationExpr ->
-                        processorManager.getCompilationUnit(annotationExpr)
-                                .flatMap(compilationUnit -> processorManager.getPublicAnnotationDeclaration(compilationUnit))
-                                .ifPresent(annotationDeclaration -> {
-                                    if (annotationDeclaration.getAnnotations().stream()
-                                            .anyMatch(subAnnotationExpr -> processorManager.getQualifiedName(subAnnotationExpr).equals(Qualifier.class.getName()))) {
-                                        mapOf.addArgument(new StringLiteralExpr(annotationDeclaration.getFullyQualifiedName().orElseGet(annotationDeclaration::getNameAsString)));
-                                        mapOf.addArgument(qualifierToExpression(annotationExpr));
-                                    }
-                                })
-                );
+                .forEach(annotationExpr -> {
+                    if (processorManager.hasMetaAnnotation(annotationExpr, Qualifier.class.getName())) {
+                        mapOf.addArgument(new StringLiteralExpr(processorManager.getQualifiedName(annotationExpr)));
+                        mapOf.addArgument(qualifierToExpression(annotationExpr));
+                    }
+                });
 
         staticInitializer.addStatement(
                 new MethodCallExpr().setName("setQualifiers")
@@ -796,17 +789,12 @@ public class InjectProcessor extends AbstractProcessor {
                             .setScope(new NameExpr("Map"));
 
                     producesMethodDeclaration.getAnnotations()
-                            .forEach(annotationExpr ->
-                                    processorManager.getCompilationUnit(annotationExpr)
-                                            .flatMap(compilationUnit -> processorManager.getPublicAnnotationDeclaration(compilationUnit))
-                                            .ifPresent(annotationDeclaration -> {
-                                                if (annotationDeclaration.getAnnotations().stream()
-                                                        .anyMatch(subAnnotationExpr -> processorManager.getQualifiedName(subAnnotationExpr).equals(Qualifier.class.getName()))) {
-                                                    mapOfProduces.addArgument(new StringLiteralExpr(annotationDeclaration.getFullyQualifiedName().orElseGet(annotationDeclaration::getNameAsString)));
-                                                    mapOfProduces.addArgument(qualifierToExpression(annotationExpr));
-                                                }
-                                            })
-                            );
+                            .forEach(annotationExpr -> {
+                                if (processorManager.hasMetaAnnotation(annotationExpr, Qualifier.class.getName())) {
+                                    mapOfProduces.addArgument(new StringLiteralExpr(processorManager.getQualifiedName(annotationExpr)));
+                                    mapOfProduces.addArgument(qualifierToExpression(annotationExpr));
+                                }
+                            });
 
                     Expression producesCreateExpression;
                     if (producesMethodDeclaration.isAnnotationPresent(Singleton.class) || producesMethodDeclaration.isAnnotationPresent(ApplicationScoped.class)) {
@@ -1028,17 +1016,12 @@ public class InjectProcessor extends AbstractProcessor {
                 methodDeclaration.getParameters().stream()
                         .filter(parameter -> parameter.isAnnotationPresent(Observes.class))
                         .flatMap(parameter -> parameter.getAnnotations().stream())
-                        .forEach(annotationExpr ->
-                                processorManager.getCompilationUnit(annotationExpr)
-                                        .flatMap(compilationUnit -> processorManager.getPublicAnnotationDeclaration(compilationUnit))
-                                        .ifPresent(annotationDeclaration -> {
-                                            if (annotationDeclaration.getAnnotations().stream()
-                                                    .anyMatch(subAnnotationExpr -> processorManager.getQualifiedName(subAnnotationExpr).equals(Qualifier.class.getName()))) {
-                                                mapOfProduces.addArgument(new StringLiteralExpr(annotationDeclaration.getFullyQualifiedName().orElseGet(annotationDeclaration::getNameAsString)));
-                                                mapOfProduces.addArgument(qualifierToExpression(annotationExpr));
-                                            }
-                                        })
-                        );
+                        .forEach(annotationExpr -> {
+                            if (processorManager.hasMetaAnnotation(annotationExpr, Qualifier.class.getName())) {
+                                mapOfProduces.addArgument(new StringLiteralExpr(processorManager.getQualifiedName(annotationExpr)));
+                                mapOfProduces.addArgument(qualifierToExpression(annotationExpr));
+                            }
+                        });
 
                 staticInitializer.addStatement(
                         new VariableDeclarationExpr()
@@ -1154,17 +1137,12 @@ public class InjectProcessor extends AbstractProcessor {
                 methodDeclaration.getParameters().stream()
                         .filter(parameter -> parameter.isAnnotationPresent(ObservesAsync.class))
                         .flatMap(parameter -> parameter.getAnnotations().stream())
-                        .forEach(annotationExpr ->
-                                processorManager.getCompilationUnit(annotationExpr)
-                                        .flatMap(compilationUnit -> processorManager.getPublicAnnotationDeclaration(compilationUnit))
-                                        .ifPresent(annotationDeclaration -> {
-                                            if (annotationDeclaration.getAnnotations().stream()
-                                                    .anyMatch(subAnnotationExpr -> processorManager.getQualifiedName(subAnnotationExpr).equals(Qualifier.class.getName()))) {
-                                                mapOfProduces.addArgument(new StringLiteralExpr(annotationDeclaration.getFullyQualifiedName().orElseGet(annotationDeclaration::getNameAsString)));
-                                                mapOfProduces.addArgument(qualifierToExpression(annotationExpr));
-                                            }
-                                        })
-                        );
+                        .forEach(annotationExpr -> {
+                            if (processorManager.hasMetaAnnotation(annotationExpr, Qualifier.class.getName())) {
+                                mapOfProduces.addArgument(new StringLiteralExpr(processorManager.getQualifiedName(annotationExpr)));
+                                mapOfProduces.addArgument(qualifierToExpression(annotationExpr));
+                            }
+                        });
 
                 staticInitializer.addStatement(
                         new VariableDeclarationExpr()
@@ -1270,17 +1248,12 @@ public class InjectProcessor extends AbstractProcessor {
                 .setScope(new NameExpr("Map"));
 
         annotations.getAnnotations()
-                .forEach(annotationExpr ->
-                        processorManager.getCompilationUnit(annotationExpr)
-                                .flatMap(compilationUnit -> processorManager.getPublicAnnotationDeclaration(compilationUnit))
-                                .ifPresent(annotationDeclaration -> {
-                                    if (annotationDeclaration.getAnnotations().stream()
-                                            .anyMatch(subAnnotationExpr -> processorManager.getQualifiedName(subAnnotationExpr).equals(Qualifier.class.getName()))) {
-                                        mapOf.addArgument(new StringLiteralExpr(annotationDeclaration.getFullyQualifiedName().orElseGet(annotationDeclaration::getNameAsString)));
-                                        mapOf.addArgument(qualifierToExpression(annotationExpr));
-                                    }
-                                })
-                );
+                .forEach(annotationExpr -> {
+                    if (processorManager.hasMetaAnnotation(annotationExpr, Qualifier.class.getName())) {
+                        mapOf.addArgument(new StringLiteralExpr(processorManager.getQualifiedName(annotationExpr)));
+                        mapOf.addArgument(qualifierToExpression(annotationExpr));
+                    }
+                });
 
         MethodCallExpr methodCallExpr;
         String qualifiedName = processorManager.getQualifiedName(classOrInterfaceType);

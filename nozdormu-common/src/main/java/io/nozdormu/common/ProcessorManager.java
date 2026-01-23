@@ -36,9 +36,13 @@ import reactor.core.publisher.Mono;
 import javax.annotation.processing.Filer;
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.annotation.processing.RoundEnvironment;
+import javax.lang.model.element.AnnotationMirror;
+import javax.lang.model.element.AnnotationValue;
+import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.PackageElement;
 import javax.lang.model.element.TypeElement;
+import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Elements;
 import javax.tools.*;
 import java.io.*;
@@ -57,6 +61,7 @@ public class ProcessorManager {
 
     private static final Logger logger = LoggerFactory.getLogger(ProcessorManager.class);
     private static final Map<String, CompilationUnit> COMPILATION_UNIT_CACHE = new ConcurrentHashMap<>();
+    private static final Map<Path, List<Path>> ROOT_PROJECT_SOURCE_PATHS_CACHE = new ConcurrentHashMap<>();
 
     private final ProcessingEnvironment processingEnv;
     private RoundEnvironment roundEnv;
@@ -73,7 +78,13 @@ public class ProcessorManager {
         this.processingEnv = processingEnv;
         this.filer = processingEnv.getFiler();
         this.elements = processingEnv.getElementUtils();
-        this.trees = Trees.instance(processingEnv);
+        Trees treesInstance;
+        try {
+            treesInstance = Trees.instance(processingEnv);
+        } catch (IllegalArgumentException e) {
+            treesInstance = null;
+        }
+        this.trees = treesInstance;
         this.combinedTypeSolver = new CombinedTypeSolver();
         Path generatedSourcePath = getGeneratedSourcePath();
         Path sourcePath = getSourcePath(generatedSourcePath);
@@ -91,25 +102,8 @@ public class ProcessorManager {
         String rootProjectDirOption = processingEnv.getOptions().get("rootProjectDir");
         if (rootProjectDirOption != null && !rootProjectDirOption.isEmpty()) {
             Path rootProjectDir = Paths.get(rootProjectDirOption);
-            if (Files.exists(rootProjectDir)) {
-                try (Stream<Path> stream = Files.walk(rootProjectDir, 1)) {
-                    stream.filter(Files::isDirectory)
-                            .forEach(path -> {
-                                        Path javaPath = path.resolve("src/main/java");
-                                        if (Files.exists(javaPath)) {
-                                            JavaParserTypeSolver javaParserTypeSolver = new JavaParserTypeSolver(javaPath);
-                                            this.combinedTypeSolver.add(javaParserTypeSolver);
-                                        }
-                                        Path testJavaPath = path.resolve("src/test/java");
-                                        if (Files.exists(testJavaPath)) {
-                                            JavaParserTypeSolver testJavaParserTypeSolver = new JavaParserTypeSolver(testJavaPath);
-                                            this.combinedTypeSolver.add(testJavaParserTypeSolver);
-                                        }
-                                    }
-                            );
-                } catch (IOException ignore) {
-                }
-            }
+            getProjectSourcePaths(rootProjectDir)
+                    .forEach(javaPath -> this.combinedTypeSolver.add(new JavaParserTypeSolver(javaPath)));
         }
         ReflectionTypeSolver reflectionTypeSolver = new ReflectionTypeSolver();
         this.combinedTypeSolver.add(reflectionTypeSolver);
@@ -127,6 +121,30 @@ public class ProcessorManager {
 
     public void setRoundEnv(RoundEnvironment roundEnv) {
         this.roundEnv = roundEnv;
+    }
+
+    private List<Path> getProjectSourcePaths(Path rootProjectDir) {
+        if (rootProjectDir == null) {
+            return Collections.emptyList();
+        }
+        Path cacheKey = rootProjectDir.toAbsolutePath().normalize();
+        return ROOT_PROJECT_SOURCE_PATHS_CACHE.computeIfAbsent(cacheKey, path -> {
+            if (!Files.exists(path)) {
+                return Collections.emptyList();
+            }
+            try (Stream<Path> stream = Files.walk(path, 1)) {
+                return stream.filter(Files::isDirectory)
+                        .flatMap(projectDir -> Stream.of(
+                                projectDir.resolve("src/main/java"),
+                                projectDir.resolve("src/test/java")
+                        ))
+                        .filter(Files::exists)
+                        .distinct()
+                        .collect(Collectors.toList());
+            } catch (IOException ignore) {
+                return Collections.emptyList();
+            }
+        });
     }
 
     private Path getGeneratedSourcePath() {
@@ -199,6 +217,21 @@ public class ProcessorManager {
                 );
     }
 
+
+    public void writeSourceFile(String qualifiedName, String content) {
+        try {
+            Writer writer = filer.createSourceFile(qualifiedName).openWriter();
+            writer.write(content);
+            writer.close();
+            logger.info("{} compilationUnit build success", qualifiedName);
+        } catch (IOException e) {
+            logger.error(e.getMessage(), e);
+            processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, "java file create failed");
+            throw new RuntimeException(e);
+        }
+    }
+
+
     public void createResource(String fileName, String content) {
         try {
             Writer writer = filer.createResource(StandardLocation.CLASS_OUTPUT, "", fileName).openWriter();
@@ -241,15 +274,17 @@ public class ProcessorManager {
     }
 
     public Optional<CompilationUnit> getCompilationUnit(TypeElement typeElement) {
-        if (COMPILATION_UNIT_CACHE.containsKey(typeElement.getQualifiedName().toString())) {
-            logger.info("{} decompile cache exist", typeElement.getQualifiedName());
-            return Optional.of(COMPILATION_UNIT_CACHE.get(typeElement.getQualifiedName().toString()));
+        String qualifiedName = typeElement.getQualifiedName().toString();
+        CompilationUnit cached = COMPILATION_UNIT_CACHE.get(qualifiedName);
+        if (cached != null) {
+            logger.info("{} decompile cache exist", qualifiedName);
+            return Optional.of(cached);
         }
-        Optional<CompilationUnit> compilationUnitOptional = combinedTypeSolver.getRoot().tryToSolveType(typeElement.getQualifiedName().toString()).getDeclaration()
+        Optional<CompilationUnit> compilationUnitOptional = combinedTypeSolver.getRoot().tryToSolveType(qualifiedName).getDeclaration()
                 .flatMap(AssociableToAST::toAst)
                 .flatMap(Node::findCompilationUnit)
                 .or(() ->
-                        Optional.ofNullable(trees.getPath(typeElement))
+                        Optional.ofNullable(trees == null ? null : trees.getPath(typeElement))
                                 .flatMap(treePath -> {
                                             JavaFileObject sourceFile = treePath.getCompilationUnit().getSourceFile();
                                             try {
@@ -314,7 +349,7 @@ public class ProcessorManager {
                                 )
                 );
         compilationUnitOptional
-                .ifPresent(compilationUnit -> COMPILATION_UNIT_CACHE.put(typeElement.getQualifiedName().toString(), compilationUnit));
+                .ifPresent(compilationUnit -> COMPILATION_UNIT_CACHE.put(qualifiedName, compilationUnit));
         return compilationUnitOptional;
     }
 
@@ -327,13 +362,13 @@ public class ProcessorManager {
     }
 
     public Optional<CompilationUnit> getCompilationUnit(AnnotationExpr annotationExpr) {
-        TypeElement typeElement = elements.getTypeElement(getQualifiedName(annotationExpr));
-        return getCompilationUnit(typeElement);
+        return getTypeElement(getQualifiedName(annotationExpr))
+                .flatMap(this::getCompilationUnit);
     }
 
     public Optional<CompilationUnit> getCompilationUnit(String qualifiedName) {
-        TypeElement typeElement = elements.getTypeElement(qualifiedName);
-        return getCompilationUnit(typeElement);
+        return getTypeElement(qualifiedName)
+                .flatMap(this::getCompilationUnit);
     }
 
     public CompilationUnit getCompilationUnitOrError(AnnotationExpr annotationExpr) {
@@ -420,6 +455,57 @@ public class ProcessorManager {
     public String getQualifiedName(AnnotationExpr annotationExpr) {
         ResolvedAnnotationDeclaration resolvedAnnotationDeclaration = javaSymbolSolver.resolveDeclaration(annotationExpr, ResolvedAnnotationDeclaration.class);
         return resolvedAnnotationDeclaration.getQualifiedName();
+    }
+
+    public boolean hasMetaAnnotation(AnnotationExpr annotationExpr, String metaAnnotationQualifiedName) {
+        String annotationQualifiedName = getQualifiedName(annotationExpr);
+        return hasMetaAnnotation(annotationQualifiedName, metaAnnotationQualifiedName);
+    }
+
+    public boolean hasMetaAnnotation(String annotationQualifiedName, String metaAnnotationQualifiedName) {
+        if (annotationQualifiedName == null || metaAnnotationQualifiedName == null) {
+            return false;
+        }
+        TypeElement annotationElement = getTypeElement(annotationQualifiedName).orElse(null);
+        if (annotationElement == null) {
+            return false;
+        }
+        return annotationElement.getAnnotationMirrors().stream()
+                .map(AnnotationMirror::getAnnotationType)
+                .map(typeMirror -> (TypeElement) typeMirror.asElement())
+                .anyMatch(typeElement -> typeElement.getQualifiedName().toString().equals(metaAnnotationQualifiedName));
+    }
+
+    public Optional<AnnotationValue> getExplicitAnnotationValue(Element element, String annotationQualifiedName, String memberName) {
+        if (element == null || annotationQualifiedName == null || memberName == null) {
+            return Optional.empty();
+        }
+        return element.getAnnotationMirrors().stream()
+                .filter(annotationMirror ->
+                        ((TypeElement) annotationMirror.getAnnotationType().asElement())
+                                .getQualifiedName().toString().equals(annotationQualifiedName)
+                )
+                .findFirst()
+                .flatMap(annotationMirror ->
+                        annotationMirror.getElementValues().entrySet().stream()
+                                .filter(entry -> entry.getKey().getSimpleName().toString().equals(memberName))
+                                .map(Map.Entry::getValue)
+                                .findFirst()
+                );
+    }
+
+    public Optional<String> getExplicitAnnotationValueAsString(Element element, String annotationQualifiedName, String memberName) {
+        return getExplicitAnnotationValue(element, annotationQualifiedName, memberName)
+                .map(AnnotationValue::getValue)
+                .filter(String.class::isInstance)
+                .map(String.class::cast);
+    }
+
+    public Optional<TypeElement> getTypeElement(String qualifiedName) {
+        if (qualifiedName == null || qualifiedName.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(elements.getTypeElement(qualifiedName));
     }
 
     public String getQualifiedName(ResolvedType resolvedType) {

@@ -47,10 +47,7 @@ public class InterceptorComponentProcessor implements ComponentProxyProcessor {
                 .forEach(methodDeclaration -> {
                     List<AnnotationExpr> annotationExprList = methodDeclaration.getAnnotations().stream()
                             .filter(annotationExpr ->
-                                    processorManager.getCompilationUnit(annotationExpr)
-                                            .flatMap(compilationUnit -> processorManager.getPublicAnnotationDeclaration(compilationUnit)).stream()
-                                            .flatMap(annotationDeclaration -> annotationDeclaration.getAnnotations().stream())
-                                            .anyMatch(subAnnotationExpr -> processorManager.getQualifiedName(subAnnotationExpr).equals(InterceptorBinding.class.getName()))
+                                    processorManager.hasMetaAnnotation(annotationExpr, InterceptorBinding.class.getName())
                             )
                             .collect(Collectors.toList());
 
@@ -468,10 +465,7 @@ public class InterceptorComponentProcessor implements ComponentProxyProcessor {
                 .forEach(constructorDeclaration -> {
                     List<AnnotationExpr> annotationExprList = constructorDeclaration.getAnnotations().stream()
                             .filter(annotationExpr ->
-                                    processorManager.getCompilationUnit(annotationExpr)
-                                            .flatMap(compilationUnit -> processorManager.getPublicAnnotationDeclaration(compilationUnit)).stream()
-                                            .flatMap(annotationDeclaration -> annotationDeclaration.getAnnotations().stream())
-                                            .anyMatch(subAnnotationExpr -> processorManager.getQualifiedName(subAnnotationExpr).equals(InterceptorBinding.class.getName()))
+                                    processorManager.hasMetaAnnotation(annotationExpr, InterceptorBinding.class.getName())
                             )
                             .collect(Collectors.toList());
 

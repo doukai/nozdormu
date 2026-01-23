@@ -10,6 +10,7 @@ import com.github.javaparser.ast.nodeTypes.NodeWithStatements;
 import com.github.javaparser.ast.stmt.*;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import com.github.javaparser.ast.type.UnknownType;
+import com.github.javaparser.StaticJavaParser;
 import com.google.auto.service.AutoService;
 import io.nozdormu.common.ProcessorManager;
 import io.nozdormu.inject.processor.ComponentProxyProcessor;
@@ -27,6 +28,11 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
+import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.ExecutableElement;
+import javax.lang.model.element.TypeElement;
+import javax.lang.model.type.ArrayType;
+import javax.lang.model.type.TypeMirror;
 
 import static com.github.javaparser.ast.expr.BinaryExpr.Operator.EQUALS;
 import static com.github.javaparser.ast.expr.BinaryExpr.Operator.NOT_EQUALS;
@@ -1540,9 +1546,7 @@ public class AsyncComponentProcessor implements ComponentProxyProcessor {
     }
 
     private Optional<MethodDeclaration> buildAsyncMethodDeclaration(ClassOrInterfaceDeclaration componentClassDeclaration) {
-        CompilationUnit asyncableCompilationUnit = processorManager.getCompilationUnitOrError(Asyncable.class.getCanonicalName());
-        ClassOrInterfaceDeclaration asyncableClassOrInterfaceDeclaration = processorManager.getPublicClassOrInterfaceDeclarationOrError(asyncableCompilationUnit);
-        MethodDeclaration asyncMethodDeclaration = asyncableClassOrInterfaceDeclaration.getMethodsByName("async").get(0);
+        MethodDeclaration asyncMethodDeclaration = buildAsyncableMethodDeclarationFromElements();
 
         List<MethodDeclaration> asyncMethodDeclarationList = componentClassDeclaration.getMethods().stream()
                 .filter(methodDeclaration -> methodDeclaration.isAnnotationPresent(Async.class))
@@ -1633,5 +1637,44 @@ public class AsyncComponentProcessor implements ComponentProxyProcessor {
                         .addAnnotation(Override.class)
                         .setBody(new BlockStmt().addStatement(switchStmt))
         );
+    }
+
+    private MethodDeclaration buildAsyncableMethodDeclarationFromElements() {
+        TypeElement asyncableElement = processorManager.getTypeElement(Asyncable.class.getCanonicalName())
+                .orElseThrow(() -> new IllegalStateException("Asyncable type not found"));
+        ExecutableElement asyncElement = asyncableElement.getEnclosedElements().stream()
+                .filter(element -> element.getKind() == ElementKind.METHOD)
+                .map(element -> (ExecutableElement) element)
+                .filter(element -> element.getSimpleName().toString().equals("async"))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("Asyncable.async method not found"));
+
+        MethodDeclaration methodDeclaration = new MethodDeclaration()
+                .setName(asyncElement.getSimpleName().toString())
+                .setModifiers(Modifier.Keyword.PUBLIC);
+
+        asyncElement.getTypeParameters()
+                .forEach(typeParameter -> methodDeclaration.addTypeParameter(typeParameter.getSimpleName().toString()));
+
+        methodDeclaration.setType(StaticJavaParser.parseType(asyncElement.getReturnType().toString()));
+
+        List<Parameter> parameters = asyncElement.getParameters().stream()
+                .map(parameter -> new Parameter()
+                        .setType(StaticJavaParser.parseType(getParameterTypeName(parameter.asType(), asyncElement.isVarArgs())))
+                        .setName(parameter.getSimpleName().toString()))
+                .collect(Collectors.toList());
+        if (asyncElement.isVarArgs() && !parameters.isEmpty()) {
+            parameters.get(parameters.size() - 1).setVarArgs(true);
+        }
+        methodDeclaration.setParameters(new NodeList<>(parameters));
+
+        return methodDeclaration;
+    }
+
+    private String getParameterTypeName(TypeMirror typeMirror, boolean isVarArgs) {
+        if (isVarArgs && typeMirror instanceof ArrayType) {
+            return ((ArrayType) typeMirror).getComponentType().toString();
+        }
+        return typeMirror.toString();
     }
 }

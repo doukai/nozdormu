@@ -64,8 +64,7 @@ public class InterceptorProcessor extends AbstractProcessor {
                                 .filter(element -> element.getKind().equals(ElementKind.METHOD))
                                 .anyMatch(element -> element.getAnnotation(AroundInvoke.class) != null)
                 )
-                .flatMap(this::buildInvokeInterceptor)
-                .forEach(compilationUnit -> processorManager.writeToFiler(compilationUnit));
+                ;
 
         interceptorList.stream()
                 .filter(typeElement ->
@@ -73,27 +72,40 @@ public class InterceptorProcessor extends AbstractProcessor {
                                 .filter(element -> element.getKind().equals(ElementKind.METHOD))
                                 .anyMatch(element -> element.getAnnotation(AroundConstruct.class) != null)
                 )
-                .flatMap(this::buildConstructInterceptor)
-                .forEach(compilationUnit -> processorManager.writeToFiler(compilationUnit));
+                ;
+
+        interceptorList.forEach(typeElement -> {
+            boolean hasAroundInvoke = typeElement.getEnclosedElements().stream()
+                    .filter(element -> element.getKind().equals(ElementKind.METHOD))
+                    .anyMatch(element -> element.getAnnotation(AroundInvoke.class) != null);
+            boolean hasAroundConstruct = typeElement.getEnclosedElements().stream()
+                    .filter(element -> element.getKind().equals(ElementKind.METHOD))
+                    .anyMatch(element -> element.getAnnotation(AroundConstruct.class) != null);
+            if (!hasAroundInvoke && !hasAroundConstruct) {
+                return;
+            }
+            CompilationUnit compilationUnit = processorManager.getCompilationUnitOrError(typeElement);
+            if (hasAroundInvoke) {
+                buildInvokeInterceptor(compilationUnit)
+                        .forEach(invokeCompilationUnit -> processorManager.writeToFiler(invokeCompilationUnit));
+            }
+            if (hasAroundConstruct) {
+                buildConstructInterceptor(compilationUnit)
+                        .forEach(constructCompilationUnit -> processorManager.writeToFiler(constructCompilationUnit));
+            }
+        });
         return false;
     }
 
-    private Stream<CompilationUnit> buildInvokeInterceptor(TypeElement typeElement) {
-        return processorManager.getCompilationUnit(typeElement).stream()
-                .flatMap(compilationUnit -> {
-                    ClassOrInterfaceDeclaration interceptorClassDeclaration = processorManager.getPublicClassOrInterfaceDeclarationOrError(compilationUnit);
-                    return interceptorClassDeclaration.getAnnotations().stream()
-                            .filter(annotationExpr -> {
-                                CompilationUnit annotationCompilationUnit = processorManager.getCompilationUnitOrError(annotationExpr);
-                                AnnotationDeclaration annotationDeclaration = processorManager.getPublicAnnotationDeclarationOrError(annotationCompilationUnit);
-                                return annotationDeclaration.getAnnotations().stream()
-                                        .anyMatch(subAnnotationExpr -> processorManager.getQualifiedName(subAnnotationExpr).equals(InterceptorBinding.class.getName()));
-                            })
-                            .flatMap(annotationExpr ->
-                                    interceptorClassDeclaration.getMethods().stream()
-                                            .filter(methodDeclaration -> methodDeclaration.isAnnotationPresent(AroundInvoke.class))
-                                            .map(methodDeclaration -> {
-                                                logger.info("{} proxy class build start", interceptorClassDeclaration.getFullyQualifiedName().orElseGet(interceptorClassDeclaration::getNameAsString));
+    private Stream<CompilationUnit> buildInvokeInterceptor(CompilationUnit compilationUnit) {
+        ClassOrInterfaceDeclaration interceptorClassDeclaration = processorManager.getPublicClassOrInterfaceDeclarationOrError(compilationUnit);
+        return interceptorClassDeclaration.getAnnotations().stream()
+                .filter(annotationExpr -> processorManager.hasMetaAnnotation(annotationExpr, InterceptorBinding.class.getName()))
+                .flatMap(annotationExpr ->
+                        interceptorClassDeclaration.getMethods().stream()
+                                .filter(methodDeclaration -> methodDeclaration.isAnnotationPresent(AroundInvoke.class))
+                                .map(methodDeclaration -> {
+                                    logger.info("{} proxy class build start", interceptorClassDeclaration.getFullyQualifiedName().orElseGet(interceptorClassDeclaration::getNameAsString));
 
                                                 String name = interceptorClassDeclaration.getNameAsString() + annotationExpr.getNameAsString() + "_" + methodDeclaration.getNameAsString() + interceptorClassDeclaration.getMethods().indexOf(methodDeclaration) + "InvokeInterceptor";
                                                 ClassOrInterfaceDeclaration invokeInterceptorDeclaration = new ClassOrInterfaceDeclaration()
@@ -180,27 +192,20 @@ public class InterceptorProcessor extends AbstractProcessor {
                                                 invokeInterceptorDeclaration.addMember(aroundInvoke);
 
                                                 logger.info("{} proxy class build success", interceptorClassDeclaration.getFullyQualifiedName().orElseGet(interceptorClassDeclaration::getNameAsString));
-                                                return invokeInterceptorCompilationUnit;
-                                            })
-                            );
-                });
+                                    logger.info("{} proxy class build success", interceptorClassDeclaration.getFullyQualifiedName().orElseGet(interceptorClassDeclaration::getNameAsString));
+                                    return invokeInterceptorCompilationUnit;
+                                })
+                );
     }
 
-    private Stream<CompilationUnit> buildConstructInterceptor(TypeElement typeElement) {
-        return processorManager.getCompilationUnit(typeElement).stream()
-                .flatMap(compilationUnit -> {
-                    ClassOrInterfaceDeclaration interceptorClassDeclaration = processorManager.getPublicClassOrInterfaceDeclarationOrError(compilationUnit);
-                    return interceptorClassDeclaration.getAnnotations().stream()
-                            .filter(annotationExpr -> {
-                                CompilationUnit annotationCompilationUnit = processorManager.getCompilationUnitOrError(annotationExpr);
-                                AnnotationDeclaration annotationDeclaration = processorManager.getPublicAnnotationDeclarationOrError(annotationCompilationUnit);
-                                return annotationDeclaration.getAnnotations().stream()
-                                        .anyMatch(subAnnotationExpr -> processorManager.getQualifiedName(subAnnotationExpr).equals(InterceptorBinding.class.getName()));
-                            })
-                            .flatMap(annotationExpr ->
-                                    interceptorClassDeclaration.getMethods().stream()
-                                            .filter(methodDeclaration -> methodDeclaration.isAnnotationPresent(AroundConstruct.class))
-                                            .map(methodDeclaration -> {
+    private Stream<CompilationUnit> buildConstructInterceptor(CompilationUnit compilationUnit) {
+        ClassOrInterfaceDeclaration interceptorClassDeclaration = processorManager.getPublicClassOrInterfaceDeclarationOrError(compilationUnit);
+        return interceptorClassDeclaration.getAnnotations().stream()
+                .filter(annotationExpr -> processorManager.hasMetaAnnotation(annotationExpr, InterceptorBinding.class.getName()))
+                .flatMap(annotationExpr ->
+                        interceptorClassDeclaration.getMethods().stream()
+                                .filter(methodDeclaration -> methodDeclaration.isAnnotationPresent(AroundConstruct.class))
+                                .map(methodDeclaration -> {
                                                 String name = interceptorClassDeclaration.getNameAsString() + annotationExpr.getNameAsString() + "_" + methodDeclaration.getNameAsString() + interceptorClassDeclaration.getMethods().indexOf(methodDeclaration) + "ConstructInterceptor";
                                                 ClassOrInterfaceDeclaration constructInterceptorDeclaration = new ClassOrInterfaceDeclaration()
                                                         .addModifier(Modifier.Keyword.PUBLIC)
@@ -285,9 +290,8 @@ public class InterceptorProcessor extends AbstractProcessor {
                                                         );
                                                 constructInterceptorDeclaration.addMember(aroundConstruct);
 
-                                                return constructInterceptorCompilationUnit;
-                                            })
-                            );
-                });
+                                    return constructInterceptorCompilationUnit;
+                                })
+                );
     }
 }
