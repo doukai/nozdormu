@@ -21,6 +21,9 @@ import org.slf4j.LoggerFactory;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import javax.lang.model.element.Element;
+import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.TypeElement;
 
 @AutoService(ComponentProxyProcessor.class)
 public class InterceptorComponentProcessor implements ComponentProxyProcessor {
@@ -35,11 +38,26 @@ public class InterceptorComponentProcessor implements ComponentProxyProcessor {
     }
 
     @Override
+    public boolean match(TypeElement typeElement) {
+        return typeElement.getEnclosedElements().stream()
+                .filter(element -> element.getKind().equals(ElementKind.METHOD) || element.getKind().equals(ElementKind.CONSTRUCTOR))
+                .anyMatch(this::hasInterceptorBinding);
+    }
+
+    @Override
     public void processComponentProxy(CompilationUnit componentCompilationUnit, ClassOrInterfaceDeclaration componentClassDeclaration, CompilationUnit componentProxyCompilationUnit, ClassOrInterfaceDeclaration componentProxyClassDeclaration) {
         logger.info("{} interceptor component build start", componentClassDeclaration.getFullyQualifiedName().orElseGet(componentClassDeclaration::getNameAsString));
         buildMethod(componentClassDeclaration, componentProxyCompilationUnit, componentProxyClassDeclaration);
         buildConstructor(componentClassDeclaration, componentProxyCompilationUnit, componentProxyClassDeclaration);
         logger.info("{} interceptor component build success", componentClassDeclaration.getFullyQualifiedName().orElseGet(componentClassDeclaration::getNameAsString));
+    }
+
+    private boolean hasInterceptorBinding(Element element) {
+        return element.getAnnotationMirrors().stream()
+                .map(annotationMirror -> annotationMirror.getAnnotationType().asElement())
+                .filter(TypeElement.class::isInstance)
+                .map(type -> ((TypeElement) type).getQualifiedName().toString())
+                .anyMatch(annotationName -> processorManager.hasMetaAnnotation(annotationName, InterceptorBinding.class.getName()));
     }
 
     private void buildMethod(ClassOrInterfaceDeclaration componentClassDeclaration, CompilationUnit componentProxyCompilationUnit, ClassOrInterfaceDeclaration componentProxyClassDeclaration) {

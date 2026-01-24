@@ -51,6 +51,13 @@ public class AsyncComponentProcessor implements ComponentProxyProcessor {
     }
 
     @Override
+    public boolean match(TypeElement typeElement) {
+        return typeElement.getEnclosedElements().stream()
+                .filter(element -> element.getKind().equals(ElementKind.METHOD))
+                .anyMatch(element -> element.getAnnotation(Async.class) != null);
+    }
+
+    @Override
     public void processComponentProxy(CompilationUnit componentCompilationUnit, ClassOrInterfaceDeclaration componentClassDeclaration, CompilationUnit componentProxyCompilationUnit, ClassOrInterfaceDeclaration componentProxyClassDeclaration) {
         logger.info("{} async component build start", componentClassDeclaration.getFullyQualifiedName().orElseGet(componentClassDeclaration::getNameAsString));
 

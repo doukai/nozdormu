@@ -9,6 +9,7 @@ import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.*;
 import com.github.javaparser.ast.expr.*;
 import com.github.javaparser.ast.nodeTypes.NodeWithAnnotations;
+import com.github.javaparser.ast.nodeTypes.NodeWithSimpleName;
 import com.github.javaparser.ast.stmt.ReturnStmt;
 import com.github.javaparser.ast.stmt.Statement;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
@@ -42,7 +43,6 @@ import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.PackageElement;
 import javax.lang.model.element.TypeElement;
-import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Elements;
 import javax.tools.*;
 import java.io.*;
@@ -62,6 +62,7 @@ public class ProcessorManager {
     private static final Logger logger = LoggerFactory.getLogger(ProcessorManager.class);
     private static final Map<String, CompilationUnit> COMPILATION_UNIT_CACHE = new ConcurrentHashMap<>();
     private static final Map<Path, List<Path>> ROOT_PROJECT_SOURCE_PATHS_CACHE = new ConcurrentHashMap<>();
+    private static final Map<Path, Map<String, Set<String>>> SPI_REGISTRY = new ConcurrentHashMap<>();
 
     private final ProcessingEnvironment processingEnv;
     private RoundEnvironment roundEnv;
@@ -73,6 +74,7 @@ public class ProcessorManager {
     private final CombinedTypeSolver combinedTypeSolver;
     private final TypeElementDecompiler typeElementDecompiler;
     private Path decompileCacheDir;
+    private final Path classOutputPath;
 
     public ProcessorManager(ProcessingEnvironment processingEnv, ClassLoader classLoader) {
         this.processingEnv = processingEnv;
@@ -113,6 +115,7 @@ public class ProcessorManager {
         this.javaParser = new JavaParser();
         this.javaParser.getParserConfiguration().setSymbolResolver(this.javaSymbolSolver);
         this.typeElementDecompiler = TypeElementDecompilerProvider.load(classLoader);
+        this.classOutputPath = getClassOutputPath();
         String decompileCacheDirOption = processingEnv.getOptions().get("decompileCacheDir");
         if (decompileCacheDirOption != null && !decompileCacheDirOption.isEmpty()) {
             this.decompileCacheDir = Paths.get(decompileCacheDirOption);
@@ -217,21 +220,6 @@ public class ProcessorManager {
                 );
     }
 
-
-    public void writeSourceFile(String qualifiedName, String content) {
-        try {
-            Writer writer = filer.createSourceFile(qualifiedName).openWriter();
-            writer.write(content);
-            writer.close();
-            logger.info("{} compilationUnit build success", qualifiedName);
-        } catch (IOException e) {
-            logger.error(e.getMessage(), e);
-            processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, "java file create failed");
-            throw new RuntimeException(e);
-        }
-    }
-
-
     public void createResource(String fileName, String content) {
         try {
             Writer writer = filer.createResource(StandardLocation.CLASS_OUTPUT, "", fileName).openWriter();
@@ -250,6 +238,70 @@ public class ProcessorManager {
             return processingEnv.getFiler().getResource(StandardLocation.CLASS_OUTPUT, "", fileName);
         } catch (IOException e) {
             throw new RuntimeException(e);
+        }
+    }
+
+    private Path getClassOutputPath() {
+        try {
+            FileObject tmp = filer.createResource(StandardLocation.CLASS_OUTPUT, "", UUID.randomUUID().toString());
+            Writer writer = tmp.openWriter();
+            writer.write("");
+            writer.close();
+            Path path = Paths.get(tmp.toUri());
+            Files.deleteIfExists(path);
+            return path.getParent();
+        } catch (IOException e) {
+            logger.error(e.getMessage(), e);
+            processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, "unable to determine class output path.");
+            throw new RuntimeException(e);
+        }
+    }
+
+    public void registerSpi(String spi, String impl) {
+        SPI_REGISTRY
+                .computeIfAbsent(classOutputPath, key -> new ConcurrentHashMap<>())
+                .computeIfAbsent(spi, key -> ConcurrentHashMap.newKeySet())
+                .add(impl);
+    }
+
+    public synchronized void flushSpiFiles() {
+        Map<String, Set<String>> spiEntries = SPI_REGISTRY.getOrDefault(classOutputPath, Map.of());
+        for (Map.Entry<String, Set<String>> entry : spiEntries.entrySet()) {
+            String spi = entry.getKey();
+            String path = "META-INF/services/" + spi;
+            Path filePath;
+            try {
+                FileObject fileObject = filer.getResource(StandardLocation.CLASS_OUTPUT, "", path);
+                filePath = Paths.get(fileObject.toUri());
+            } catch (IOException ignored) {
+                try {
+                    FileObject fileObject = filer.createResource(StandardLocation.CLASS_OUTPUT, "", path);
+                    filePath = Paths.get(fileObject.toUri());
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+            Set<String> impls = new LinkedHashSet<>();
+            if (Files.exists(filePath)) {
+                try {
+                    impls.addAll(Files.readAllLines(filePath, StandardCharsets.UTF_8));
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+            impls.addAll(entry.getValue());
+            try {
+                Files.createDirectories(filePath.getParent());
+                Files.write(
+                        filePath,
+                        impls,
+                        StandardCharsets.UTF_8,
+                        StandardOpenOption.CREATE,
+                        StandardOpenOption.TRUNCATE_EXISTING
+                );
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
         }
     }
 
@@ -590,11 +642,11 @@ public class ProcessorManager {
         }
     }
 
-    public Optional<Node> getDeclaratorNode(NameExpr nameExpr) {
-        return getDeclaratorNode(nameExpr, nameExpr);
+    public Optional<VariableDeclarator> getDeclaratorVariableDeclarator(NameExpr nameExpr) {
+        return getDeclaratorVariableDeclarator(nameExpr, nameExpr);
     }
 
-    public Optional<Node> getDeclaratorNode(NameExpr nameExpr, Node node) {
+    public Optional<VariableDeclarator> getDeclaratorVariableDeclarator(NameExpr nameExpr, Node node) {
         if (node.getParentNode().isPresent()) {
             Node parentNode = node.getParentNode().get();
             if (parentNode instanceof Statement) {
@@ -612,37 +664,71 @@ public class ProcessorManager {
                                     expression.asVariableDeclarationExpr().getVariables().stream()
                                             .filter(variableDeclarator -> variableDeclarator.getNameAsString().equals(nameExpr.getNameAsString()))
                             )
-                            .flatMap(variableDeclarator -> variableDeclarator.getInitializer().stream())
-                            .map(expression -> (Node) expression)
                             .findFirst()
-                            .or(() -> getDeclaratorNode(nameExpr, parentNode));
+                            .or(() -> getDeclaratorVariableDeclarator(nameExpr, parentNode));
                 } else {
-                    getDeclaratorNode(nameExpr, parentNode);
+                    return getDeclaratorVariableDeclarator(nameExpr, parentNode);
                 }
             } else if (parentNode instanceof ClassOrInterfaceDeclaration) {
                 ClassOrInterfaceDeclaration classOrInterfaceDeclaration = (ClassOrInterfaceDeclaration) parentNode;
-                return classOrInterfaceDeclaration.getFieldByName(nameExpr.getNameAsString())
-                        .filter(fieldDeclaration ->
-                                fieldDeclaration.getVariables().stream()
-                                        .anyMatch(variableDeclarator -> variableDeclarator.getNameAsString().equals(nameExpr.getNameAsString()))
-                        )
-                        .flatMap(fieldDeclaration ->
-                                fieldDeclaration.getVariables().stream()
-                                        .filter(variableDeclarator -> variableDeclarator.getNameAsString().equals(nameExpr.getNameAsString()))
-                                        .findFirst()
-                        )
-                        .flatMap(VariableDeclarator::getInitializer)
-                        .map(expression -> (Node) expression)
-                        .or(() -> getDeclaratorNode(nameExpr, parentNode));
+                return classOrInterfaceDeclaration.getFields().stream()
+                        .flatMap(fieldDeclaration -> fieldDeclaration.getVariables().stream())
+                        .filter(variableDeclarator -> variableDeclarator.getNameAsString().equals(nameExpr.getNameAsString()))
+                        .findFirst()
+                        .or(() -> getDeclaratorVariableDeclarator(nameExpr, parentNode));
             } else if (parentNode instanceof CompilationUnit) {
                 CompilationUnit compilationUnit = (CompilationUnit) parentNode;
                 return compilationUnit.getImports().stream()
                         .filter(importDeclaration -> importDeclaration.getNameAsString().endsWith("." + nameExpr.getNameAsString()))
-                        .map(importDeclaration -> getClassOrInterfaceDeclarationOrError(importDeclaration.getNameAsString()))
-                        .map(expression -> (Node) expression)
+                        .map(importDeclaration -> getClassOrInterfaceDeclarationOrError(importDeclaration.getNameAsString().substring(0, importDeclaration.getNameAsString().lastIndexOf("."))))
+                        .findFirst()
+                        .flatMap(classOrInterfaceDeclaration ->
+                                classOrInterfaceDeclaration.getFieldByName(nameExpr.getNameAsString())
+                                        .filter(fieldDeclaration ->
+                                                fieldDeclaration.getVariables().stream()
+                                                        .anyMatch(variableDeclarator -> variableDeclarator.getNameAsString().equals(nameExpr.getNameAsString()))
+                                        )
+                                        .flatMap(fieldDeclaration ->
+                                                fieldDeclaration.getVariables().stream()
+                                                        .filter(variableDeclarator -> variableDeclarator.getNameAsString().equals(nameExpr.getNameAsString()))
+                                                        .findFirst()
+                                        )
+                        );
+            } else {
+                return getDeclaratorVariableDeclarator(nameExpr, parentNode);
+            }
+        }
+        return Optional.empty();
+    }
+
+    public Optional<ClassOrInterfaceDeclaration> getClassOrInterfaceDeclaration(NameExpr nameExpr) {
+        return getClassOrInterfaceDeclaration(nameExpr, nameExpr);
+    }
+
+    public Optional<ClassOrInterfaceDeclaration> getClassOrInterfaceDeclaration(NameExpr nameExpr, Node node) {
+        if (node.getParentNode().isPresent()) {
+            Node parentNode = node.getParentNode().get();
+            if (parentNode instanceof ClassOrInterfaceDeclaration) {
+                ClassOrInterfaceDeclaration classOrInterfaceDeclaration = (ClassOrInterfaceDeclaration) parentNode;
+                if (classOrInterfaceDeclaration.getFields().stream()
+                        .flatMap(fieldDeclaration -> fieldDeclaration.getVariables().stream())
+                        .anyMatch(variableDeclarator -> variableDeclarator.getNameAsString().equals(nameExpr.getNameAsString()))) {
+                    return Optional.of((ClassOrInterfaceDeclaration) parentNode);
+                } else if (classOrInterfaceDeclaration.getMembers().stream()
+                        .filter(bodyDeclaration -> bodyDeclaration instanceof NodeWithSimpleName)
+                        .map(bodyDeclaration -> (NodeWithSimpleName<?>) bodyDeclaration)
+                        .anyMatch(nodeWithSimpleName -> nodeWithSimpleName.getNameAsString().equals(nameExpr.getNameAsString()))) {
+                    return Optional.of((ClassOrInterfaceDeclaration) parentNode);
+                }
+                return getClassOrInterfaceDeclaration(nameExpr, parentNode);
+            } else if (parentNode instanceof CompilationUnit) {
+                CompilationUnit compilationUnit = (CompilationUnit) parentNode;
+                return compilationUnit.getImports().stream()
+                        .filter(importDeclaration -> importDeclaration.getNameAsString().endsWith("." + nameExpr.getNameAsString()))
+                        .map(importDeclaration -> getClassOrInterfaceDeclarationOrError(importDeclaration.getNameAsString().substring(0, importDeclaration.getNameAsString().lastIndexOf("."))))
                         .findFirst();
             } else {
-                getDeclaratorNode(nameExpr, parentNode);
+                return getClassOrInterfaceDeclaration(nameExpr, parentNode);
             }
         }
         return Optional.empty();
@@ -659,9 +745,7 @@ public class ProcessorManager {
             } catch (RuntimeException e) {
                 classOrInterfaceDeclaration = methodCallExpr.getScope()
                         .filter(Expression::isNameExpr)
-                        .flatMap(expression -> getDeclaratorNode(expression.asNameExpr()))
-                        .filter(node -> node instanceof ClassOrInterfaceDeclaration)
-                        .map(node -> (ClassOrInterfaceDeclaration) node)
+                        .flatMap(expression -> getClassOrInterfaceDeclaration(expression.asNameExpr()))
                         .orElseThrow(() -> e);
             }
             return classOrInterfaceDeclaration.getMethods().stream()
@@ -812,6 +896,43 @@ public class ProcessorManager {
                     );
         }
         return Optional.empty();
+    }
+
+    public Stream<String> getMemberValueQualifiedName(Expression expression) {
+        if (expression == null) {
+            return Stream.empty();
+        }
+        if (expression.isClassExpr()) {
+            return Stream.of(getQualifiedName(expression.asClassExpr().getType()));
+        }
+        if (expression.isNameExpr()) {
+            return getClassOrInterfaceDeclaration(expression.asNameExpr())
+                    .map(this::getQualifiedName).stream();
+        }
+        if (expression.isFieldAccessExpr() && expression.asFieldAccessExpr().getScope().isNameExpr()) {
+            ResolvedType resolvedType = calculateType(expression.asFieldAccessExpr().getScope().asNameExpr());
+            return Stream.of(getQualifiedName(resolvedType));
+        }
+        if (expression.isAssignExpr()) {
+            return Stream.concat(
+                    getMemberValueQualifiedName(expression.asAssignExpr().getTarget()),
+                    getMemberValueQualifiedName(expression.asAssignExpr().getValue())
+            );
+        }
+        if (expression.isBinaryExpr()) {
+            return Stream.concat(
+                    getMemberValueQualifiedName(expression.asBinaryExpr().getLeft()),
+                    getMemberValueQualifiedName(expression.asBinaryExpr().getRight())
+            );
+        }
+        try {
+            ResolvedType resolvedType = calculateType(expression);
+            if (resolvedType.isReferenceType()) {
+                return Stream.of(getQualifiedName(resolvedType));
+            }
+        } catch (RuntimeException ignored) {
+        }
+        return Stream.empty();
     }
 
     public boolean isInjectFieldSetter(MethodDeclaration methodDeclaration) {

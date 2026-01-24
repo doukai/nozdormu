@@ -22,6 +22,8 @@ import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.stream.Collectors;
+import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.TypeElement;
 
 @AutoService(ComponentProxyProcessor.class)
 public class ConfigComponentProcessor implements ComponentProxyProcessor {
@@ -33,6 +35,37 @@ public class ConfigComponentProcessor implements ComponentProxyProcessor {
     @Override
     public void init(ProcessorManager processorManager) {
         this.processorManager = processorManager;
+    }
+
+    @Override
+    public boolean match(TypeElement typeElement) {
+        return typeElement.getEnclosedElements().stream()
+                .anyMatch(element -> element.getAnnotation(ConfigProperty.class) != null) ||
+                isConfigPropertyFieldSetter(typeElement);
+    }
+
+    private boolean isConfigPropertyFieldSetter(TypeElement typeElement) {
+        List<String> configFields = typeElement.getEnclosedElements().stream()
+                .filter(element -> element.getKind().equals(ElementKind.FIELD))
+                .filter(element -> element.getAnnotation(ConfigProperty.class) != null)
+                .map(element -> element.getSimpleName().toString())
+                .collect(Collectors.toList());
+
+        if (configFields.isEmpty()) {
+            return false;
+        }
+
+        return typeElement.getEnclosedElements().stream()
+                .filter(element -> element.getKind().equals(ElementKind.METHOD))
+                .map(element -> element.getSimpleName().toString())
+                .filter(name -> name.startsWith("set") && name.length() > 3)
+                .map(this::toFieldNameFromSetter)
+                .anyMatch(configFields::contains);
+    }
+
+    private String toFieldNameFromSetter(String setterName) {
+        String suffix = setterName.substring(3);
+        return suffix.substring(0, 1).toLowerCase() + suffix.substring(1);
     }
 
     @Override
@@ -56,6 +89,7 @@ public class ConfigComponentProcessor implements ComponentProxyProcessor {
                     );
             componentProxyCompilationUnit.addImport(Inject.class);
         }
+
         componentProxyClassDeclaration.getConstructors()
                 .forEach(constructorDeclaration ->
                         methodDeclarationList.forEach(methodDeclaration -> {
