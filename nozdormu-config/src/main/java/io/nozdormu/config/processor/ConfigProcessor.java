@@ -27,7 +27,6 @@ import javax.lang.model.SourceVersion;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.TypeElement;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 import static io.nozdormu.spi.error.InjectionProcessErrorType.CONFIG_PROPERTIES_PREFIX_NOT_EXIST;
@@ -41,7 +40,6 @@ public class ConfigProcessor extends AbstractProcessor {
     private static final Logger logger = LoggerFactory.getLogger(ConfigProcessor.class);
 
     private ProcessorManager processorManager;
-    private final Map<TypeElement, CompilationUnit> compilationUnitListMap = new ConcurrentHashMap<>();
 
     @Override
     public SourceVersion getSupportedSourceVersion() {
@@ -56,13 +54,6 @@ public class ConfigProcessor extends AbstractProcessor {
 
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
-        if (roundEnv.processingOver()) {
-            String rootPackageName = processorManager.getRootPackageName();
-            CompilationUnit proxySuppliersCompilationUnit = buildProxySuppliers(rootPackageName, compilationUnitListMap);
-            processorManager.writeToFiler(proxySuppliersCompilationUnit);
-            processorManager.registerSpi("io.nozdormu.spi.context.BeanSuppliers", rootPackageName + ".ConfigSuppliers");
-            processorManager.flushSpiFiles();
-        }
         if (annotations.isEmpty()) {
             return false;
         }
@@ -79,11 +70,17 @@ public class ConfigProcessor extends AbstractProcessor {
 
         processorManager.setRoundEnv(roundEnv);
 
+        Map<TypeElement, CompilationUnit> compilationUnitListMap = new HashMap<>();
         typeElements.forEach(typeElement ->
                 processorManager.getCompilationUnit(typeElement).ifPresent(componentCompilationUnit ->
                         compilationUnitListMap.put(typeElement, componentCompilationUnit)
                 )
         );
+
+        String rootPackageName = processorManager.getRootPackageName();
+        CompilationUnit proxySuppliersCompilationUnit = buildProxySuppliers(rootPackageName, compilationUnitListMap);
+        processorManager.writeToFiler(proxySuppliersCompilationUnit);
+
         return false;
     }
 
@@ -94,12 +91,14 @@ public class ConfigProcessor extends AbstractProcessor {
                 .addModifier(Modifier.Keyword.PUBLIC)
                 .setName("ConfigSuppliers")
                 .addAnnotation(new NormalAnnotationExpr().addPair("value", new StringLiteralExpr(getClass().getName())).setName(Generated.class.getSimpleName()))
+                .addAnnotation(new SingleMemberAnnotationExpr().setMemberValue(new ClassExpr().setType(BeanSuppliers.class)).setName(AutoService.class.getSimpleName()))
                 .addImplementedType(BeanSuppliers.class);
 
         CompilationUnit suppliersCompilationUnit = new CompilationUnit()
                 .setPackageDeclaration(rootPackageName)
                 .addType(suppliersClassDeclaration)
                 .addImport(Generated.class)
+                .addImport(AutoService.class)
                 .addImport(BeanSuppliers.class)
                 .addImport(BeanContext.class)
                 .addImport(BeanSupplier.class)

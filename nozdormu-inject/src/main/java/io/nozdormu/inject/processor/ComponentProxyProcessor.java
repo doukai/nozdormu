@@ -3,7 +3,6 @@ package io.nozdormu.inject.processor;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import io.nozdormu.common.ProcessorManager;
-import javax.lang.model.element.TypeElement;
 
 public interface ComponentProxyProcessor {
 
@@ -11,10 +10,6 @@ public interface ComponentProxyProcessor {
     }
 
     default void inProcess() {
-    }
-
-    default boolean match(TypeElement typeElement) {
-        return false;
     }
 
     default void processComponentProxy(CompilationUnit componentCompilationUnit,

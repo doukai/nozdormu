@@ -22,7 +22,6 @@ import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import javax.lang.model.element.Element;
-import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.TypeElement;
 
 @AutoService(ComponentProxyProcessor.class)
@@ -35,13 +34,6 @@ public class InterceptorComponentProcessor implements ComponentProxyProcessor {
     @Override
     public void init(ProcessorManager processorManager) {
         this.processorManager = processorManager;
-    }
-
-    @Override
-    public boolean match(TypeElement typeElement) {
-        return typeElement.getEnclosedElements().stream()
-                .filter(element -> element.getKind().equals(ElementKind.METHOD) || element.getKind().equals(ElementKind.CONSTRUCTOR))
-                .anyMatch(this::hasInterceptorBinding);
     }
 
     @Override

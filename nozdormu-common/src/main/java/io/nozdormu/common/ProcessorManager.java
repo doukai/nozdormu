@@ -74,6 +74,7 @@ public class ProcessorManager {
     private final CombinedTypeSolver combinedTypeSolver;
     private final TypeElementDecompiler typeElementDecompiler;
     private Path decompileCacheDir;
+    private Integer suppliersPartitionSize = 10;
     private final Path classOutputPath;
 
     public ProcessorManager(ProcessingEnvironment processingEnv, ClassLoader classLoader) {
@@ -119,6 +120,10 @@ public class ProcessorManager {
         String decompileCacheDirOption = processingEnv.getOptions().get("decompileCacheDir");
         if (decompileCacheDirOption != null && !decompileCacheDirOption.isEmpty()) {
             this.decompileCacheDir = Paths.get(decompileCacheDirOption);
+        }
+        String suppliersPartitionSizeOption = processingEnv.getOptions().get("suppliersPartitionSize");
+        if (suppliersPartitionSizeOption != null && !suppliersPartitionSizeOption.isEmpty()) {
+            this.suppliersPartitionSize = Integer.parseInt(suppliersPartitionSizeOption);
         }
     }
 
@@ -202,6 +207,10 @@ public class ProcessorManager {
                 );
     }
 
+    public Integer getSuppliersPartitionSize() {
+        return suppliersPartitionSize;
+    }
+
     public void writeToFiler(CompilationUnit compilationUnit) {
         getPublicClassOrInterfaceDeclaration(compilationUnit)
                 .ifPresent(classOrInterfaceDeclaration -> {
@@ -254,54 +263,6 @@ public class ProcessorManager {
             logger.error(e.getMessage(), e);
             processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, "unable to determine class output path.");
             throw new RuntimeException(e);
-        }
-    }
-
-    public void registerSpi(String spi, String impl) {
-        SPI_REGISTRY
-                .computeIfAbsent(classOutputPath, key -> new ConcurrentHashMap<>())
-                .computeIfAbsent(spi, key -> ConcurrentHashMap.newKeySet())
-                .add(impl);
-    }
-
-    public synchronized void flushSpiFiles() {
-        Map<String, Set<String>> spiEntries = SPI_REGISTRY.getOrDefault(classOutputPath, Map.of());
-        for (Map.Entry<String, Set<String>> entry : spiEntries.entrySet()) {
-            String spi = entry.getKey();
-            String path = "META-INF/services/" + spi;
-            Path filePath;
-            try {
-                FileObject fileObject = filer.getResource(StandardLocation.CLASS_OUTPUT, "", path);
-                filePath = Paths.get(fileObject.toUri());
-            } catch (IOException ignored) {
-                try {
-                    FileObject fileObject = filer.createResource(StandardLocation.CLASS_OUTPUT, "", path);
-                    filePath = Paths.get(fileObject.toUri());
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
-            }
-            Set<String> impls = new LinkedHashSet<>();
-            if (Files.exists(filePath)) {
-                try {
-                    impls.addAll(Files.readAllLines(filePath, StandardCharsets.UTF_8));
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
-            }
-            impls.addAll(entry.getValue());
-            try {
-                Files.createDirectories(filePath.getParent());
-                Files.write(
-                        filePath,
-                        impls,
-                        StandardCharsets.UTF_8,
-                        StandardOpenOption.CREATE,
-                        StandardOpenOption.TRUNCATE_EXISTING
-                );
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
         }
     }
 
