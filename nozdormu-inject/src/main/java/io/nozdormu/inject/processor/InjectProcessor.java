@@ -40,6 +40,7 @@ import javax.annotation.processing.*;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.TypeElement;
+import java.lang.annotation.Annotation;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -255,183 +256,8 @@ public class InjectProcessor extends AbstractProcessor {
                 })
                 .forEach(proxyClassDeclaration::addAnnotation);
 
-        List<MethodDeclaration> observesMethods = componentClassDeclaration.getMethods().stream()
-                .filter(methodDeclaration ->
-                        methodDeclaration.getParameters().stream()
-                                .anyMatch(parameter -> parameter.isAnnotationPresent(Observes.class))
-                )
-                .collect(Collectors.toList());
-
-        if (!observesMethods.isEmpty()) {
-            proxyCompilationUnit.addImport(ScopeEventObserver.class);
-
-            observesMethods.forEach(methodDeclaration -> {
-                ClassOrInterfaceDeclaration observerClassDeclaration = new ClassOrInterfaceDeclaration()
-                        .addModifier(Modifier.Keyword.PUBLIC, Modifier.Keyword.FINAL)
-                        .addImplementedType(ScopeEventObserver.class.getSimpleName())
-                        .setName(componentClassDeclaration.getNameAsString() + "_" + methodDeclaration.getNameAsString() + "_Observer");
-
-                methodDeclaration.getParameters().stream()
-                        .filter(parameter -> parameter.isAnnotationPresent(Observes.class))
-                        .findFirst()
-                        .flatMap(parameter -> parameter.getAnnotationByClass(Initialized.class))
-                        .ifPresent(observerClassDeclaration::addAnnotation);
-
-                methodDeclaration.getParameters().stream()
-                        .filter(parameter -> parameter.isAnnotationPresent(Observes.class))
-                        .findFirst()
-                        .flatMap(parameter -> parameter.getAnnotationByClass(BeforeDestroyed.class))
-                        .ifPresent(observerClassDeclaration::addAnnotation);
-
-                methodDeclaration.getParameters().stream()
-                        .filter(parameter -> parameter.isAnnotationPresent(Observes.class))
-                        .findFirst()
-                        .flatMap(parameter -> parameter.getAnnotationByClass(Destroyed.class))
-                        .ifPresent(observerClassDeclaration::addAnnotation);
-
-                methodDeclaration.getParameters().stream()
-                        .filter(parameter -> parameter.isAnnotationPresent(Observes.class))
-                        .findFirst()
-                        .flatMap(parameter -> parameter.getAnnotationByClass(Priority.class))
-                        .ifPresent(observerClassDeclaration::addAnnotation);
-
-                if (processorManager.getQualifiedName(methodDeclaration.getType()).equals(Mono.class.getName())) {
-                    proxyCompilationUnit.addImport(Void.class);
-
-                    MethodDeclaration onEvent = new MethodDeclaration()
-                            .setName("onEventAsync")
-                            .setModifiers(Modifier.Keyword.PUBLIC)
-                            .addParameter(new Parameter().setName(methodDeclaration.getParameter(0).getName()).setType(Object.class.getSimpleName()))
-                            .setType(
-                                    new ClassOrInterfaceType()
-                                            .setName(Mono.class.getSimpleName())
-                                            .setTypeArguments(new ClassOrInterfaceType().setName(Void.class.getSimpleName()))
-                            )
-                            .addAnnotation(Override.class);
-
-                    onEvent.setBody(
-                            new BlockStmt()
-                                    .addStatement(
-                                            new ReturnStmt(
-                                                    new MethodCallExpr()
-                                                            .setName(methodDeclaration.getName())
-                                                            .addArgument(methodDeclaration.getParameter(0).getNameAsExpression())
-                                            )
-                                    )
-                    );
-
-                    observerClassDeclaration.addMember(onEvent);
-                } else {
-                    MethodDeclaration onEvent = new MethodDeclaration()
-                            .setName("onEvent")
-                            .setModifiers(Modifier.Keyword.PUBLIC)
-                            .addParameter(new Parameter().setName(methodDeclaration.getParameter(0).getName()).setType(Object.class.getSimpleName()))
-                            .setType(new VoidType())
-                            .addAnnotation(Override.class);
-
-                    onEvent.setBody(
-                            new BlockStmt()
-                                    .addStatement(
-                                            new MethodCallExpr()
-                                                    .setName(methodDeclaration.getName())
-                                                    .addArgument(methodDeclaration.getParameter(0).getNameAsExpression())
-                                    )
-                    );
-
-                    observerClassDeclaration.addMember(onEvent);
-                }
-                proxyClassDeclaration.addMember(observerClassDeclaration);
-            });
-        }
-
-        List<MethodDeclaration> observesAsyncMethods = componentClassDeclaration.getMethods().stream()
-                .filter(methodDeclaration ->
-                        methodDeclaration.getParameters().stream()
-                                .anyMatch(parameter -> parameter.isAnnotationPresent(ObservesAsync.class))
-                )
-                .collect(Collectors.toList());
-
-        if (!observesAsyncMethods.isEmpty()) {
-            proxyCompilationUnit.addImport(ScopeEventAsyncObserver.class);
-
-            observesAsyncMethods.forEach(methodDeclaration -> {
-                ClassOrInterfaceDeclaration observerClassDeclaration = new ClassOrInterfaceDeclaration()
-                        .addModifier(Modifier.Keyword.PUBLIC, Modifier.Keyword.FINAL)
-                        .addImplementedType(ScopeEventAsyncObserver.class.getSimpleName())
-                        .setName(componentClassDeclaration.getNameAsString() + "_" + methodDeclaration.getNameAsString() + "_Observer");
-
-                methodDeclaration.getParameters().stream()
-                        .filter(parameter -> parameter.isAnnotationPresent(ObservesAsync.class))
-                        .findFirst()
-                        .flatMap(parameter -> parameter.getAnnotationByClass(Initialized.class))
-                        .ifPresent(observerClassDeclaration::addAnnotation);
-
-                methodDeclaration.getParameters().stream()
-                        .filter(parameter -> parameter.isAnnotationPresent(ObservesAsync.class))
-                        .findFirst()
-                        .flatMap(parameter -> parameter.getAnnotationByClass(BeforeDestroyed.class))
-                        .ifPresent(observerClassDeclaration::addAnnotation);
-
-                methodDeclaration.getParameters().stream()
-                        .filter(parameter -> parameter.isAnnotationPresent(ObservesAsync.class))
-                        .findFirst()
-                        .flatMap(parameter -> parameter.getAnnotationByClass(Destroyed.class))
-                        .ifPresent(observerClassDeclaration::addAnnotation);
-
-                methodDeclaration.getParameters().stream()
-                        .filter(parameter -> parameter.isAnnotationPresent(ObservesAsync.class))
-                        .findFirst()
-                        .flatMap(parameter -> parameter.getAnnotationByClass(Priority.class))
-                        .ifPresent(observerClassDeclaration::addAnnotation);
-
-                if (processorManager.getQualifiedName(methodDeclaration.getType()).equals(Mono.class.getName())) {
-                    proxyCompilationUnit.addImport(Void.class);
-
-                    MethodDeclaration onEvent = new MethodDeclaration()
-                            .setName("onEventAsync")
-                            .setModifiers(Modifier.Keyword.PUBLIC)
-                            .addParameter(new Parameter().setName(methodDeclaration.getParameter(0).getName()).setType(Object.class.getSimpleName()))
-                            .setType(
-                                    new ClassOrInterfaceType()
-                                            .setName(Mono.class.getSimpleName())
-                                            .setTypeArguments(new ClassOrInterfaceType().setName(Void.class.getSimpleName()))
-                            )
-                            .addAnnotation(Override.class);
-
-                    onEvent.setBody(
-                            new BlockStmt()
-                                    .addStatement(
-                                            new ReturnStmt(
-                                                    new MethodCallExpr()
-                                                            .setName(methodDeclaration.getName())
-                                                            .addArgument(methodDeclaration.getParameter(0).getNameAsExpression())
-                                            )
-                                    )
-                    );
-
-                    observerClassDeclaration.addMember(onEvent);
-                } else {
-                    MethodDeclaration onEvent = new MethodDeclaration()
-                            .setName("onEvent")
-                            .setModifiers(Modifier.Keyword.PUBLIC)
-                            .addParameter(new Parameter().setName(methodDeclaration.getParameter(0).getName()).setType(Object.class.getSimpleName()))
-                            .setType(new VoidType())
-                            .addAnnotation(Override.class);
-
-                    onEvent.setBody(
-                            new BlockStmt()
-                                    .addStatement(
-                                            new MethodCallExpr()
-                                                    .setName(methodDeclaration.getName())
-                                                    .addArgument(methodDeclaration.getParameter(0).getNameAsExpression())
-                                    )
-                    );
-
-                    observerClassDeclaration.addMember(onEvent);
-                }
-                proxyClassDeclaration.addMember(observerClassDeclaration);
-            });
-        }
+        buildObserverInnerClasses(componentClassDeclaration, proxyCompilationUnit, proxyClassDeclaration, Observes.class, ScopeEventObserver.class);
+        buildObserverInnerClasses(componentClassDeclaration, proxyCompilationUnit, proxyClassDeclaration, ObservesAsync.class, ScopeEventAsyncObserver.class);
 
         componentProxyProcessors
                 .forEach(componentProxyProcessor -> {
@@ -441,6 +267,96 @@ public class InjectProcessor extends AbstractProcessor {
 
         logger.info("{} proxy class build success", qualifiedName);
         return proxyCompilationUnit;
+    }
+
+    private void buildObserverInnerClasses(ClassOrInterfaceDeclaration componentClassDeclaration,
+                                           CompilationUnit proxyCompilationUnit,
+                                           ClassOrInterfaceDeclaration proxyClassDeclaration,
+                                           Class<? extends Annotation> observesAnnotationClass,
+                                           Class<?> observerInterfaceClass) {
+        List<MethodDeclaration> observesMethods = componentClassDeclaration.getMethods().stream()
+                .filter(methodDeclaration ->
+                        methodDeclaration.getParameters().stream()
+                                .anyMatch(parameter -> parameter.isAnnotationPresent(observesAnnotationClass))
+                )
+                .collect(Collectors.toList());
+
+        if (observesMethods.isEmpty()) {
+            return;
+        }
+
+        proxyCompilationUnit.addImport(observerInterfaceClass);
+
+        observesMethods.forEach(methodDeclaration -> {
+            ClassOrInterfaceDeclaration observerClassDeclaration = new ClassOrInterfaceDeclaration()
+                    .addModifier(Modifier.Keyword.PUBLIC, Modifier.Keyword.FINAL)
+                    .addImplementedType(observerInterfaceClass.getSimpleName())
+                    .setName(componentClassDeclaration.getNameAsString() + "_" + methodDeclaration.getNameAsString() + "_Observer");
+
+            Optional<Parameter> observesParameter = methodDeclaration.getParameters().stream()
+                    .filter(parameter -> parameter.isAnnotationPresent(observesAnnotationClass))
+                    .findFirst();
+
+            observesParameter
+                    .flatMap(parameter -> parameter.getAnnotationByClass(Initialized.class))
+                    .ifPresent(observerClassDeclaration::addAnnotation);
+            observesParameter
+                    .flatMap(parameter -> parameter.getAnnotationByClass(BeforeDestroyed.class))
+                    .ifPresent(observerClassDeclaration::addAnnotation);
+            observesParameter
+                    .flatMap(parameter -> parameter.getAnnotationByClass(Destroyed.class))
+                    .ifPresent(observerClassDeclaration::addAnnotation);
+            observesParameter
+                    .flatMap(parameter -> parameter.getAnnotationByClass(Priority.class))
+                    .ifPresent(observerClassDeclaration::addAnnotation);
+
+            if (processorManager.getQualifiedName(methodDeclaration.getType()).equals(Mono.class.getName())) {
+                proxyCompilationUnit.addImport(Void.class);
+
+                MethodDeclaration onEvent = new MethodDeclaration()
+                        .setName("onEventAsync")
+                        .setModifiers(Modifier.Keyword.PUBLIC)
+                        .addParameter(new Parameter().setName(methodDeclaration.getParameter(0).getName()).setType(Object.class.getSimpleName()))
+                        .setType(
+                                new ClassOrInterfaceType()
+                                        .setName(Mono.class.getSimpleName())
+                                        .setTypeArguments(new ClassOrInterfaceType().setName(Void.class.getSimpleName()))
+                        )
+                        .addAnnotation(Override.class);
+
+                onEvent.setBody(
+                        new BlockStmt()
+                                .addStatement(
+                                        new ReturnStmt(
+                                                new MethodCallExpr()
+                                                        .setName(methodDeclaration.getName())
+                                                        .addArgument(methodDeclaration.getParameter(0).getNameAsExpression())
+                                        )
+                                )
+                );
+
+                observerClassDeclaration.addMember(onEvent);
+            } else {
+                MethodDeclaration onEvent = new MethodDeclaration()
+                        .setName("onEvent")
+                        .setModifiers(Modifier.Keyword.PUBLIC)
+                        .addParameter(new Parameter().setName(methodDeclaration.getParameter(0).getName()).setType(Object.class.getSimpleName()))
+                        .setType(new VoidType())
+                        .addAnnotation(Override.class);
+
+                onEvent.setBody(
+                        new BlockStmt()
+                                .addStatement(
+                                        new MethodCallExpr()
+                                                .setName(methodDeclaration.getName())
+                                                .addArgument(methodDeclaration.getParameter(0).getNameAsExpression())
+                                )
+                );
+
+                observerClassDeclaration.addMember(onEvent);
+            }
+            proxyClassDeclaration.addMember(observerClassDeclaration);
+        });
     }
 
     private CompilationUnit buildProxySuppliers(String rootPackageName, List<CompilationUnit> componentCompilationUnitList, Map<String, CompilationUnit> proxyCompilationUnitMap, long suffix) {
@@ -669,10 +585,10 @@ public class InjectProcessor extends AbstractProcessor {
                                             .filter(producesMethodDeclaration -> producesMethodDeclaration.isAnnotationPresent(Singleton.class) || producesMethodDeclaration.isAnnotationPresent(ApplicationScoped.class))
                                             .forEach(producesMethodDeclaration -> {
                                                 String methodTypeQualifiedName = processorManager.getQualifiedName(producesMethodDeclaration);
-                                                String prefix = methodTypeQualifiedName.replaceAll("\\.", "_");
+                                                String producesPrefix = methodTypeQualifiedName.replaceAll("\\.", "_");
                                                 ClassOrInterfaceDeclaration holderClassOrInterfaceDeclaration = new ClassOrInterfaceDeclaration();
                                                 holderClassOrInterfaceDeclaration
-                                                        .setName(prefix + "Holder" + componentClassDeclaration.getMethods().indexOf(producesMethodDeclaration))
+                                                        .setName(producesPrefix + "Holder" + componentClassDeclaration.getMethods().indexOf(producesMethodDeclaration))
                                                         .setModifiers(Modifier.Keyword.PRIVATE, Modifier.Keyword.STATIC)
                                                         .addFieldWithInitializer(
                                                                 methodTypeQualifiedName,
@@ -726,35 +642,14 @@ public class InjectProcessor extends AbstractProcessor {
                                     );
 
                                     componentClassDeclaration.getAnnotationByClass(Priority.class)
-                                            .ifPresent(annotation -> {
-                                                if (annotation.isNormalAnnotationExpr()) {
-                                                    if (annotation.asNormalAnnotationExpr().getPairs().get(0).getValue().isNameExpr()) {
-                                                        processorManager.getMemberValueQualifiedName(annotation.asNormalAnnotationExpr().getPairs().get(0).getValue())
-                                                                .forEach(numberValueQualifiedName -> suppliersCompilationUnit.addImport(numberValueQualifiedName + "." + annotation.asNormalAnnotationExpr().getPairs().get(0).getValue().asNameExpr().getNameAsString(), true, false));
-                                                    } else {
-                                                        processorManager.getMemberValueQualifiedName(annotation.asNormalAnnotationExpr().getPairs().get(0).getValue())
-                                                                .forEach(suppliersCompilationUnit::addImport);
-                                                    }
-                                                    staticInitializer.addStatement(
-                                                            new MethodCallExpr().setName("setPriority")
-                                                                    .addArgument(annotation.asNormalAnnotationExpr().getPairs().get(0).getValue().clone())
-                                                                    .setScope(new NameExpr(componentPrefix + "_beanSupplier"))
-                                                    );
-                                                } else if (annotation.isSingleMemberAnnotationExpr()) {
-                                                    if (annotation.asSingleMemberAnnotationExpr().getMemberValue().isNameExpr()) {
-                                                        processorManager.getMemberValueQualifiedName(annotation.asSingleMemberAnnotationExpr().getMemberValue())
-                                                                .forEach(numberValueQualifiedName -> suppliersCompilationUnit.addImport(numberValueQualifiedName + "." + annotation.asSingleMemberAnnotationExpr().getMemberValue().asNameExpr().getNameAsString(), true, false));
-                                                    } else {
-                                                        processorManager.getMemberValueQualifiedName(annotation.asSingleMemberAnnotationExpr().getMemberValue())
-                                                                .forEach(suppliersCompilationUnit::addImport);
-                                                    }
-                                                    staticInitializer.addStatement(
-                                                            new MethodCallExpr().setName("setPriority")
-                                                                    .addArgument(annotation.asSingleMemberAnnotationExpr().getMemberValue().clone())
-                                                                    .setScope(new NameExpr(componentPrefix + "_beanSupplier"))
-                                                    );
-                                                }
-                                            });
+                                            .ifPresent(annotation ->
+                                                    applyPriorityAnnotation(
+                                                            suppliersCompilationUnit,
+                                                            staticInitializer,
+                                                            componentPrefix + "_beanSupplier",
+                                                            annotation
+                                                    )
+                                            );
 
                                     staticInitializer.addStatement(
                                             new MethodCallExpr().setName("put")
@@ -879,7 +774,6 @@ public class InjectProcessor extends AbstractProcessor {
                                                                                                                     .addArgument(new ClassExpr().setType(processorManager.getQualifiedName(componentClassDeclaration)))
                                                                                                                     .setScope(new NameExpr().setName("BeanContext"))
                                                                                                     )
-
                                                                                     )
                                                                             )
                                                             )
@@ -947,35 +841,14 @@ public class InjectProcessor extends AbstractProcessor {
                                                 );
 
                                                 producesMethodDeclaration.getAnnotationByClass(Priority.class)
-                                                        .ifPresent(annotation -> {
-                                                            if (annotation.isNormalAnnotationExpr()) {
-                                                                if (annotation.asNormalAnnotationExpr().getPairs().get(0).getValue().isNameExpr()) {
-                                                                    processorManager.getMemberValueQualifiedName(annotation.asNormalAnnotationExpr().getPairs().get(0).getValue())
-                                                                            .forEach(numberValueQualifiedName -> suppliersCompilationUnit.addImport(numberValueQualifiedName + "." + annotation.asNormalAnnotationExpr().getPairs().get(0).getValue().asNameExpr().getNameAsString(), true, false));
-                                                                } else {
-                                                                    processorManager.getMemberValueQualifiedName(annotation.asNormalAnnotationExpr().getPairs().get(0).getValue())
-                                                                            .forEach(suppliersCompilationUnit::addImport);
-                                                                }
-                                                                staticInitializer.addStatement(
-                                                                        new MethodCallExpr().setName("setPriority")
-                                                                                .addArgument(annotation.asNormalAnnotationExpr().getPairs().get(0).getValue().clone())
-                                                                                .setScope(new NameExpr(producesPrefix + "_beanSupplier"))
-                                                                );
-                                                            } else if (annotation.isSingleMemberAnnotationExpr()) {
-                                                                if (annotation.asSingleMemberAnnotationExpr().getMemberValue().isNameExpr()) {
-                                                                    processorManager.getMemberValueQualifiedName(annotation.asSingleMemberAnnotationExpr().getMemberValue())
-                                                                            .forEach(numberValueQualifiedName -> suppliersCompilationUnit.addImport(numberValueQualifiedName + "." + annotation.asSingleMemberAnnotationExpr().getMemberValue().asNameExpr().getNameAsString(), true, false));
-                                                                } else {
-                                                                    processorManager.getMemberValueQualifiedName(annotation.asSingleMemberAnnotationExpr().getMemberValue())
-                                                                            .forEach(suppliersCompilationUnit::addImport);
-                                                                }
-                                                                staticInitializer.addStatement(
-                                                                        new MethodCallExpr().setName("setPriority")
-                                                                                .addArgument(annotation.asSingleMemberAnnotationExpr().getMemberValue().clone())
-                                                                                .setScope(new NameExpr(producesPrefix + "_beanSupplier"))
-                                                                );
-                                                            }
-                                                        });
+                                                        .ifPresent(annotation ->
+                                                                applyPriorityAnnotation(
+                                                                        suppliersCompilationUnit,
+                                                                        staticInitializer,
+                                                                        producesPrefix + "_beanSupplier",
+                                                                        annotation
+                                                                )
+                                                        );
 
                                                 staticInitializer.addStatement(
                                                         new MethodCallExpr().setName("put")
@@ -1035,275 +908,25 @@ public class InjectProcessor extends AbstractProcessor {
                                                         });
                                             });
 
-                                    List<MethodDeclaration> observesMethods = componentClassDeclaration.getMethods().stream()
-                                            .filter(methodDeclaration ->
-                                                    methodDeclaration.getParameters().stream()
-                                                            .anyMatch(parameter -> parameter.isAnnotationPresent(Observes.class))
-                                            )
-                                            .collect(Collectors.toList());
+                                    buildObserverSuppliers(
+                                            suppliersCompilationUnit,
+                                            suppliersClassDeclaration,
+                                            componentClassDeclaration,
+                                            qualifiedName,
+                                            staticInitializer,
+                                            Observes.class,
+                                            ScopeEventObserver.class
+                                    );
 
-                                    if (!observesMethods.isEmpty()) {
-                                        observesMethods.forEach(methodDeclaration -> {
-                                            String prefix = componentClassDeclaration.getNameAsString() + "_" + methodDeclaration.getNameAsString() + "_Observer";
-                                            suppliersCompilationUnit.addImport(ScopeEventObserver.class);
-                                            ClassOrInterfaceDeclaration holderClassOrInterfaceDeclaration = new ClassOrInterfaceDeclaration();
-
-                                            holderClassOrInterfaceDeclaration
-                                                    .setName(prefix + "Holder")
-                                                    .setModifiers(Modifier.Keyword.PRIVATE, Modifier.Keyword.STATIC)
-                                                    .addFieldWithInitializer(
-                                                            ScopeEventObserver.class.getSimpleName(),
-                                                            "INSTANCE",
-                                                            new ObjectCreationExpr()
-                                                                    .setType(
-                                                                            new ClassOrInterfaceType()
-                                                                                    .setName(prefix)
-                                                                    )
-                                                                    .setScope(
-                                                                            new MethodCallExpr()
-                                                                                    .setName("get")
-                                                                                    .addArgument(new ClassExpr().setType(qualifiedName + "_Proxy"))
-                                                                                    .setScope(new NameExpr().setName("BeanContext"))
-                                                                    )
-                                                    )
-                                                    .setModifiers(Modifier.Keyword.PRIVATE, Modifier.Keyword.STATIC, Modifier.Keyword.FINAL);
-
-                                            suppliersClassDeclaration.addMember(holderClassOrInterfaceDeclaration);
-
-                                            MethodCallExpr mapOfProduces = new MethodCallExpr()
-                                                    .setName("of")
-                                                    .setScope(new NameExpr("Map"));
-
-                                            methodDeclaration.getParameters().stream()
-                                                    .filter(parameter -> parameter.isAnnotationPresent(Observes.class))
-                                                    .flatMap(parameter -> parameter.getAnnotations().stream())
-                                                    .forEach(annotationExpr -> {
-                                                        if (processorManager.hasMetaAnnotation(annotationExpr, Qualifier.class.getName())) {
-                                                            mapOfProduces.addArgument(new StringLiteralExpr(processorManager.getQualifiedName(annotationExpr)));
-                                                            mapOfProduces.addArgument(qualifierToExpression(annotationExpr, suppliersCompilationUnit));
-                                                        }
-                                                    });
-
-                                            staticInitializer.addStatement(
-                                                    new VariableDeclarationExpr()
-                                                            .addVariable(
-                                                                    new VariableDeclarator().setName(prefix + "_beanSupplier")
-                                                                            .setType(BeanSupplier.class)
-                                                                            .setInitializer(
-                                                                                    new ObjectCreationExpr()
-                                                                                            .setType(BeanSupplier.class)
-                                                                            )
-                                                            )
-                                            );
-
-                                            staticInitializer.addStatement(
-                                                    new MethodCallExpr().setName("setQualifiers")
-                                                            .addArgument(mapOfProduces)
-                                                            .setScope(new NameExpr(prefix + "_beanSupplier"))
-                                            );
-
-                                            staticInitializer.addStatement(
-                                                    new MethodCallExpr().setName("setSupplier")
-                                                            .addArgument(
-                                                                    new LambdaExpr()
-                                                                            .setEnclosingParameters(true)
-                                                                            .setBody(
-                                                                                    new ExpressionStmt(
-                                                                                            new FieldAccessExpr()
-                                                                                                    .setName("INSTANCE")
-                                                                                                    .setScope(new NameExpr(prefix + "Holder"))
-                                                                                    )
-                                                                            )
-                                                            )
-                                                            .setScope(new NameExpr(prefix + "_beanSupplier"))
-                                            );
-
-                                            methodDeclaration.getParameters().stream()
-                                                    .filter(parameter -> parameter.isAnnotationPresent(Observes.class))
-                                                    .findFirst()
-                                                    .flatMap(parameter -> parameter.getAnnotationByClass(Priority.class))
-                                                    .ifPresent(annotation -> {
-                                                        if (annotation.isNormalAnnotationExpr()) {
-                                                            if (annotation.asNormalAnnotationExpr().getPairs().get(0).getValue().isNameExpr()) {
-                                                                processorManager.getMemberValueQualifiedName(annotation.asNormalAnnotationExpr().getPairs().get(0).getValue())
-                                                                        .forEach(numberValueQualifiedName -> suppliersCompilationUnit.addImport(numberValueQualifiedName + "." + annotation.asNormalAnnotationExpr().getPairs().get(0).getValue().asNameExpr().getNameAsString(), true, false));
-                                                            } else {
-                                                                processorManager.getMemberValueQualifiedName(annotation.asNormalAnnotationExpr().getPairs().get(0).getValue())
-                                                                        .forEach(suppliersCompilationUnit::addImport);
-                                                            }
-                                                            staticInitializer.addStatement(
-                                                                    new MethodCallExpr().setName("setPriority")
-                                                                            .addArgument(annotation.asNormalAnnotationExpr().getPairs().get(0).getValue().clone())
-                                                                            .setScope(new NameExpr(prefix + "_beanSupplier"))
-                                                            );
-                                                        } else if (annotation.isSingleMemberAnnotationExpr()) {
-                                                            if (annotation.asSingleMemberAnnotationExpr().getMemberValue().isNameExpr()) {
-                                                                processorManager.getMemberValueQualifiedName(annotation.asSingleMemberAnnotationExpr().getMemberValue())
-                                                                        .forEach(numberValueQualifiedName -> suppliersCompilationUnit.addImport(numberValueQualifiedName + "." + annotation.asSingleMemberAnnotationExpr().getMemberValue().asNameExpr().getNameAsString(), true, false));
-                                                            } else {
-                                                                processorManager.getMemberValueQualifiedName(annotation.asSingleMemberAnnotationExpr().getMemberValue())
-                                                                        .forEach(suppliersCompilationUnit::addImport);
-                                                            }
-                                                            staticInitializer.addStatement(
-                                                                    new MethodCallExpr().setName("setPriority")
-                                                                            .addArgument(annotation.asSingleMemberAnnotationExpr().getMemberValue().clone())
-                                                                            .setScope(new NameExpr(prefix + "_beanSupplier"))
-                                                            );
-                                                        }
-                                                    });
-
-                                            staticInitializer.addStatement(
-                                                    new MethodCallExpr().setName("put")
-                                                            .addArgument(new StringLiteralExpr(qualifiedName + "_Proxy." + componentClassDeclaration.getNameAsString() + "_" + methodDeclaration.getNameAsString() + "_Observer"))
-                                                            .addArgument(new NameExpr(prefix + "_beanSupplier"))
-                                                            .setScope(
-                                                                    new MethodCallExpr().setName("computeIfAbsent")
-                                                                            .addArgument(new StringLiteralExpr(ScopeEventObserver.class.getName()))
-                                                                            .addArgument(
-                                                                                    new LambdaExpr()
-                                                                                            .addParameter(new Parameter().setName("k").setType(new UnknownType()))
-                                                                                            .setBody(new ExpressionStmt(new ObjectCreationExpr().setType(HashMap.class).setTypeArguments()))
-                                                                            )
-                                                                            .setScope(new NameExpr("beanSuppliers"))
-                                                            )
-                                            );
-                                        });
-                                    }
-
-                                    List<MethodDeclaration> observesAsyncMethods = componentClassDeclaration.getMethods().stream()
-                                            .filter(methodDeclaration ->
-                                                    methodDeclaration.getParameters().stream()
-                                                            .anyMatch(parameter -> parameter.isAnnotationPresent(ObservesAsync.class))
-                                            )
-                                            .collect(Collectors.toList());
-
-                                    if (!observesAsyncMethods.isEmpty()) {
-                                        observesAsyncMethods.forEach(methodDeclaration -> {
-                                            String prefix = componentClassDeclaration.getNameAsString() + "_" + methodDeclaration.getNameAsString() + "_Observer";
-                                            suppliersCompilationUnit.addImport(ScopeEventAsyncObserver.class);
-                                            ClassOrInterfaceDeclaration holderClassOrInterfaceDeclaration = new ClassOrInterfaceDeclaration();
-
-                                            holderClassOrInterfaceDeclaration
-                                                    .setName(prefix + "Holder")
-                                                    .setModifiers(Modifier.Keyword.PRIVATE, Modifier.Keyword.STATIC)
-                                                    .addFieldWithInitializer(
-                                                            ScopeEventAsyncObserver.class.getSimpleName(),
-                                                            "INSTANCE",
-                                                            new ObjectCreationExpr()
-                                                                    .setType(
-                                                                            new ClassOrInterfaceType()
-                                                                                    .setName(prefix)
-                                                                    )
-                                                                    .setScope(
-                                                                            new MethodCallExpr()
-                                                                                    .setName("get")
-                                                                                    .addArgument(new ClassExpr().setType(qualifiedName + "_Proxy"))
-                                                                                    .setScope(new NameExpr().setName("BeanContext"))
-                                                                    )
-                                                    )
-                                                    .setModifiers(Modifier.Keyword.PRIVATE, Modifier.Keyword.STATIC, Modifier.Keyword.FINAL);
-
-                                            suppliersClassDeclaration.addMember(holderClassOrInterfaceDeclaration);
-
-                                            MethodCallExpr mapOfProduces = new MethodCallExpr()
-                                                    .setName("of")
-                                                    .setScope(new NameExpr("Map"));
-
-                                            methodDeclaration.getParameters().stream()
-                                                    .filter(parameter -> parameter.isAnnotationPresent(ObservesAsync.class))
-                                                    .flatMap(parameter -> parameter.getAnnotations().stream())
-                                                    .forEach(annotationExpr -> {
-                                                        if (processorManager.hasMetaAnnotation(annotationExpr, Qualifier.class.getName())) {
-                                                            mapOfProduces.addArgument(new StringLiteralExpr(processorManager.getQualifiedName(annotationExpr)));
-                                                            mapOfProduces.addArgument(qualifierToExpression(annotationExpr, suppliersCompilationUnit));
-                                                        }
-                                                    });
-
-                                            staticInitializer.addStatement(
-                                                    new VariableDeclarationExpr()
-                                                            .addVariable(
-                                                                    new VariableDeclarator().setName(prefix + "_beanSupplier")
-                                                                            .setType(BeanSupplier.class)
-                                                                            .setInitializer(
-                                                                                    new ObjectCreationExpr()
-                                                                                            .setType(BeanSupplier.class)
-                                                                            )
-                                                            )
-                                            );
-
-                                            staticInitializer.addStatement(
-                                                    new MethodCallExpr().setName("setQualifiers")
-                                                            .addArgument(mapOfProduces)
-                                                            .setScope(new NameExpr(prefix + "_beanSupplier"))
-                                            );
-
-                                            staticInitializer.addStatement(
-                                                    new MethodCallExpr().setName("setSupplier")
-                                                            .addArgument(
-                                                                    new LambdaExpr()
-                                                                            .setEnclosingParameters(true)
-                                                                            .setBody(
-                                                                                    new ExpressionStmt(
-                                                                                            new FieldAccessExpr()
-                                                                                                    .setName("INSTANCE")
-                                                                                                    .setScope(new NameExpr(prefix + "Holder"))
-                                                                                    )
-                                                                            )
-                                                            )
-                                                            .setScope(new NameExpr(prefix + "_beanSupplier"))
-                                            );
-
-                                            methodDeclaration.getParameters().stream()
-                                                    .filter(parameter -> parameter.isAnnotationPresent(ObservesAsync.class))
-                                                    .findFirst()
-                                                    .flatMap(parameter -> parameter.getAnnotationByClass(Priority.class))
-                                                    .ifPresent(annotation -> {
-                                                        if (annotation.isNormalAnnotationExpr()) {
-                                                            if (annotation.asNormalAnnotationExpr().getPairs().get(0).getValue().isNameExpr()) {
-                                                                processorManager.getMemberValueQualifiedName(annotation.asNormalAnnotationExpr().getPairs().get(0).getValue())
-                                                                        .forEach(numberValueQualifiedName -> suppliersCompilationUnit.addImport(numberValueQualifiedName + "." + annotation.asNormalAnnotationExpr().getPairs().get(0).getValue().asNameExpr().getNameAsString(), true, false));
-                                                            } else {
-                                                                processorManager.getMemberValueQualifiedName(annotation.asNormalAnnotationExpr().getPairs().get(0).getValue())
-                                                                        .forEach(suppliersCompilationUnit::addImport);
-                                                            }
-                                                            staticInitializer.addStatement(
-                                                                    new MethodCallExpr().setName("setPriority")
-                                                                            .addArgument(annotation.asNormalAnnotationExpr().getPairs().get(0).getValue().clone())
-                                                                            .setScope(new NameExpr(prefix + "_beanSupplier"))
-                                                            );
-                                                        } else if (annotation.isSingleMemberAnnotationExpr()) {
-                                                            if (annotation.asSingleMemberAnnotationExpr().getMemberValue().isNameExpr()) {
-                                                                processorManager.getMemberValueQualifiedName(annotation.asSingleMemberAnnotationExpr().getMemberValue())
-                                                                        .forEach(numberValueQualifiedName -> suppliersCompilationUnit.addImport(numberValueQualifiedName + "." + annotation.asSingleMemberAnnotationExpr().getMemberValue().asNameExpr().getNameAsString(), true, false));
-                                                            } else {
-                                                                processorManager.getMemberValueQualifiedName(annotation.asSingleMemberAnnotationExpr().getMemberValue())
-                                                                        .forEach(suppliersCompilationUnit::addImport);
-                                                            }
-                                                            staticInitializer.addStatement(
-                                                                    new MethodCallExpr().setName("setPriority")
-                                                                            .addArgument(annotation.asSingleMemberAnnotationExpr().getMemberValue().clone())
-                                                                            .setScope(new NameExpr(prefix + "_beanSupplier"))
-                                                            );
-                                                        }
-                                                    });
-
-                                            staticInitializer.addStatement(
-                                                    new MethodCallExpr().setName("put")
-                                                            .addArgument(new StringLiteralExpr(qualifiedName + "_Proxy." + componentClassDeclaration.getNameAsString() + "_" + methodDeclaration.getNameAsString() + "_Observer"))
-                                                            .addArgument(new NameExpr(prefix + "_beanSupplier"))
-                                                            .setScope(
-                                                                    new MethodCallExpr().setName("computeIfAbsent")
-                                                                            .addArgument(new StringLiteralExpr(ScopeEventAsyncObserver.class.getName()))
-                                                                            .addArgument(
-                                                                                    new LambdaExpr()
-                                                                                            .addParameter(new Parameter().setName("k").setType(new UnknownType()))
-                                                                                            .setBody(new ExpressionStmt(new ObjectCreationExpr().setType(HashMap.class).setTypeArguments()))
-                                                                            )
-                                                                            .setScope(new NameExpr("beanSuppliers"))
-                                                            )
-                                            );
-                                        });
-                                    }
+                                    buildObserverSuppliers(
+                                            suppliersCompilationUnit,
+                                            suppliersClassDeclaration,
+                                            componentClassDeclaration,
+                                            qualifiedName,
+                                            staticInitializer,
+                                            ObservesAsync.class,
+                                            ScopeEventAsyncObserver.class
+                                    );
                                 })
         );
 
@@ -1321,6 +944,166 @@ public class InjectProcessor extends AbstractProcessor {
 
         logger.info("{} proxy suppliers class build success", rootPackageName);
         return suppliersCompilationUnit;
+    }
+
+    private void buildObserverSuppliers(CompilationUnit suppliersCompilationUnit,
+                                        ClassOrInterfaceDeclaration suppliersClassDeclaration,
+                                        ClassOrInterfaceDeclaration componentClassDeclaration,
+                                        String qualifiedName,
+                                        BlockStmt staticInitializer,
+                                        Class<? extends Annotation> observesAnnotationClass,
+                                        Class<?> observerInterfaceClass) {
+        List<MethodDeclaration> observesMethods = componentClassDeclaration.getMethods().stream()
+                .filter(methodDeclaration ->
+                        methodDeclaration.getParameters().stream()
+                                .anyMatch(parameter -> parameter.isAnnotationPresent(observesAnnotationClass))
+                )
+                .collect(Collectors.toList());
+
+        if (observesMethods.isEmpty()) {
+            return;
+        }
+
+        suppliersCompilationUnit.addImport(observerInterfaceClass);
+
+        observesMethods.forEach(methodDeclaration -> {
+            String prefix = componentClassDeclaration.getNameAsString() + "_" + methodDeclaration.getNameAsString() + "_Observer";
+            ClassOrInterfaceDeclaration holderClassOrInterfaceDeclaration = new ClassOrInterfaceDeclaration();
+
+            holderClassOrInterfaceDeclaration
+                    .setName(prefix + "Holder")
+                    .setModifiers(Modifier.Keyword.PRIVATE, Modifier.Keyword.STATIC)
+                    .addFieldWithInitializer(
+                            observerInterfaceClass.getSimpleName(),
+                            "INSTANCE",
+                            new ObjectCreationExpr()
+                                    .setType(
+                                            new ClassOrInterfaceType()
+                                                    .setName(prefix)
+                                    )
+                                    .setScope(
+                                            new MethodCallExpr()
+                                                    .setName("get")
+                                                    .addArgument(new ClassExpr().setType(qualifiedName + "_Proxy"))
+                                                    .setScope(new NameExpr().setName("BeanContext"))
+                                    )
+                    )
+                    .setModifiers(Modifier.Keyword.PRIVATE, Modifier.Keyword.STATIC, Modifier.Keyword.FINAL);
+
+            suppliersClassDeclaration.addMember(holderClassOrInterfaceDeclaration);
+
+            MethodCallExpr mapOfProduces = new MethodCallExpr()
+                    .setName("of")
+                    .setScope(new NameExpr("Map"));
+
+            methodDeclaration.getParameters().stream()
+                    .filter(parameter -> parameter.isAnnotationPresent(observesAnnotationClass))
+                    .flatMap(parameter -> parameter.getAnnotations().stream())
+                    .forEach(annotationExpr -> {
+                        if (processorManager.hasMetaAnnotation(annotationExpr, Qualifier.class.getName())) {
+                            mapOfProduces.addArgument(new StringLiteralExpr(processorManager.getQualifiedName(annotationExpr)));
+                            mapOfProduces.addArgument(qualifierToExpression(annotationExpr, suppliersCompilationUnit));
+                        }
+                    });
+
+            staticInitializer.addStatement(
+                    new VariableDeclarationExpr()
+                            .addVariable(
+                                    new VariableDeclarator().setName(prefix + "_beanSupplier")
+                                            .setType(BeanSupplier.class)
+                                            .setInitializer(
+                                                    new ObjectCreationExpr()
+                                                            .setType(BeanSupplier.class)
+                                            )
+                            )
+            );
+
+            staticInitializer.addStatement(
+                    new MethodCallExpr().setName("setQualifiers")
+                            .addArgument(mapOfProduces)
+                            .setScope(new NameExpr(prefix + "_beanSupplier"))
+            );
+
+            staticInitializer.addStatement(
+                    new MethodCallExpr().setName("setSupplier")
+                            .addArgument(
+                                    new LambdaExpr()
+                                            .setEnclosingParameters(true)
+                                            .setBody(
+                                                    new ExpressionStmt(
+                                                            new FieldAccessExpr()
+                                                                    .setName("INSTANCE")
+                                                                    .setScope(new NameExpr(prefix + "Holder"))
+                                                    )
+                                            )
+                            )
+                            .setScope(new NameExpr(prefix + "_beanSupplier"))
+            );
+
+            methodDeclaration.getParameters().stream()
+                    .filter(parameter -> parameter.isAnnotationPresent(observesAnnotationClass))
+                    .findFirst()
+                    .flatMap(parameter -> parameter.getAnnotationByClass(Priority.class))
+                    .ifPresent(annotation ->
+                            applyPriorityAnnotation(
+                                    suppliersCompilationUnit,
+                                    staticInitializer,
+                                    prefix + "_beanSupplier",
+                                    annotation
+                            )
+                    );
+
+            staticInitializer.addStatement(
+                    new MethodCallExpr().setName("put")
+                            .addArgument(new StringLiteralExpr(qualifiedName + "_Proxy." + componentClassDeclaration.getNameAsString() + "_" + methodDeclaration.getNameAsString() + "_Observer"))
+                            .addArgument(new NameExpr(prefix + "_beanSupplier"))
+                            .setScope(
+                                    new MethodCallExpr().setName("computeIfAbsent")
+                                            .addArgument(new StringLiteralExpr(observerInterfaceClass.getName()))
+                                            .addArgument(
+                                                    new LambdaExpr()
+                                                            .addParameter(new Parameter().setName("k").setType(new UnknownType()))
+                                                            .setBody(new ExpressionStmt(new ObjectCreationExpr().setType(HashMap.class).setTypeArguments()))
+                                            )
+                                            .setScope(new NameExpr("beanSuppliers"))
+                            )
+            );
+        });
+    }
+
+    private void applyPriorityAnnotation(CompilationUnit suppliersCompilationUnit,
+                                         BlockStmt staticInitializer,
+                                         String beanSupplierName,
+                                         AnnotationExpr annotation) {
+        if (annotation.isNormalAnnotationExpr()) {
+            Expression valueExpression = annotation.asNormalAnnotationExpr().getPairs().get(0).getValue();
+            if (valueExpression.isNameExpr()) {
+                processorManager.getMemberValueQualifiedName(valueExpression)
+                        .forEach(numberValueQualifiedName -> suppliersCompilationUnit.addImport(numberValueQualifiedName + "." + valueExpression.asNameExpr().getNameAsString(), true, false));
+            } else {
+                processorManager.getMemberValueQualifiedName(valueExpression)
+                        .forEach(suppliersCompilationUnit::addImport);
+            }
+            staticInitializer.addStatement(
+                    new MethodCallExpr().setName("setPriority")
+                            .addArgument(valueExpression.clone())
+                            .setScope(new NameExpr(beanSupplierName))
+            );
+        } else if (annotation.isSingleMemberAnnotationExpr()) {
+            Expression valueExpression = annotation.asSingleMemberAnnotationExpr().getMemberValue();
+            if (valueExpression.isNameExpr()) {
+                processorManager.getMemberValueQualifiedName(valueExpression)
+                        .forEach(numberValueQualifiedName -> suppliersCompilationUnit.addImport(numberValueQualifiedName + "." + valueExpression.asNameExpr().getNameAsString(), true, false));
+            } else {
+                processorManager.getMemberValueQualifiedName(valueExpression)
+                        .forEach(suppliersCompilationUnit::addImport);
+            }
+            staticInitializer.addStatement(
+                    new MethodCallExpr().setName("setPriority")
+                            .addArgument(valueExpression.clone())
+                            .setScope(new NameExpr(beanSupplierName))
+            );
+        }
     }
 
     private Expression qualifierToExpression(AnnotationExpr qualifier) {

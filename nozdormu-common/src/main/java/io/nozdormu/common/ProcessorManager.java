@@ -62,7 +62,6 @@ public class ProcessorManager {
     private static final Logger logger = LoggerFactory.getLogger(ProcessorManager.class);
     private static final Map<String, CompilationUnit> COMPILATION_UNIT_CACHE = new ConcurrentHashMap<>();
     private static final Map<Path, List<Path>> ROOT_PROJECT_SOURCE_PATHS_CACHE = new ConcurrentHashMap<>();
-    private static final Map<Path, Map<String, Set<String>>> SPI_REGISTRY = new ConcurrentHashMap<>();
 
     private final ProcessingEnvironment processingEnv;
     private RoundEnvironment roundEnv;
