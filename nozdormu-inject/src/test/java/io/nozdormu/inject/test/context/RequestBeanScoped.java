@@ -23,6 +23,22 @@ public class RequestBeanScoped implements ReactorBeanScoped {
     }
 
     @SuppressWarnings("unchecked")
+    @Override
+    public <T> Mono<T> get(Class<T> beanClass) {
+        return getScopedKey()
+                .mapNotNull(key -> {
+                    if (key == null) {
+                        return null;
+                    }
+                    Map<String, Object> scopedMap = beanContext.get(key);
+                    if (scopedMap == null) {
+                        return null;
+                    }
+                    return (T) scopedMap.get(beanClass.getName());
+                });
+    }
+
+    @SuppressWarnings("unchecked")
     public <T, R extends T> Mono<T> get(Class<T> beanClass, Supplier<R> supplier) {
         return getScopedKey()
                 .mapNotNull(key -> {

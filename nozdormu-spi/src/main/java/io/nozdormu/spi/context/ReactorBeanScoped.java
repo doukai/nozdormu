@@ -8,6 +8,8 @@ public interface ReactorBeanScoped {
 
     Mono<String> getScopedKey();
 
+    <T> Mono<T> get(Class<T> beanClass);
+
     <T, R extends T> Mono<T> get(Class<T> beanClass, Supplier<R> supplier);
 
     <T, R extends T> Mono<T> getMono(Class<T> beanClass, Supplier<Mono<R>> supplier);
