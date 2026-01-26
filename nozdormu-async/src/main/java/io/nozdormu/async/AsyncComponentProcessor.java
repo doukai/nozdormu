@@ -16,6 +16,7 @@ import io.nozdormu.common.ProcessorManager;
 import io.nozdormu.inject.processor.ComponentProxyProcessor;
 import io.nozdormu.spi.async.Async;
 import io.nozdormu.spi.async.Asyncable;
+import io.nozdormu.spi.error.InjectionProcessException;
 import jakarta.inject.Provider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,6 +38,7 @@ import javax.lang.model.type.TypeMirror;
 import static com.github.javaparser.ast.expr.BinaryExpr.Operator.EQUALS;
 import static com.github.javaparser.ast.expr.BinaryExpr.Operator.NOT_EQUALS;
 import static io.nozdormu.spi.async.Asyncable.ASYNC_METHOD_NAME_SUFFIX;
+import static io.nozdormu.spi.error.InjectionProcessErrorType.VARIABLE_DECLARATOR_NOT_EXIST;
 
 @AutoService(ComponentProxyProcessor.class)
 public class AsyncComponentProcessor implements ComponentProxyProcessor {
@@ -469,18 +471,30 @@ public class AsyncComponentProcessor implements ComponentProxyProcessor {
                     break;
                 }
             } else if (statement.isExpressionStmt() &&
-                    statement.asExpressionStmt().getExpression().isVariableDeclarationExpr() &&
-                    statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariables().size() == 1 &&
-                    statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariable(0).getInitializer().isPresent() &&
-                    statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariable(0).getInitializer().get().isMethodCallExpr() &&
-                    (statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariable(0).getInitializer().get().asMethodCallExpr().getNameAsString().equals("await") &&
-                            statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariable(0).getInitializer().get().asMethodCallExpr().getArgument(0).isMethodCallExpr())
+                    (statement.asExpressionStmt().getExpression().isVariableDeclarationExpr() &&
+                            statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariables().size() == 1 &&
+                            statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariable(0).getInitializer().isPresent() &&
+                            statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariable(0).getInitializer().get().isMethodCallExpr() &&
+                            statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariable(0).getInitializer().get().asMethodCallExpr().getNameAsString().equals("await") &&
+                            statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariable(0).getInitializer().get().asMethodCallExpr().getArgument(0).isMethodCallExpr() ||
+                            statement.asExpressionStmt().getExpression().isAssignExpr() &&
+                                    statement.asExpressionStmt().getExpression().asAssignExpr().getValue().isMethodCallExpr() &&
+                                    statement.asExpressionStmt().getExpression().asAssignExpr().getValue().asMethodCallExpr().getNameAsString().equals("await") &&
+                                    statement.asExpressionStmt().getExpression().asAssignExpr().getValue().asMethodCallExpr().getArgument(0).isMethodCallExpr())
             ) {
-                VariableDeclarator variableDeclarator = statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariable(0);
+                VariableDeclarator variableDeclarator;
+                MethodCallExpr methodCallExpr;
+                if (statement.asExpressionStmt().getExpression().isAssignExpr()) {
+                    variableDeclarator = processorManager.getDeclaratorVariableDeclarator(statement.asExpressionStmt().getExpression().asAssignExpr().getTarget().asNameExpr())
+                            .orElseThrow(() -> new InjectionProcessException(VARIABLE_DECLARATOR_NOT_EXIST.bind(statement)));
+                    methodCallExpr = statement.asExpressionStmt().getExpression().asAssignExpr().getValue().asMethodCallExpr().getArgument(0).asMethodCallExpr();
+                } else {
+                    variableDeclarator = statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariable(0);
+                    methodCallExpr = variableDeclarator.getInitializer()
+                            .map(expression -> expression.asMethodCallExpr().getArgument(0).asMethodCallExpr())
+                            .orElseThrow(() -> new RuntimeException("incorrect await method definition: " + variableDeclarator));
+                }
                 boolean hasCheckAwaitIsNull = hasCheckAwaitIsNull(variableDeclarator.getNameAsString(), lastStatementList);
-                MethodCallExpr methodCallExpr = variableDeclarator.getInitializer()
-                        .map(expression -> expression.asMethodCallExpr().getArgument(0).asMethodCallExpr())
-                        .orElseThrow(() -> new RuntimeException("incorrect await method definition: " + variableDeclarator));
                 String methodDeclarationReturnTypeName = processorManager.resolveMethodDeclarationReturnTypeQualifiedName(methodCallExpr);
                 String methodDeclarationReturnDescribe = processorManager.resolveMethodDeclarationReturnTypeDescribe(methodCallExpr);
                 if (methodCallExpr.getScope().isPresent() && processorManager.calculateType(methodCallExpr.getScope().get()).asReferenceType().getQualifiedName().equals(Provider.class.getCanonicalName()) ||
@@ -1205,7 +1219,12 @@ public class AsyncComponentProcessor implements ComponentProxyProcessor {
                 buildAsyncReturnExpression(statement.asReturnStmt())
                         .ifPresent(expression -> asyncStatements.add(new ReturnStmt(expression)));
             } else {
-                asyncStatements.add(statement);
+                if (!statement.isExpressionStmt() ||
+                        !statement.asExpressionStmt().getExpression().isVariableDeclarationExpr() ||
+                        statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariable(0).getInitializer().isPresent() ||
+                        !variableDeclaratorIsAwait(statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariable(0), lastStatementList)) {
+                    asyncStatements.add(statement.clone());
+                }
             }
         }
         return asyncStatements;
@@ -1250,12 +1269,16 @@ public class AsyncComponentProcessor implements ComponentProxyProcessor {
                                                 statement.asExpressionStmt().getExpression().asMethodCallExpr().getArgument(0).asLambdaExpr().getBody().isExpressionStmt() &&
                                                 statement.asExpressionStmt().getExpression().asMethodCallExpr().getArgument(0).asLambdaExpr().getBody().asExpressionStmt().getExpression().isMethodCallExpr()
                                 ) ||
-                                statement.asExpressionStmt().getExpression().isVariableDeclarationExpr() &&
+                                (statement.asExpressionStmt().getExpression().isVariableDeclarationExpr() &&
                                         statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariables().size() == 1 &&
                                         statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariable(0).getInitializer().isPresent() &&
                                         statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariable(0).getInitializer().get().isMethodCallExpr() &&
-                                        (statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariable(0).getInitializer().get().asMethodCallExpr().getNameAsString().equals("await") &&
-                                                statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariable(0).getInitializer().get().asMethodCallExpr().getArgument(0).isMethodCallExpr()))
+                                        statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariable(0).getInitializer().get().asMethodCallExpr().getNameAsString().equals("await") &&
+                                        statement.asExpressionStmt().getExpression().asVariableDeclarationExpr().getVariable(0).getInitializer().get().asMethodCallExpr().getArgument(0).isMethodCallExpr()) ||
+                                statement.asExpressionStmt().getExpression().isAssignExpr() &&
+                                        statement.asExpressionStmt().getExpression().asAssignExpr().getValue().isMethodCallExpr() &&
+                                        statement.asExpressionStmt().getExpression().asAssignExpr().getValue().asMethodCallExpr().getNameAsString().equals("await") &&
+                                        statement.asExpressionStmt().getExpression().asAssignExpr().getValue().asMethodCallExpr().getArgument(0).isMethodCallExpr())
         ) {
             return true;
         } else if (statement.isBlockStmt()) {
@@ -1344,6 +1367,44 @@ public class AsyncComponentProcessor implements ComponentProxyProcessor {
                         }
                 )
                 .collect(Collectors.toList());
+    }
+
+    private boolean variableDeclaratorIsAwait(VariableDeclarator variableDeclarator, List<Statement> statementList) {
+        return statementList.stream()
+                .anyMatch(statement -> {
+                            if (statement.isExpressionStmt() &&
+                                    statement.asExpressionStmt().getExpression().isAssignExpr() &&
+                                    statement.asExpressionStmt().getExpression().asAssignExpr().getTarget().isNameExpr() &&
+                                    statement.asExpressionStmt().getExpression().asAssignExpr().getTarget().asNameExpr().getNameAsString().equals(variableDeclarator.getNameAsString()) &&
+                                    statement.asExpressionStmt().getExpression().asAssignExpr().getValue().isMethodCallExpr() &&
+                                    statement.asExpressionStmt().getExpression().asAssignExpr().getValue().asMethodCallExpr().getNameAsString().equals("await")
+                            ) {
+                                return true;
+                            } else if (statement.isIfStmt()) {
+                                IfStmt ifStmt = statement.asIfStmt();
+                                return variableDeclaratorIsAwait(variableDeclarator, ifStmt);
+                            } else {
+                                return false;
+                            }
+                        }
+                );
+    }
+
+    private boolean variableDeclaratorIsAwait(VariableDeclarator variableDeclarator, IfStmt ifStmt) {
+        boolean variableDeclaratorIsAwait = false;
+        if (ifStmt.getThenStmt().isBlockStmt()) {
+            variableDeclaratorIsAwait = variableDeclaratorIsAwait(variableDeclarator, ifStmt.getThenStmt().asBlockStmt().getStatements());
+        }
+
+        boolean variableDeclaratorIsAwaitInElse = false;
+        if (ifStmt.getElseStmt().isPresent()) {
+            if (ifStmt.getElseStmt().get().isBlockStmt()) {
+                variableDeclaratorIsAwaitInElse = variableDeclaratorIsAwait(variableDeclarator, ifStmt.getElseStmt().get().asBlockStmt().getStatements());
+            } else if (ifStmt.getElseStmt().get().isIfStmt()) {
+                variableDeclaratorIsAwaitInElse = variableDeclaratorIsAwait(variableDeclarator, ifStmt.getElseStmt().get().asIfStmt());
+            }
+        }
+        return variableDeclaratorIsAwait || variableDeclaratorIsAwaitInElse;
     }
 
     private boolean hasAwait(ReturnStmt returnStmt) {

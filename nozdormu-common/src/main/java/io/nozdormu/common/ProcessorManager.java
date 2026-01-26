@@ -695,7 +695,7 @@ public class ProcessorManager {
     }
 
     public Optional<MethodDeclaration> getMethodDeclaration(MethodCallExpr methodCallExpr) {
-        if (methodCallExpr.getScope().stream().noneMatch(Expression::isThisExpr)) {
+        if (methodCallExpr.hasScope() && methodCallExpr.getScope().stream().noneMatch(Expression::isThisExpr)) {
             ClassOrInterfaceDeclaration classOrInterfaceDeclaration;
             try {
                 ResolvedReferenceType referenceType = calculateType(methodCallExpr.getScope().get()).asReferenceType();
