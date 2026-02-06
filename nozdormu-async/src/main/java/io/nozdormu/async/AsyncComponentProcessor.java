@@ -53,107 +53,115 @@ public class AsyncComponentProcessor implements ComponentProxyProcessor {
     }
 
     @Override
-    public void processComponentProxy(CompilationUnit componentCompilationUnit, ClassOrInterfaceDeclaration componentClassDeclaration, CompilationUnit componentProxyCompilationUnit, ClassOrInterfaceDeclaration componentProxyClassDeclaration) {
+    public boolean processComponentProxy(CompilationUnit componentCompilationUnit, ClassOrInterfaceDeclaration componentClassDeclaration, CompilationUnit componentProxyCompilationUnit, ClassOrInterfaceDeclaration componentProxyClassDeclaration) {
         logger.info("{} async component build start", componentClassDeclaration.getFullyQualifiedName().orElseGet(componentClassDeclaration::getNameAsString));
 
-        componentClassDeclaration.getMethods().stream()
+        List<MethodDeclaration> asyncMethods = componentClassDeclaration.getMethods().stream()
                 .filter(methodDeclaration -> methodDeclaration.isAnnotationPresent(Async.class))
-                .forEach(methodDeclaration ->
-                        methodDeclaration.getBody()
-                                .ifPresent(methodBody -> {
-                                            componentProxyCompilationUnit
-                                                    .addImport(Mono.class)
-                                                    .addImport(Flux.class)
-                                                    .addImport(RuntimeException.class);
-                                            if (methodDeclaration.getType().isVoidType()) {
-                                                componentProxyCompilationUnit.addImport(Void.class);
-                                            }
-                                            String asyncMethodName = Stream
-                                                    .concat(
-                                                            Stream.of(methodDeclaration.getNameAsString() + ASYNC_METHOD_NAME_SUFFIX),
-                                                            methodDeclaration.getParameters().stream()
-                                                                    .map(parameter -> {
-                                                                                if (parameter.getType().isPrimitiveType()) {
-                                                                                    return parameter.getType().asPrimitiveType().toBoxedType().getNameAsString();
-                                                                                } else if (parameter.getType().isClassOrInterfaceType()) {
-                                                                                    return parameter.getType().asClassOrInterfaceType().getNameAsString();
-                                                                                } else {
-                                                                                    return parameter.getTypeAsString();
-                                                                                }
-                                                                            }
-                                                                    )
-                                                    )
-                                                    .collect(Collectors.joining("_"));
+                .collect(Collectors.toList());
 
-                                            MethodDeclaration asyncMethodDeclaration = new MethodDeclaration().setName(asyncMethodName)
-                                                    .setModifiers(methodDeclaration.getModifiers())
-                                                    .setParameters(methodDeclaration.getParameters())
-                                                    .setType(
-                                                            new ClassOrInterfaceType().setName(Mono.class.getSimpleName())
-                                                                    .setTypeArguments(
-                                                                            methodDeclaration.getType().isPrimitiveType() ?
-                                                                                    methodDeclaration.getType().asPrimitiveType().toBoxedType() :
-                                                                                    methodDeclaration.getType().isVoidType() ?
-                                                                                            new ClassOrInterfaceType().setName(Void.class.getSimpleName()) :
-                                                                                            methodDeclaration.getType()
-                                                                    )
-                                                    );
-                                            componentProxyClassDeclaration.addMember(asyncMethodDeclaration);
-                                            methodDeclaration.getTypeParameters().forEach(asyncMethodDeclaration::addTypeParameter);
+        if (asyncMethods.isEmpty()) {
+            return false;
+        }
 
-                                            String defaultIfEmpty = methodDeclaration.getAnnotationByClass(Async.class)
-                                                    .filter((Expression::isNormalAnnotationExpr))
-                                                    .flatMap(annotationExpr ->
-                                                            annotationExpr.asNormalAnnotationExpr().getPairs().stream()
-                                                                    .filter(memberValuePair -> memberValuePair.getNameAsString().equals("defaultIfEmpty"))
-                                                                    .findFirst()
-                                                    )
-                                                    .map(memberValuePair -> memberValuePair.getValue().asStringLiteralExpr().asString())
-                                                    .orElse(null);
-                                            NodeList<Statement> statements = buildAsyncStatements(methodBody.getStatements(), defaultIfEmpty);
-                                            if (methodDeclaration.getType().isVoidType()) {
-                                                asyncMethodDeclaration.createBody().setStatements(statements);
-                                            } else {
-                                                asyncMethodDeclaration.createBody().setStatements(
-                                                        statements.stream()
-                                                                .map(statement -> {
-                                                                            if (statement.isReturnStmt()) {
-                                                                                if (statement.asReturnStmt().getExpression().stream()
-                                                                                        .noneMatch(
-                                                                                                expression ->
-                                                                                                        expression.isMethodCallExpr() &&
-                                                                                                                expression.asMethodCallExpr().getNameAsString().equals("empty") &&
-                                                                                                                expression.asMethodCallExpr().getScope().isPresent() &&
-                                                                                                                expression.asMethodCallExpr().getScope().get().isNameExpr() &&
-                                                                                                                expression.asMethodCallExpr().getScope().get().asNameExpr().getNameAsString().equals(Mono.class.getSimpleName())
-                                                                                        )
-                                                                                ) {
-                                                                                    return statement.asReturnStmt().getExpression()
-                                                                                            .map(expression ->
-                                                                                                    (Statement) new ReturnStmt(
-                                                                                                            new MethodCallExpr("map")
-                                                                                                                    .addArgument(
-                                                                                                                            new LambdaExpr()
-                                                                                                                                    .addParameter(new Parameter(new UnknownType(), "object"))
-                                                                                                                                    .setBody(new ExpressionStmt(new CastExpr().setType(methodDeclaration.getType().isPrimitiveType() ? methodDeclaration.getType().asPrimitiveType().toBoxedType() : methodDeclaration.getType()).setExpression(new NameExpr("object"))))
-                                                                                                                    )
-                                                                                                                    .setScope(expression)
-                                                                                                    )
-                                                                                            )
-                                                                                            .orElse(statement);
-                                                                                }
-                                                                            }
-                                                                            return statement;
+        asyncMethods.forEach(methodDeclaration ->
+                methodDeclaration.getBody()
+                        .ifPresent(methodBody -> {
+                                    componentProxyCompilationUnit
+                                            .addImport(Mono.class)
+                                            .addImport(Flux.class)
+                                            .addImport(RuntimeException.class);
+                                    if (methodDeclaration.getType().isVoidType()) {
+                                        componentProxyCompilationUnit.addImport(Void.class);
+                                    }
+                                    String asyncMethodName = Stream
+                                            .concat(
+                                                    Stream.of(methodDeclaration.getNameAsString() + ASYNC_METHOD_NAME_SUFFIX),
+                                                    methodDeclaration.getParameters().stream()
+                                                            .map(parameter -> {
+                                                                        if (parameter.getType().isPrimitiveType()) {
+                                                                            return parameter.getType().asPrimitiveType().toBoxedType().getNameAsString();
+                                                                        } else if (parameter.getType().isClassOrInterfaceType()) {
+                                                                            return parameter.getType().asClassOrInterfaceType().getNameAsString();
+                                                                        } else {
+                                                                            return parameter.getTypeAsString();
                                                                         }
-                                                                )
-                                                                .collect(Collectors.toCollection(NodeList::new))
-                                                );
-                                            }
-                                        }
-                                )
-                );
-        buildAsyncMethodDeclaration(componentClassDeclaration).ifPresent(componentProxyClassDeclaration::addMember);
+                                                                    }
+                                                            )
+                                            )
+                                            .collect(Collectors.joining("_"));
+
+                                    MethodDeclaration asyncMethodDeclaration = new MethodDeclaration().setName(asyncMethodName)
+                                            .setModifiers(methodDeclaration.getModifiers())
+                                            .setParameters(methodDeclaration.getParameters())
+                                            .setType(
+                                                    new ClassOrInterfaceType().setName(Mono.class.getSimpleName())
+                                                            .setTypeArguments(
+                                                                    methodDeclaration.getType().isPrimitiveType() ?
+                                                                            methodDeclaration.getType().asPrimitiveType().toBoxedType() :
+                                                                            methodDeclaration.getType().isVoidType() ?
+                                                                                    new ClassOrInterfaceType().setName(Void.class.getSimpleName()) :
+                                                                                    methodDeclaration.getType()
+                                                            )
+                                            );
+                                    componentProxyClassDeclaration.addMember(asyncMethodDeclaration);
+                                    methodDeclaration.getTypeParameters().forEach(asyncMethodDeclaration::addTypeParameter);
+
+                                    String defaultIfEmpty = methodDeclaration.getAnnotationByClass(Async.class)
+                                            .filter((Expression::isNormalAnnotationExpr))
+                                            .flatMap(annotationExpr ->
+                                                    annotationExpr.asNormalAnnotationExpr().getPairs().stream()
+                                                            .filter(memberValuePair -> memberValuePair.getNameAsString().equals("defaultIfEmpty"))
+                                                            .findFirst()
+                                            )
+                                            .map(memberValuePair -> memberValuePair.getValue().asStringLiteralExpr().asString())
+                                            .orElse(null);
+                                    NodeList<Statement> statements = buildAsyncStatements(methodBody.getStatements(), defaultIfEmpty);
+                                    if (methodDeclaration.getType().isVoidType()) {
+                                        asyncMethodDeclaration.createBody().setStatements(statements);
+                                    } else {
+                                        asyncMethodDeclaration.createBody().setStatements(
+                                                statements.stream()
+                                                        .map(statement -> {
+                                                                    if (statement.isReturnStmt()) {
+                                                                        if (statement.asReturnStmt().getExpression().stream()
+                                                                                .noneMatch(
+                                                                                        expression ->
+                                                                                                expression.isMethodCallExpr() &&
+                                                                                                        expression.asMethodCallExpr().getNameAsString().equals("empty") &&
+                                                                                                        expression.asMethodCallExpr().getScope().isPresent() &&
+                                                                                                        expression.asMethodCallExpr().getScope().get().isNameExpr() &&
+                                                                                                        expression.asMethodCallExpr().getScope().get().asNameExpr().getNameAsString().equals(Mono.class.getSimpleName())
+                                                                                )
+                                                                        ) {
+                                                                            return statement.asReturnStmt().getExpression()
+                                                                                    .map(expression ->
+                                                                                            (Statement) new ReturnStmt(
+                                                                                                    new MethodCallExpr("map")
+                                                                                                            .addArgument(
+                                                                                                                    new LambdaExpr()
+                                                                                                                            .addParameter(new Parameter(new UnknownType(), "object"))
+                                                                                                                            .setBody(new ExpressionStmt(new CastExpr().setType(methodDeclaration.getType().isPrimitiveType() ? methodDeclaration.getType().asPrimitiveType().toBoxedType() : methodDeclaration.getType()).setExpression(new NameExpr("object"))))
+                                                                                                            )
+                                                                                                            .setScope(expression)
+                                                                                            )
+                                                                                    )
+                                                                                    .orElse(statement);
+                                                                        }
+                                                                    }
+                                                                    return statement;
+                                                                }
+                                                        )
+                                                        .collect(Collectors.toCollection(NodeList::new))
+                                        );
+                                    }
+                                }
+                        )
+        );
+        buildAsyncMethodDeclaration(componentClassDeclaration, asyncMethods).ifPresent(componentProxyClassDeclaration::addMember);
+
         logger.info("{} async component build success", componentClassDeclaration.getFullyQualifiedName().orElseGet(componentClassDeclaration::getNameAsString));
+        return true;
     }
 
     protected NodeList<Statement> buildAsyncStatements(List<Statement> statementNodeList, String defaultIfEmpty) {
@@ -1607,15 +1615,18 @@ public class AsyncComponentProcessor implements ComponentProxyProcessor {
     }
 
     private Optional<MethodDeclaration> buildAsyncMethodDeclaration(ClassOrInterfaceDeclaration componentClassDeclaration) {
-        MethodDeclaration asyncMethodDeclaration = buildAsyncableMethodDeclarationFromElements();
-
         List<MethodDeclaration> asyncMethodDeclarationList = componentClassDeclaration.getMethods().stream()
                 .filter(methodDeclaration -> methodDeclaration.isAnnotationPresent(Async.class))
                 .collect(Collectors.toList());
+        return buildAsyncMethodDeclaration(componentClassDeclaration, asyncMethodDeclarationList);
+    }
 
+    private Optional<MethodDeclaration> buildAsyncMethodDeclaration(ClassOrInterfaceDeclaration componentClassDeclaration,
+                                                                    List<MethodDeclaration> asyncMethodDeclarationList) {
         if (asyncMethodDeclarationList.isEmpty()) {
             return Optional.empty();
         }
+        MethodDeclaration asyncMethodDeclaration = buildAsyncableMethodDeclarationFromElements();
 
         SwitchStmt switchStmt = new SwitchStmt()
                 .setSelector(asyncMethodDeclaration.getParameter(0).getNameAsExpression())

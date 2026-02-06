@@ -36,7 +36,7 @@ public class ConfigComponentProcessor implements ComponentProxyProcessor {
     }
 
     @Override
-    public void processComponentProxy(CompilationUnit componentCompilationUnit, ClassOrInterfaceDeclaration componentClassDeclaration, CompilationUnit componentProxyCompilationUnit, ClassOrInterfaceDeclaration componentProxyClassDeclaration) {
+    public boolean processComponentProxy(CompilationUnit componentCompilationUnit, ClassOrInterfaceDeclaration componentClassDeclaration, CompilationUnit componentProxyCompilationUnit, ClassOrInterfaceDeclaration componentProxyClassDeclaration) {
         logger.info("{} config component build start", componentClassDeclaration.getFullyQualifiedName().orElseGet(componentClassDeclaration::getNameAsString));
         List<MethodDeclaration> methodDeclarationList = componentClassDeclaration.getMethods().stream()
                 .filter(methodDeclaration ->
@@ -45,7 +45,11 @@ public class ConfigComponentProcessor implements ComponentProxyProcessor {
                 )
                 .collect(Collectors.toList());
 
-        if (!methodDeclarationList.isEmpty() && componentProxyClassDeclaration.getConstructors().isEmpty()) {
+        if (methodDeclarationList.isEmpty()) {
+            return false;
+        }
+
+        if (componentProxyClassDeclaration.getConstructors().isEmpty()) {
             componentProxyClassDeclaration
                     .addMember(
                             new ConstructorDeclaration()
@@ -75,6 +79,7 @@ public class ConfigComponentProcessor implements ComponentProxyProcessor {
                         })
                 );
         logger.info("{} config component build success", componentClassDeclaration.getFullyQualifiedName().orElseGet(componentClassDeclaration::getNameAsString));
+        return true;
     }
 
     private boolean isConfigPropertyFieldSetter(MethodDeclaration methodDeclaration) {

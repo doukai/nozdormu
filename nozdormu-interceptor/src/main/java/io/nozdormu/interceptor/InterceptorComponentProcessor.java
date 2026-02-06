@@ -37,11 +37,29 @@ public class InterceptorComponentProcessor implements ComponentProxyProcessor {
     }
 
     @Override
-    public void processComponentProxy(CompilationUnit componentCompilationUnit, ClassOrInterfaceDeclaration componentClassDeclaration, CompilationUnit componentProxyCompilationUnit, ClassOrInterfaceDeclaration componentProxyClassDeclaration) {
+    public boolean processComponentProxy(CompilationUnit componentCompilationUnit, ClassOrInterfaceDeclaration componentClassDeclaration, CompilationUnit componentProxyCompilationUnit, ClassOrInterfaceDeclaration componentProxyClassDeclaration) {
         logger.info("{} interceptor component build start", componentClassDeclaration.getFullyQualifiedName().orElseGet(componentClassDeclaration::getNameAsString));
-        buildMethod(componentClassDeclaration, componentProxyCompilationUnit, componentProxyClassDeclaration);
-        buildConstructor(componentClassDeclaration, componentProxyCompilationUnit, componentProxyClassDeclaration);
+        List<MethodDeclaration> methodBindings = componentClassDeclaration.getMethods().stream()
+                .filter(methodDeclaration ->
+                        methodDeclaration.getAnnotations().stream()
+                                .anyMatch(annotationExpr -> processorManager.hasMetaAnnotation(annotationExpr, InterceptorBinding.class.getName()))
+                )
+                .collect(Collectors.toList());
+        List<ConstructorDeclaration> constructorBindings = componentClassDeclaration.getConstructors().stream()
+                .filter(constructorDeclaration ->
+                        constructorDeclaration.getAnnotations().stream()
+                                .anyMatch(annotationExpr -> processorManager.hasMetaAnnotation(annotationExpr, InterceptorBinding.class.getName()))
+                )
+                .collect(Collectors.toList());
+
+        if (!methodBindings.isEmpty()) {
+            buildMethod(componentClassDeclaration, componentProxyCompilationUnit, componentProxyClassDeclaration, methodBindings);
+        }
+        if (!constructorBindings.isEmpty()) {
+            buildConstructor(componentClassDeclaration, componentProxyCompilationUnit, componentProxyClassDeclaration, constructorBindings);
+        }
         logger.info("{} interceptor component build success", componentClassDeclaration.getFullyQualifiedName().orElseGet(componentClassDeclaration::getNameAsString));
+        return !methodBindings.isEmpty() || !constructorBindings.isEmpty();
     }
 
     private boolean hasInterceptorBinding(Element element) {
@@ -53,7 +71,11 @@ public class InterceptorComponentProcessor implements ComponentProxyProcessor {
     }
 
     private void buildMethod(ClassOrInterfaceDeclaration componentClassDeclaration, CompilationUnit componentProxyCompilationUnit, ClassOrInterfaceDeclaration componentProxyClassDeclaration) {
-        componentClassDeclaration.getMethods()
+        buildMethod(componentClassDeclaration, componentProxyCompilationUnit, componentProxyClassDeclaration, componentClassDeclaration.getMethods());
+    }
+
+    private void buildMethod(ClassOrInterfaceDeclaration componentClassDeclaration, CompilationUnit componentProxyCompilationUnit, ClassOrInterfaceDeclaration componentProxyClassDeclaration, List<MethodDeclaration> methodDeclarations) {
+        methodDeclarations
                 .forEach(methodDeclaration -> {
                     List<AnnotationExpr> annotationExprList = methodDeclaration.getAnnotations().stream()
                             .filter(annotationExpr ->
@@ -471,7 +493,11 @@ public class InterceptorComponentProcessor implements ComponentProxyProcessor {
     }
 
     private void buildConstructor(ClassOrInterfaceDeclaration componentClassDeclaration, CompilationUnit componentProxyCompilationUnit, ClassOrInterfaceDeclaration componentProxyClassDeclaration) {
-        componentClassDeclaration.getConstructors()
+        buildConstructor(componentClassDeclaration, componentProxyCompilationUnit, componentProxyClassDeclaration, componentClassDeclaration.getConstructors());
+    }
+
+    private void buildConstructor(ClassOrInterfaceDeclaration componentClassDeclaration, CompilationUnit componentProxyCompilationUnit, ClassOrInterfaceDeclaration componentProxyClassDeclaration, List<ConstructorDeclaration> constructorDeclarations) {
+        constructorDeclarations
                 .forEach(constructorDeclaration -> {
                     List<AnnotationExpr> annotationExprList = constructorDeclaration.getAnnotations().stream()
                             .filter(annotationExpr ->

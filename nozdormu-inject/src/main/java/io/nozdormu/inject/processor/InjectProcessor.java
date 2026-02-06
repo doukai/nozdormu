@@ -42,6 +42,7 @@ import javax.lang.model.element.Element;
 import javax.lang.model.element.TypeElement;
 import java.lang.annotation.Annotation;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 import static io.nozdormu.spi.error.InjectionProcessErrorType.*;
@@ -58,6 +59,7 @@ import static io.nozdormu.spi.error.InjectionProcessErrorType.*;
 public class InjectProcessor extends AbstractProcessor {
 
     private static final Logger logger = LoggerFactory.getLogger(InjectProcessor.class);
+    private static final AtomicInteger SUPPLIER_SEQ = new AtomicInteger();
 
     private final Set<ComponentProxyProcessor> componentProxyProcessors = new HashSet<>();
     private ProcessorManager processorManager;
@@ -121,16 +123,17 @@ public class InjectProcessor extends AbstractProcessor {
         typeElements.forEach(typeElement ->
                 processorManager.getCompilationUnit(typeElement).ifPresent(componentCompilationUnit -> {
                     compilationUnitListMap.put(typeElement.getQualifiedName().toString(), componentCompilationUnit);
-                    CompilationUnit proxyCompilationUnit = buildComponentProxy(typeElement);
-                    proxyCompilationUnitMap.put(typeElement.getQualifiedName().toString(), proxyCompilationUnit);
-                    processorManager.writeToFiler(proxyCompilationUnit);
+                    buildComponentProxy(typeElement).ifPresent(compilationUnit -> {
+                        proxyCompilationUnitMap.put(typeElement.getQualifiedName().toString(), compilationUnit);
+                        processorManager.writeToFiler(compilationUnit);
+                    });
                 })
         );
 
         String rootPackageName = processorManager.getRootPackageName();
         List<List<CompilationUnit>> partitions = Lists.partition(new ArrayList<>(compilationUnitListMap.values()), processorManager.getSuppliersPartitionSize());
         partitions.forEach(compilationUnitList -> {
-            long suffix = System.currentTimeMillis();
+            int suffix = SUPPLIER_SEQ.getAndIncrement();
             CompilationUnit proxySuppliersCompilationUnit = buildProxySuppliers(rootPackageName, compilationUnitList, proxyCompilationUnitMap, suffix);
             processorManager.writeToFiler(proxySuppliersCompilationUnit);
         });
@@ -138,20 +141,19 @@ public class InjectProcessor extends AbstractProcessor {
         return false;
     }
 
-    private CompilationUnit buildComponentProxy(TypeElement typeElement) {
+    private Optional<CompilationUnit> buildComponentProxy(TypeElement typeElement) {
         return processorManager.getCompilationUnit(typeElement)
-                .map(this::buildComponentProxy)
-                .orElseThrow(() -> new InjectionProcessException(CANNOT_GET_COMPILATION_UNIT.bind(typeElement.getQualifiedName().toString())));
+                .flatMap(this::buildComponentProxy);
     }
 
-    private CompilationUnit buildComponentProxy(CompilationUnit componentCompilationUnit) {
+    private Optional<CompilationUnit> buildComponentProxy(CompilationUnit componentCompilationUnit) {
         return buildComponentProxy(
                 componentCompilationUnit,
                 processorManager.getPublicClassOrInterfaceDeclarationOrError(componentCompilationUnit)
         );
     }
 
-    private CompilationUnit buildComponentProxy(CompilationUnit componentCompilationUnit, ClassOrInterfaceDeclaration componentClassDeclaration) {
+    private Optional<CompilationUnit> buildComponentProxy(CompilationUnit componentCompilationUnit, ClassOrInterfaceDeclaration componentClassDeclaration) {
         String qualifiedName = processorManager.getQualifiedName(componentClassDeclaration);
 
         logger.info("{} proxy class build start", qualifiedName);
@@ -184,6 +186,14 @@ public class InjectProcessor extends AbstractProcessor {
                 .collect(Collectors.toList());
 
         privateFieldDeclarationList.forEach(proxyClassDeclaration::addMember);
+
+        List<MethodDeclaration> injectMethodDeclarations = componentClassDeclaration.getMethods().stream()
+                .filter(methodDeclaration ->
+                        methodDeclaration.isAnnotationPresent(Inject.class) ||
+                                processorManager.isInjectFieldSetter(methodDeclaration)
+                )
+                .collect(Collectors.toList());
+        boolean hasInjectMethod = !injectMethodDeclarations.isEmpty() && !componentClassDeclaration.getConstructors().isEmpty();
 
         componentClassDeclaration.getConstructors()
                 .forEach(constructorDeclaration -> {
@@ -219,11 +229,7 @@ public class InjectProcessor extends AbstractProcessor {
                                     )
                             );
 
-                    componentClassDeclaration.getMethods().stream()
-                            .filter(methodDeclaration ->
-                                    methodDeclaration.isAnnotationPresent(Inject.class) ||
-                                            processorManager.isInjectFieldSetter(methodDeclaration)
-                            )
+                    injectMethodDeclarations
                             .forEach(methodDeclaration -> {
                                         methodDeclaration.getParameters().forEach(proxyConstructorDeclaration::addParameter);
                                         blockStmt
@@ -256,35 +262,53 @@ public class InjectProcessor extends AbstractProcessor {
                 })
                 .forEach(proxyClassDeclaration::addAnnotation);
 
-        buildObserverInnerClasses(componentClassDeclaration, proxyCompilationUnit, proxyClassDeclaration, Observes.class, ScopeEventObserver.class);
-        buildObserverInnerClasses(componentClassDeclaration, proxyCompilationUnit, proxyClassDeclaration, ObservesAsync.class, ScopeEventAsyncObserver.class);
+        List<MethodDeclaration> observesMethods = componentClassDeclaration.getMethods().stream()
+                .filter(methodDeclaration ->
+                        methodDeclaration.getParameters().stream()
+                                .anyMatch(parameter -> parameter.isAnnotationPresent(Observes.class))
+                )
+                .collect(Collectors.toList());
+        List<MethodDeclaration> observesAsyncMethods = componentClassDeclaration.getMethods().stream()
+                .filter(methodDeclaration ->
+                        methodDeclaration.getParameters().stream()
+                                .anyMatch(parameter -> parameter.isAnnotationPresent(ObservesAsync.class))
+                )
+                .collect(Collectors.toList());
 
-        componentProxyProcessors
-                .forEach(componentProxyProcessor -> {
-                    logger.info("{} process component proxy", componentProxyProcessor.getClass().getName());
-                    componentProxyProcessor.processComponentProxy(componentCompilationUnit, componentClassDeclaration, proxyCompilationUnit, proxyClassDeclaration);
-                });
+        boolean hasObservesMethods = !observesMethods.isEmpty();
+        boolean hasObservesAsyncMethods = !observesAsyncMethods.isEmpty();
+
+        if (hasObservesMethods) {
+            buildObserverInnerClasses(componentClassDeclaration, proxyCompilationUnit, proxyClassDeclaration, observesMethods, Observes.class, ScopeEventObserver.class);
+        }
+        if (hasObservesAsyncMethods) {
+            buildObserverInnerClasses(componentClassDeclaration, proxyCompilationUnit, proxyClassDeclaration, observesAsyncMethods, ObservesAsync.class, ScopeEventAsyncObserver.class);
+        }
+
+        boolean componentProxyProcessed = false;
+        for (ComponentProxyProcessor componentProxyProcessor : componentProxyProcessors) {
+            logger.info("{} process component proxy", componentProxyProcessor.getClass().getName());
+            if (componentProxyProcessor.processComponentProxy(componentCompilationUnit, componentClassDeclaration, proxyCompilationUnit, proxyClassDeclaration)) {
+                componentProxyProcessed = true;
+            }
+        }
+
+        boolean proxyModified = hasInjectMethod || hasObservesMethods || hasObservesAsyncMethods || componentProxyProcessed;
+        if (!proxyModified) {
+            logger.debug("{} no component proxy processor applied", qualifiedName);
+            return Optional.empty();
+        }
 
         logger.info("{} proxy class build success", qualifiedName);
-        return proxyCompilationUnit;
+        return Optional.of(proxyCompilationUnit);
     }
 
     private void buildObserverInnerClasses(ClassOrInterfaceDeclaration componentClassDeclaration,
                                            CompilationUnit proxyCompilationUnit,
                                            ClassOrInterfaceDeclaration proxyClassDeclaration,
+                                           List<MethodDeclaration> observesMethods,
                                            Class<? extends Annotation> observesAnnotationClass,
                                            Class<?> observerInterfaceClass) {
-        List<MethodDeclaration> observesMethods = componentClassDeclaration.getMethods().stream()
-                .filter(methodDeclaration ->
-                        methodDeclaration.getParameters().stream()
-                                .anyMatch(parameter -> parameter.isAnnotationPresent(observesAnnotationClass))
-                )
-                .collect(Collectors.toList());
-
-        if (observesMethods.isEmpty()) {
-            return;
-        }
-
         proxyCompilationUnit.addImport(observerInterfaceClass);
 
         observesMethods.forEach(methodDeclaration -> {
@@ -651,37 +675,55 @@ public class InjectProcessor extends AbstractProcessor {
                                                     )
                                             );
 
-                                    staticInitializer.addStatement(
-                                            new MethodCallExpr().setName("put")
-                                                    .addArgument(new StringLiteralExpr(qualifiedName + "_Proxy"))
-                                                    .addArgument(new NameExpr(componentPrefix + "_beanSupplier"))
-                                                    .setScope(
-                                                            new MethodCallExpr().setName("computeIfAbsent")
-                                                                    .addArgument(new StringLiteralExpr(qualifiedName))
-                                                                    .addArgument(
-                                                                            new LambdaExpr()
-                                                                                    .addParameter(new Parameter().setName("k").setType(new UnknownType()))
-                                                                                    .setBody(new ExpressionStmt(new ObjectCreationExpr().setType(HashMap.class).setTypeArguments()))
-                                                                    )
-                                                                    .setScope(new NameExpr("beanSuppliers"))
-                                                    )
-                                    );
+                                    if (!proxyCompilationUnitMap.containsKey(qualifiedName)) {
+                                        staticInitializer.addStatement(
+                                                new MethodCallExpr().setName("put")
+                                                        .addArgument(new StringLiteralExpr(qualifiedName))
+                                                        .addArgument(new NameExpr(componentPrefix + "_beanSupplier"))
+                                                        .setScope(
+                                                                new MethodCallExpr().setName("computeIfAbsent")
+                                                                        .addArgument(new StringLiteralExpr(qualifiedName))
+                                                                        .addArgument(
+                                                                                new LambdaExpr()
+                                                                                        .addParameter(new Parameter().setName("k").setType(new UnknownType()))
+                                                                                        .setBody(new ExpressionStmt(new ObjectCreationExpr().setType(HashMap.class).setTypeArguments()))
+                                                                        )
+                                                                        .setScope(new NameExpr("beanSuppliers"))
+                                                        )
+                                        );
+                                    } else {
+                                        staticInitializer.addStatement(
+                                                new MethodCallExpr().setName("put")
+                                                        .addArgument(new StringLiteralExpr(qualifiedName + "_Proxy"))
+                                                        .addArgument(new NameExpr(componentPrefix + "_beanSupplier"))
+                                                        .setScope(
+                                                                new MethodCallExpr().setName("computeIfAbsent")
+                                                                        .addArgument(new StringLiteralExpr(qualifiedName))
+                                                                        .addArgument(
+                                                                                new LambdaExpr()
+                                                                                        .addParameter(new Parameter().setName("k").setType(new UnknownType()))
+                                                                                        .setBody(new ExpressionStmt(new ObjectCreationExpr().setType(HashMap.class).setTypeArguments()))
+                                                                        )
+                                                                        .setScope(new NameExpr("beanSuppliers"))
+                                                        )
+                                        );
 
-                                    staticInitializer.addStatement(
-                                            new MethodCallExpr().setName("put")
-                                                    .addArgument(new StringLiteralExpr(qualifiedName + "_Proxy"))
-                                                    .addArgument(new NameExpr(componentPrefix + "_beanSupplier"))
-                                                    .setScope(
-                                                            new MethodCallExpr().setName("computeIfAbsent")
-                                                                    .addArgument(new StringLiteralExpr(qualifiedName + "_Proxy"))
-                                                                    .addArgument(
-                                                                            new LambdaExpr()
-                                                                                    .addParameter(new Parameter().setName("k").setType(new UnknownType()))
-                                                                                    .setBody(new ExpressionStmt(new ObjectCreationExpr().setType(HashMap.class).setTypeArguments()))
-                                                                    )
-                                                                    .setScope(new NameExpr("beanSuppliers"))
-                                                    )
-                                    );
+                                        staticInitializer.addStatement(
+                                                new MethodCallExpr().setName("put")
+                                                        .addArgument(new StringLiteralExpr(qualifiedName + "_Proxy"))
+                                                        .addArgument(new NameExpr(componentPrefix + "_beanSupplier"))
+                                                        .setScope(
+                                                                new MethodCallExpr().setName("computeIfAbsent")
+                                                                        .addArgument(new StringLiteralExpr(qualifiedName + "_Proxy"))
+                                                                        .addArgument(
+                                                                                new LambdaExpr()
+                                                                                        .addParameter(new Parameter().setName("k").setType(new UnknownType()))
+                                                                                        .setBody(new ExpressionStmt(new ObjectCreationExpr().setType(HashMap.class).setTypeArguments()))
+                                                                        )
+                                                                        .setScope(new NameExpr("beanSuppliers"))
+                                                        )
+                                        );
+                                    }
 
                                     processorManager.getExtendedTypes(componentClassDeclaration)
                                             .forEach(extendedTypeName ->

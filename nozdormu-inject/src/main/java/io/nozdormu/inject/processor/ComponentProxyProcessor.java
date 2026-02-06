@@ -12,9 +12,10 @@ public interface ComponentProxyProcessor {
     default void inProcess() {
     }
 
-    default void processComponentProxy(CompilationUnit componentCompilationUnit,
+    default boolean processComponentProxy(CompilationUnit componentCompilationUnit,
                                        ClassOrInterfaceDeclaration componentClassDeclaration,
                                        CompilationUnit componentProxyCompilationUnit,
                                        ClassOrInterfaceDeclaration componentProxyClassDeclaration) {
+        return false;
     }
 }
