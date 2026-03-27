@@ -6,18 +6,17 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 @ApplicationScoped
 public class QueryDAO {
 
-    @ConfigProperty
-    private DBConfig dbConfig;
+  @ConfigProperty private DBConfig dbConfig;
 
-    public void setDbConfig(DBConfig dbConfig) {
-        this.dbConfig = dbConfig;
-    }
+  public void setDbConfig(DBConfig dbConfig) {
+    this.dbConfig = dbConfig;
+  }
 
-    public String getDBInfo() {
-        return dbConfig.toString();
-    }
+  public String getDBInfo() {
+    return dbConfig.toString();
+  }
 
-    public DBConfig getDbConfig() {
-        return dbConfig;
-    }
+  public DBConfig getDbConfig() {
+    return dbConfig;
+  }
 }

@@ -13,12 +13,12 @@ import jakarta.interceptor.InvocationContext;
 @Interceptor
 public class SecondLaunchInterceptor {
 
-    @AroundInvoke
-    public Object aroundInvoke(InvocationContext invocationContext) {
-        try {
-            return "second stage fired -> " + invocationContext.proceed();
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
+  @AroundInvoke
+  public Object aroundInvoke(InvocationContext invocationContext) {
+    try {
+      return "second stage fired -> " + invocationContext.proceed();
+    } catch (Exception e) {
+      throw new RuntimeException(e);
     }
+  }
 }

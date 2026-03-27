@@ -2,13 +2,13 @@ package io.nozdormu.inject.test.beans;
 
 public class Brake {
 
-    private final String name;
+  private final String name;
 
-    public Brake() {
-        name = "disc";
-    }
+  public Brake() {
+    name = "disc";
+  }
 
-    public String getName() {
-        return name;
-    }
+  public String getName() {
+    return name;
+  }
 }

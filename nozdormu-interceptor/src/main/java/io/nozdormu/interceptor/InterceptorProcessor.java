@@ -27,271 +27,360 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-@SupportedAnnotationTypes({
-        "jakarta.interceptor.Interceptor"
-})
+@SupportedAnnotationTypes({"jakarta.interceptor.Interceptor"})
 @AutoService(Processor.class)
 public class InterceptorProcessor extends AbstractProcessor {
 
-    private static final Logger logger = LoggerFactory.getLogger(InterceptorProcessor.class);
+  private static final Logger logger = LoggerFactory.getLogger(InterceptorProcessor.class);
 
-    private ProcessorManager processorManager;
+  private ProcessorManager processorManager;
 
-    @Override
-    public SourceVersion getSupportedSourceVersion() {
-        return SourceVersion.latestSupported();
+  @Override
+  public SourceVersion getSupportedSourceVersion() {
+    return SourceVersion.latestSupported();
+  }
+
+  @Override
+  public synchronized void init(ProcessingEnvironment processingEnv) {
+    super.init(processingEnv);
+    this.processorManager =
+        new ProcessorManager(processingEnv, InjectProcessor.class.getClassLoader());
+  }
+
+  @Override
+  public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
+    if (annotations.isEmpty()) {
+      return false;
     }
+    List<TypeElement> interceptorList =
+        roundEnv.getElementsAnnotatedWith(Interceptor.class).stream()
+            .filter(element -> element.getKind().isClass())
+            .map(element -> (TypeElement) element)
+            .collect(Collectors.toList());
 
-    @Override
-    public synchronized void init(ProcessingEnvironment processingEnv) {
-        super.init(processingEnv);
-        this.processorManager = new ProcessorManager(processingEnv, InjectProcessor.class.getClassLoader());
-    }
-
-    @Override
-    public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
-        if (annotations.isEmpty()) {
-            return false;
-        }
-        List<TypeElement> interceptorList = roundEnv.getElementsAnnotatedWith(Interceptor.class).stream()
-                .filter(element -> element.getKind().isClass())
-                .map(element -> (TypeElement) element)
-                .collect(Collectors.toList());
-
-        interceptorList.stream()
-                .filter(typeElement ->
-                        typeElement.getEnclosedElements().stream()
-                                .filter(element -> element.getKind().equals(ElementKind.METHOD))
-                                .anyMatch(element -> element.getAnnotation(AroundInvoke.class) != null)
-                )
-                ;
-
-        interceptorList.stream()
-                .filter(typeElement ->
-                        typeElement.getEnclosedElements().stream()
-                                .filter(element -> element.getKind().equals(ElementKind.METHOD))
-                                .anyMatch(element -> element.getAnnotation(AroundConstruct.class) != null)
-                )
-                ;
-
-        interceptorList.forEach(typeElement -> {
-            boolean hasAroundInvoke = typeElement.getEnclosedElements().stream()
+    interceptorList.stream()
+        .filter(
+            typeElement ->
+                typeElement.getEnclosedElements().stream()
                     .filter(element -> element.getKind().equals(ElementKind.METHOD))
-                    .anyMatch(element -> element.getAnnotation(AroundInvoke.class) != null);
-            boolean hasAroundConstruct = typeElement.getEnclosedElements().stream()
+                    .anyMatch(element -> element.getAnnotation(AroundInvoke.class) != null));
+
+    interceptorList.stream()
+        .filter(
+            typeElement ->
+                typeElement.getEnclosedElements().stream()
                     .filter(element -> element.getKind().equals(ElementKind.METHOD))
-                    .anyMatch(element -> element.getAnnotation(AroundConstruct.class) != null);
-            if (!hasAroundInvoke && !hasAroundConstruct) {
-                return;
-            }
-            CompilationUnit compilationUnit = processorManager.getCompilationUnitOrError(typeElement);
-            if (hasAroundInvoke) {
-                buildInvokeInterceptor(compilationUnit)
-                        .forEach(invokeCompilationUnit -> processorManager.writeToFiler(invokeCompilationUnit));
-            }
-            if (hasAroundConstruct) {
-                buildConstructInterceptor(compilationUnit)
-                        .forEach(constructCompilationUnit -> processorManager.writeToFiler(constructCompilationUnit));
-            }
+                    .anyMatch(element -> element.getAnnotation(AroundConstruct.class) != null));
+
+    interceptorList.forEach(
+        typeElement -> {
+          boolean hasAroundInvoke =
+              typeElement.getEnclosedElements().stream()
+                  .filter(element -> element.getKind().equals(ElementKind.METHOD))
+                  .anyMatch(element -> element.getAnnotation(AroundInvoke.class) != null);
+          boolean hasAroundConstruct =
+              typeElement.getEnclosedElements().stream()
+                  .filter(element -> element.getKind().equals(ElementKind.METHOD))
+                  .anyMatch(element -> element.getAnnotation(AroundConstruct.class) != null);
+          if (!hasAroundInvoke && !hasAroundConstruct) {
+            return;
+          }
+          CompilationUnit compilationUnit = processorManager.getCompilationUnitOrError(typeElement);
+          if (hasAroundInvoke) {
+            buildInvokeInterceptor(compilationUnit)
+                .forEach(
+                    invokeCompilationUnit -> processorManager.writeToFiler(invokeCompilationUnit));
+          }
+          if (hasAroundConstruct) {
+            buildConstructInterceptor(compilationUnit)
+                .forEach(
+                    constructCompilationUnit ->
+                        processorManager.writeToFiler(constructCompilationUnit));
+          }
         });
-        return false;
-    }
+    return false;
+  }
 
-    private Stream<CompilationUnit> buildInvokeInterceptor(CompilationUnit compilationUnit) {
-        ClassOrInterfaceDeclaration interceptorClassDeclaration = processorManager.getPublicClassOrInterfaceDeclarationOrError(compilationUnit);
-        return interceptorClassDeclaration.getAnnotations().stream()
-                .filter(annotationExpr -> processorManager.hasMetaAnnotation(annotationExpr, InterceptorBinding.class.getName()))
-                .flatMap(annotationExpr ->
-                        interceptorClassDeclaration.getMethods().stream()
-                                .filter(methodDeclaration -> methodDeclaration.isAnnotationPresent(AroundInvoke.class))
-                                .map(methodDeclaration -> {
-                                    logger.info("{} proxy class build start", interceptorClassDeclaration.getFullyQualifiedName().orElseGet(interceptorClassDeclaration::getNameAsString));
+  private Stream<CompilationUnit> buildInvokeInterceptor(CompilationUnit compilationUnit) {
+    ClassOrInterfaceDeclaration interceptorClassDeclaration =
+        processorManager.getPublicClassOrInterfaceDeclarationOrError(compilationUnit);
+    return interceptorClassDeclaration.getAnnotations().stream()
+        .filter(
+            annotationExpr ->
+                processorManager.hasMetaAnnotation(
+                    annotationExpr, InterceptorBinding.class.getName()))
+        .flatMap(
+            annotationExpr ->
+                interceptorClassDeclaration.getMethods().stream()
+                    .filter(
+                        methodDeclaration ->
+                            methodDeclaration.isAnnotationPresent(AroundInvoke.class))
+                    .map(
+                        methodDeclaration -> {
+                          logger.info(
+                              "{} proxy class build start",
+                              interceptorClassDeclaration
+                                  .getFullyQualifiedName()
+                                  .orElseGet(interceptorClassDeclaration::getNameAsString));
 
-                                                String name = interceptorClassDeclaration.getNameAsString() + annotationExpr.getNameAsString() + "_" + methodDeclaration.getNameAsString() + interceptorClassDeclaration.getMethods().indexOf(methodDeclaration) + "InvokeInterceptor";
-                                                ClassOrInterfaceDeclaration invokeInterceptorDeclaration = new ClassOrInterfaceDeclaration()
-                                                        .addModifier(Modifier.Keyword.PUBLIC)
-                                                        .addImplementedType(InvokeInterceptor.class)
-                                                        .setName(name)
-                                                        .addAnnotation(Dependent.class)
-                                                        .addAnnotation(new NormalAnnotationExpr().addPair("value", new StringLiteralExpr(processorManager.getQualifiedName(annotationExpr))).setName(Named.class.getSimpleName()));
+                          String name =
+                              interceptorClassDeclaration.getNameAsString()
+                                  + annotationExpr.getNameAsString()
+                                  + "_"
+                                  + methodDeclaration.getNameAsString()
+                                  + interceptorClassDeclaration
+                                      .getMethods()
+                                      .indexOf(methodDeclaration)
+                                  + "InvokeInterceptor";
+                          ClassOrInterfaceDeclaration invokeInterceptorDeclaration =
+                              new ClassOrInterfaceDeclaration()
+                                  .addModifier(Modifier.Keyword.PUBLIC)
+                                  .addImplementedType(InvokeInterceptor.class)
+                                  .setName(name)
+                                  .addAnnotation(Dependent.class)
+                                  .addAnnotation(
+                                      new NormalAnnotationExpr()
+                                          .addPair(
+                                              "value",
+                                              new StringLiteralExpr(
+                                                  processorManager.getQualifiedName(
+                                                      annotationExpr)))
+                                          .setName(Named.class.getSimpleName()));
 
-                                                CompilationUnit invokeInterceptorCompilationUnit = new CompilationUnit()
-                                                        .addType(invokeInterceptorDeclaration)
-                                                        .addImport(InvokeInterceptor.class)
-                                                        .addImport(BeanContext.class)
-                                                        .addImport(InvocationContextProxy.class)
-                                                        .addImport(processorManager.getQualifiedName(interceptorClassDeclaration))
-                                                        .addImport(Dependent.class)
-                                                        .addImport(Named.class);
+                          CompilationUnit invokeInterceptorCompilationUnit =
+                              new CompilationUnit()
+                                  .addType(invokeInterceptorDeclaration)
+                                  .addImport(InvokeInterceptor.class)
+                                  .addImport(BeanContext.class)
+                                  .addImport(InvocationContextProxy.class)
+                                  .addImport(
+                                      processorManager.getQualifiedName(
+                                          interceptorClassDeclaration))
+                                  .addImport(Dependent.class)
+                                  .addImport(Named.class);
 
-                                                invokeInterceptorCompilationUnit.addImport(Priority.class);
-                                                interceptorClassDeclaration.getAnnotationByClass(Priority.class)
-                                                        .ifPresent(invokeInterceptorDeclaration::addAnnotation);
+                          invokeInterceptorCompilationUnit.addImport(Priority.class);
+                          interceptorClassDeclaration
+                              .getAnnotationByClass(Priority.class)
+                              .ifPresent(invokeInterceptorDeclaration::addAnnotation);
 
-                                                compilationUnit.getPackageDeclaration()
-                                                        .ifPresent(invokeInterceptorCompilationUnit::setPackageDeclaration);
+                          compilationUnit
+                              .getPackageDeclaration()
+                              .ifPresent(invokeInterceptorCompilationUnit::setPackageDeclaration);
 
-                                                processorManager.importAllClassOrInterfaceType(invokeInterceptorDeclaration, interceptorClassDeclaration);
+                          processorManager.importAllClassOrInterfaceType(
+                              invokeInterceptorDeclaration, interceptorClassDeclaration);
 
-                                                FieldDeclaration invocationContext = new FieldDeclaration()
-                                                        .setModifiers(Modifier.Keyword.PRIVATE)
-                                                        .addVariable(
-                                                                new VariableDeclarator()
-                                                                        .setName("invocationContext")
-                                                                        .setType(InvocationContext.class)
-                                                                        .setInitializer(
-                                                                                new MethodCallExpr()
-                                                                                        .setName("setOwner")
-                                                                                        .addArgument(new ClassExpr().setType(processorManager.getQualifiedName(annotationExpr)))
-                                                                                        .setScope(new ObjectCreationExpr().setType(InvocationContextProxy.class))
-                                                                        )
-                                                        );
-                                                invokeInterceptorDeclaration.addMember(invocationContext);
+                          FieldDeclaration invocationContext =
+                              new FieldDeclaration()
+                                  .setModifiers(Modifier.Keyword.PRIVATE)
+                                  .addVariable(
+                                      new VariableDeclarator()
+                                          .setName("invocationContext")
+                                          .setType(InvocationContext.class)
+                                          .setInitializer(
+                                              new MethodCallExpr()
+                                                  .setName("setOwner")
+                                                  .addArgument(
+                                                      new ClassExpr()
+                                                          .setType(
+                                                              processorManager.getQualifiedName(
+                                                                  annotationExpr)))
+                                                  .setScope(
+                                                      new ObjectCreationExpr()
+                                                          .setType(InvocationContextProxy.class))));
+                          invokeInterceptorDeclaration.addMember(invocationContext);
 
-                                                MethodDeclaration getContext = new MethodDeclaration()
-                                                        .setName("getContext")
-                                                        .setModifiers(Modifier.Keyword.PUBLIC)
-                                                        .setType(InvocationContext.class)
-                                                        .setBody(
-                                                                new BlockStmt()
-                                                                        .addStatement(
-                                                                                new ReturnStmt()
-                                                                                        .setExpression(
-                                                                                                new NameExpr("invocationContext")
-                                                                                        )
-                                                                        )
-                                                        );
-                                                invokeInterceptorDeclaration.addMember(getContext);
+                          MethodDeclaration getContext =
+                              new MethodDeclaration()
+                                  .setName("getContext")
+                                  .setModifiers(Modifier.Keyword.PUBLIC)
+                                  .setType(InvocationContext.class)
+                                  .setBody(
+                                      new BlockStmt()
+                                          .addStatement(
+                                              new ReturnStmt()
+                                                  .setExpression(
+                                                      new NameExpr("invocationContext"))));
+                          invokeInterceptorDeclaration.addMember(getContext);
 
-                                                MethodDeclaration aroundInvoke = new MethodDeclaration()
-                                                        .setName("aroundInvoke")
-                                                        .setModifiers(Modifier.Keyword.PUBLIC)
-                                                        .setType(Object.class)
-                                                        .addParameter(InvocationContext.class, "invocationContext")
-                                                        .addAnnotation(Override.class)
-                                                        .setBody(
-                                                                new BlockStmt()
-                                                                        .addStatement(
-                                                                                new ReturnStmt()
-                                                                                        .setExpression(
-                                                                                                new MethodCallExpr()
-                                                                                                        .setName(methodDeclaration.getNameAsString())
-                                                                                                        .addArgument("invocationContext")
-                                                                                                        .setScope(
-                                                                                                                new MethodCallExpr()
-                                                                                                                        .setName("get")
-                                                                                                                        .setScope(
-                                                                                                                                new MethodCallExpr("getProvider")
-                                                                                                                                        .setScope(new NameExpr("BeanContext"))
-                                                                                                                                        .addArgument(new ClassExpr().setType(interceptorClassDeclaration.getNameAsString()))
-                                                                                                                        )
-                                                                                                        )
-                                                                                        )
-                                                                        )
-                                                        );
-                                                invokeInterceptorDeclaration.addMember(aroundInvoke);
+                          MethodDeclaration aroundInvoke =
+                              new MethodDeclaration()
+                                  .setName("aroundInvoke")
+                                  .setModifiers(Modifier.Keyword.PUBLIC)
+                                  .setType(Object.class)
+                                  .addParameter(InvocationContext.class, "invocationContext")
+                                  .addAnnotation(Override.class)
+                                  .setBody(
+                                      new BlockStmt()
+                                          .addStatement(
+                                              new ReturnStmt()
+                                                  .setExpression(
+                                                      new MethodCallExpr()
+                                                          .setName(
+                                                              methodDeclaration.getNameAsString())
+                                                          .addArgument("invocationContext")
+                                                          .setScope(
+                                                              new MethodCallExpr()
+                                                                  .setName("get")
+                                                                  .setScope(
+                                                                      new MethodCallExpr(
+                                                                              "getProvider")
+                                                                          .setScope(
+                                                                              new NameExpr(
+                                                                                  "BeanContext"))
+                                                                          .addArgument(
+                                                                              new ClassExpr()
+                                                                                  .setType(
+                                                                                      interceptorClassDeclaration
+                                                                                          .getNameAsString())))))));
+                          invokeInterceptorDeclaration.addMember(aroundInvoke);
 
-                                                logger.info("{} proxy class build success", interceptorClassDeclaration.getFullyQualifiedName().orElseGet(interceptorClassDeclaration::getNameAsString));
-                                    logger.info("{} proxy class build success", interceptorClassDeclaration.getFullyQualifiedName().orElseGet(interceptorClassDeclaration::getNameAsString));
-                                    return invokeInterceptorCompilationUnit;
-                                })
-                );
-    }
+                          logger.info(
+                              "{} proxy class build success",
+                              interceptorClassDeclaration
+                                  .getFullyQualifiedName()
+                                  .orElseGet(interceptorClassDeclaration::getNameAsString));
+                          logger.info(
+                              "{} proxy class build success",
+                              interceptorClassDeclaration
+                                  .getFullyQualifiedName()
+                                  .orElseGet(interceptorClassDeclaration::getNameAsString));
+                          return invokeInterceptorCompilationUnit;
+                        }));
+  }
 
-    private Stream<CompilationUnit> buildConstructInterceptor(CompilationUnit compilationUnit) {
-        ClassOrInterfaceDeclaration interceptorClassDeclaration = processorManager.getPublicClassOrInterfaceDeclarationOrError(compilationUnit);
-        return interceptorClassDeclaration.getAnnotations().stream()
-                .filter(annotationExpr -> processorManager.hasMetaAnnotation(annotationExpr, InterceptorBinding.class.getName()))
-                .flatMap(annotationExpr ->
-                        interceptorClassDeclaration.getMethods().stream()
-                                .filter(methodDeclaration -> methodDeclaration.isAnnotationPresent(AroundConstruct.class))
-                                .map(methodDeclaration -> {
-                                                String name = interceptorClassDeclaration.getNameAsString() + annotationExpr.getNameAsString() + "_" + methodDeclaration.getNameAsString() + interceptorClassDeclaration.getMethods().indexOf(methodDeclaration) + "ConstructInterceptor";
-                                                ClassOrInterfaceDeclaration constructInterceptorDeclaration = new ClassOrInterfaceDeclaration()
-                                                        .addModifier(Modifier.Keyword.PUBLIC)
-                                                        .addImplementedType(ConstructInterceptor.class)
-                                                        .setName(name)
-                                                        .addAnnotation(Dependent.class)
-                                                        .addAnnotation(new NormalAnnotationExpr().addPair("value", new StringLiteralExpr(processorManager.getQualifiedName(annotationExpr))).setName(Named.class.getSimpleName()));
+  private Stream<CompilationUnit> buildConstructInterceptor(CompilationUnit compilationUnit) {
+    ClassOrInterfaceDeclaration interceptorClassDeclaration =
+        processorManager.getPublicClassOrInterfaceDeclarationOrError(compilationUnit);
+    return interceptorClassDeclaration.getAnnotations().stream()
+        .filter(
+            annotationExpr ->
+                processorManager.hasMetaAnnotation(
+                    annotationExpr, InterceptorBinding.class.getName()))
+        .flatMap(
+            annotationExpr ->
+                interceptorClassDeclaration.getMethods().stream()
+                    .filter(
+                        methodDeclaration ->
+                            methodDeclaration.isAnnotationPresent(AroundConstruct.class))
+                    .map(
+                        methodDeclaration -> {
+                          String name =
+                              interceptorClassDeclaration.getNameAsString()
+                                  + annotationExpr.getNameAsString()
+                                  + "_"
+                                  + methodDeclaration.getNameAsString()
+                                  + interceptorClassDeclaration
+                                      .getMethods()
+                                      .indexOf(methodDeclaration)
+                                  + "ConstructInterceptor";
+                          ClassOrInterfaceDeclaration constructInterceptorDeclaration =
+                              new ClassOrInterfaceDeclaration()
+                                  .addModifier(Modifier.Keyword.PUBLIC)
+                                  .addImplementedType(ConstructInterceptor.class)
+                                  .setName(name)
+                                  .addAnnotation(Dependent.class)
+                                  .addAnnotation(
+                                      new NormalAnnotationExpr()
+                                          .addPair(
+                                              "value",
+                                              new StringLiteralExpr(
+                                                  processorManager.getQualifiedName(
+                                                      annotationExpr)))
+                                          .setName(Named.class.getSimpleName()));
 
-                                                CompilationUnit constructInterceptorCompilationUnit = new CompilationUnit()
-                                                        .addType(constructInterceptorDeclaration)
-                                                        .addImport(ConstructInterceptor.class)
-                                                        .addImport(BeanContext.class)
-                                                        .addImport(InvocationContextProxy.class)
-                                                        .addImport(processorManager.getQualifiedName(interceptorClassDeclaration))
-                                                        .addImport(Dependent.class)
-                                                        .addImport(Named.class);
+                          CompilationUnit constructInterceptorCompilationUnit =
+                              new CompilationUnit()
+                                  .addType(constructInterceptorDeclaration)
+                                  .addImport(ConstructInterceptor.class)
+                                  .addImport(BeanContext.class)
+                                  .addImport(InvocationContextProxy.class)
+                                  .addImport(
+                                      processorManager.getQualifiedName(
+                                          interceptorClassDeclaration))
+                                  .addImport(Dependent.class)
+                                  .addImport(Named.class);
 
-                                                constructInterceptorCompilationUnit.addImport(Priority.class);
-                                                interceptorClassDeclaration.getAnnotationByClass(Priority.class)
-                                                        .ifPresent(constructInterceptorDeclaration::addAnnotation);
+                          constructInterceptorCompilationUnit.addImport(Priority.class);
+                          interceptorClassDeclaration
+                              .getAnnotationByClass(Priority.class)
+                              .ifPresent(constructInterceptorDeclaration::addAnnotation);
 
-                                                compilationUnit.getPackageDeclaration()
-                                                        .ifPresent(constructInterceptorCompilationUnit::setPackageDeclaration);
+                          compilationUnit
+                              .getPackageDeclaration()
+                              .ifPresent(
+                                  constructInterceptorCompilationUnit::setPackageDeclaration);
 
-                                                processorManager.importAllClassOrInterfaceType(constructInterceptorDeclaration, interceptorClassDeclaration);
+                          processorManager.importAllClassOrInterfaceType(
+                              constructInterceptorDeclaration, interceptorClassDeclaration);
 
-                                                FieldDeclaration invocationContext = new FieldDeclaration()
-                                                        .setModifiers(Modifier.Keyword.PRIVATE)
-                                                        .addVariable(
-                                                                new VariableDeclarator()
-                                                                        .setName("invocationContext")
-                                                                        .setType(InvocationContext.class)
-                                                                        .setInitializer(
-                                                                                new MethodCallExpr()
-                                                                                        .setName("setOwner")
-                                                                                        .addArgument(new ClassExpr().setType(processorManager.getQualifiedName(annotationExpr)))
-                                                                                        .setScope(new ObjectCreationExpr().setType(InvocationContextProxy.class))
-                                                                        )
-                                                        );
-                                                constructInterceptorDeclaration.addMember(invocationContext);
+                          FieldDeclaration invocationContext =
+                              new FieldDeclaration()
+                                  .setModifiers(Modifier.Keyword.PRIVATE)
+                                  .addVariable(
+                                      new VariableDeclarator()
+                                          .setName("invocationContext")
+                                          .setType(InvocationContext.class)
+                                          .setInitializer(
+                                              new MethodCallExpr()
+                                                  .setName("setOwner")
+                                                  .addArgument(
+                                                      new ClassExpr()
+                                                          .setType(
+                                                              processorManager.getQualifiedName(
+                                                                  annotationExpr)))
+                                                  .setScope(
+                                                      new ObjectCreationExpr()
+                                                          .setType(InvocationContextProxy.class))));
+                          constructInterceptorDeclaration.addMember(invocationContext);
 
-                                                MethodDeclaration getContext = new MethodDeclaration()
-                                                        .setName("getContext")
-                                                        .setModifiers(Modifier.Keyword.PUBLIC)
-                                                        .setType(InvocationContext.class)
-                                                        .setBody(
-                                                                new BlockStmt()
-                                                                        .addStatement(
-                                                                                new ReturnStmt()
-                                                                                        .setExpression(
-                                                                                                new NameExpr("invocationContext")
-                                                                                        )
-                                                                        )
-                                                        );
-                                                constructInterceptorDeclaration.addMember(getContext);
+                          MethodDeclaration getContext =
+                              new MethodDeclaration()
+                                  .setName("getContext")
+                                  .setModifiers(Modifier.Keyword.PUBLIC)
+                                  .setType(InvocationContext.class)
+                                  .setBody(
+                                      new BlockStmt()
+                                          .addStatement(
+                                              new ReturnStmt()
+                                                  .setExpression(
+                                                      new NameExpr("invocationContext"))));
+                          constructInterceptorDeclaration.addMember(getContext);
 
-                                                MethodDeclaration aroundConstruct = new MethodDeclaration()
-                                                        .setName("aroundConstruct")
-                                                        .setModifiers(Modifier.Keyword.PUBLIC)
-                                                        .setType(Object.class)
-                                                        .addParameter(InvocationContext.class, "invocationContext")
-                                                        .addAnnotation(Override.class)
-                                                        .setBody(
-                                                                new BlockStmt()
-                                                                        .addStatement(
-                                                                                new ReturnStmt()
-                                                                                        .setExpression(
-                                                                                                new MethodCallExpr()
-                                                                                                        .setName(methodDeclaration.getNameAsString())
-                                                                                                        .addArgument("invocationContext")
-                                                                                                        .setScope(
-                                                                                                                new MethodCallExpr()
-                                                                                                                        .setName("get")
-                                                                                                                        .setScope(
-                                                                                                                                new MethodCallExpr("getProvider")
-                                                                                                                                        .setScope(new NameExpr("BeanContext"))
-                                                                                                                                        .addArgument(new ClassExpr().setType(interceptorClassDeclaration.getNameAsString()))
-                                                                                                                        )
-                                                                                                        )
-                                                                                        )
-                                                                        )
-                                                        );
-                                                constructInterceptorDeclaration.addMember(aroundConstruct);
+                          MethodDeclaration aroundConstruct =
+                              new MethodDeclaration()
+                                  .setName("aroundConstruct")
+                                  .setModifiers(Modifier.Keyword.PUBLIC)
+                                  .setType(Object.class)
+                                  .addParameter(InvocationContext.class, "invocationContext")
+                                  .addAnnotation(Override.class)
+                                  .setBody(
+                                      new BlockStmt()
+                                          .addStatement(
+                                              new ReturnStmt()
+                                                  .setExpression(
+                                                      new MethodCallExpr()
+                                                          .setName(
+                                                              methodDeclaration.getNameAsString())
+                                                          .addArgument("invocationContext")
+                                                          .setScope(
+                                                              new MethodCallExpr()
+                                                                  .setName("get")
+                                                                  .setScope(
+                                                                      new MethodCallExpr(
+                                                                              "getProvider")
+                                                                          .setScope(
+                                                                              new NameExpr(
+                                                                                  "BeanContext"))
+                                                                          .addArgument(
+                                                                              new ClassExpr()
+                                                                                  .setType(
+                                                                                      interceptorClassDeclaration
+                                                                                          .getNameAsString())))))));
+                          constructInterceptorDeclaration.addMember(aroundConstruct);
 
-                                    return constructInterceptorCompilationUnit;
-                                })
-                );
-    }
+                          return constructInterceptorCompilationUnit;
+                        }));
+  }
 }

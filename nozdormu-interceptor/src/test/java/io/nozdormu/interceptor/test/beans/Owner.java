@@ -5,13 +5,13 @@ import jakarta.enterprise.context.ApplicationScoped;
 @ApplicationScoped
 public class Owner {
 
-    private final String name;
+  private final String name;
 
-    public Owner() {
-        name = "NASA";
-    }
+  public Owner() {
+    name = "NASA";
+  }
 
-    public String getName() {
-        return name;
-    }
+  public String getName() {
+    return name;
+  }
 }

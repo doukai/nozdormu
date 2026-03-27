@@ -26,70 +26,85 @@ import java.util.stream.Collectors;
 @AutoService(ComponentProxyProcessor.class)
 public class ConfigComponentProcessor implements ComponentProxyProcessor {
 
-    private static final Logger logger = LoggerFactory.getLogger(ConfigComponentProcessor.class);
+  private static final Logger logger = LoggerFactory.getLogger(ConfigComponentProcessor.class);
 
-    private ProcessorManager processorManager;
+  private ProcessorManager processorManager;
 
-    @Override
-    public void init(ProcessorManager processorManager) {
-        this.processorManager = processorManager;
+  @Override
+  public void init(ProcessorManager processorManager) {
+    this.processorManager = processorManager;
+  }
+
+  @Override
+  public boolean processComponentProxy(
+      CompilationUnit componentCompilationUnit,
+      ClassOrInterfaceDeclaration componentClassDeclaration,
+      CompilationUnit componentProxyCompilationUnit,
+      ClassOrInterfaceDeclaration componentProxyClassDeclaration) {
+    logger.info(
+        "{} config component build start",
+        componentClassDeclaration
+            .getFullyQualifiedName()
+            .orElseGet(componentClassDeclaration::getNameAsString));
+    List<MethodDeclaration> methodDeclarationList =
+        componentClassDeclaration.getMethods().stream()
+            .filter(
+                methodDeclaration ->
+                    methodDeclaration.isAnnotationPresent(ConfigProperty.class)
+                        || isConfigPropertyFieldSetter(methodDeclaration))
+            .collect(Collectors.toList());
+
+    if (methodDeclarationList.isEmpty()) {
+      return false;
     }
 
-    @Override
-    public boolean processComponentProxy(CompilationUnit componentCompilationUnit, ClassOrInterfaceDeclaration componentClassDeclaration, CompilationUnit componentProxyCompilationUnit, ClassOrInterfaceDeclaration componentProxyClassDeclaration) {
-        logger.info("{} config component build start", componentClassDeclaration.getFullyQualifiedName().orElseGet(componentClassDeclaration::getNameAsString));
-        List<MethodDeclaration> methodDeclarationList = componentClassDeclaration.getMethods().stream()
-                .filter(methodDeclaration ->
-                        methodDeclaration.isAnnotationPresent(ConfigProperty.class) ||
-                                isConfigPropertyFieldSetter(methodDeclaration)
-                )
-                .collect(Collectors.toList());
-
-        if (methodDeclarationList.isEmpty()) {
-            return false;
-        }
-
-        if (componentProxyClassDeclaration.getConstructors().isEmpty()) {
-            componentProxyClassDeclaration
-                    .addMember(
-                            new ConstructorDeclaration()
-                                    .setName(componentProxyClassDeclaration.getName())
-                                    .setModifiers(Modifier.Keyword.PUBLIC)
-                                    .addAnnotation(Inject.class)
-                                    .setBody(new BlockStmt())
-                    );
-            componentProxyCompilationUnit.addImport(Inject.class);
-        }
-
-        componentProxyClassDeclaration.getConstructors()
-                .forEach(constructorDeclaration ->
-                        methodDeclarationList.forEach(methodDeclaration -> {
-                            methodDeclaration.getParameters().forEach(constructorDeclaration::addParameter);
-                            constructorDeclaration
-                                    .getBody()
-                                    .addStatement(
-                                            new MethodCallExpr()
-                                                    .setName(methodDeclaration.getName())
-                                                    .setArguments(
-                                                            methodDeclaration.getParameters().stream()
-                                                                    .map(NodeWithSimpleName::getNameAsExpression)
-                                                                    .collect(Collectors.toCollection(NodeList::new))
-                                                    )
-                                    );
-                        })
-                );
-        logger.info("{} config component build success", componentClassDeclaration.getFullyQualifiedName().orElseGet(componentClassDeclaration::getNameAsString));
-        return true;
+    if (componentProxyClassDeclaration.getConstructors().isEmpty()) {
+      componentProxyClassDeclaration.addMember(
+          new ConstructorDeclaration()
+              .setName(componentProxyClassDeclaration.getName())
+              .setModifiers(Modifier.Keyword.PUBLIC)
+              .addAnnotation(Inject.class)
+              .setBody(new BlockStmt()));
+      componentProxyCompilationUnit.addImport(Inject.class);
     }
 
-    private boolean isConfigPropertyFieldSetter(MethodDeclaration methodDeclaration) {
-        return methodDeclaration.getBody().stream()
-                .flatMap(blockStmt -> blockStmt.findAll(AssignExpr.class).stream())
-                .filter(assignExpr -> assignExpr.getTarget().isFieldAccessExpr())
-                .map(assignExpr -> processorManager.getResolvedDeclaration(assignExpr.getTarget().asFieldAccessExpr()))
-                .filter(ResolvedDeclaration::isField)
-                .flatMap(resolvedValueDeclaration -> resolvedValueDeclaration.asField().toAst().stream())
-                .map(node -> (FieldDeclaration) node)
-                .anyMatch(fieldDeclaration -> fieldDeclaration.isAnnotationPresent(ConfigProperty.class));
-    }
+    componentProxyClassDeclaration
+        .getConstructors()
+        .forEach(
+            constructorDeclaration ->
+                methodDeclarationList.forEach(
+                    methodDeclaration -> {
+                      methodDeclaration
+                          .getParameters()
+                          .forEach(constructorDeclaration::addParameter);
+                      constructorDeclaration
+                          .getBody()
+                          .addStatement(
+                              new MethodCallExpr()
+                                  .setName(methodDeclaration.getName())
+                                  .setArguments(
+                                      methodDeclaration.getParameters().stream()
+                                          .map(NodeWithSimpleName::getNameAsExpression)
+                                          .collect(Collectors.toCollection(NodeList::new))));
+                    }));
+    logger.info(
+        "{} config component build success",
+        componentClassDeclaration
+            .getFullyQualifiedName()
+            .orElseGet(componentClassDeclaration::getNameAsString));
+    return true;
+  }
+
+  private boolean isConfigPropertyFieldSetter(MethodDeclaration methodDeclaration) {
+    return methodDeclaration.getBody().stream()
+        .flatMap(blockStmt -> blockStmt.findAll(AssignExpr.class).stream())
+        .filter(assignExpr -> assignExpr.getTarget().isFieldAccessExpr())
+        .map(
+            assignExpr ->
+                processorManager.getResolvedDeclaration(assignExpr.getTarget().asFieldAccessExpr()))
+        .filter(ResolvedDeclaration::isField)
+        .flatMap(resolvedValueDeclaration -> resolvedValueDeclaration.asField().toAst().stream())
+        .map(node -> (FieldDeclaration) node)
+        .anyMatch(fieldDeclaration -> fieldDeclaration.isAnnotationPresent(ConfigProperty.class));
+  }
 }

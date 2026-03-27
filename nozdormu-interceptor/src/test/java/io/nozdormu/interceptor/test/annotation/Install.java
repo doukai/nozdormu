@@ -10,5 +10,4 @@ import java.lang.annotation.Target;
 @InterceptorBinding
 @Target({ElementType.TYPE, ElementType.CONSTRUCTOR})
 @Retention(value = RetentionPolicy.RUNTIME)
-public @interface Install {
-}
+public @interface Install {}

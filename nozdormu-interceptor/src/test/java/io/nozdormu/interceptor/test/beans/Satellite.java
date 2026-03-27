@@ -10,25 +10,25 @@ import java.util.List;
 @ApplicationScoped
 public class Satellite {
 
-    private List<String> infoList = new ArrayList<>();
+  private List<String> infoList = new ArrayList<>();
 
-    private final Owner owner;
+  private final Owner owner;
 
-    @Install
-    public Satellite(Owner owner) {
-        this.owner = owner;
-    }
+  @Install
+  public Satellite(Owner owner) {
+    this.owner = owner;
+  }
 
-    @Launch
-    public String startup(String name) {
-        return "hello " + name + " I am " + owner.getName();
-    }
+  @Launch
+  public String startup(String name) {
+    return "hello " + name + " I am " + owner.getName();
+  }
 
-    public void setInfoList(List<String> infoList) {
-        this.infoList = infoList;
-    }
+  public void setInfoList(List<String> infoList) {
+    this.infoList = infoList;
+  }
 
-    public String checkResult() {
-        return String.join(" ", infoList) + " all check ready, fire";
-    }
+  public String checkResult() {
+    return String.join(" ", infoList) + " all check ready, fire";
+  }
 }

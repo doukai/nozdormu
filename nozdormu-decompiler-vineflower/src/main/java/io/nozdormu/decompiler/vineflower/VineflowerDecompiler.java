@@ -22,105 +22,108 @@ import static io.nozdormu.spi.utils.DecompileUtil.getDecompileClassName;
 
 public class VineflowerDecompiler implements TypeElementDecompiler {
 
-    private final ClassLoader classLoader;
+  private final ClassLoader classLoader;
 
-    private final Path jrtPath = Paths.get(URI.create("jrt:/")).resolve("/modules").resolve("lib").resolve("jrt-fs.jar");
+  private final Path jrtPath =
+      Paths.get(URI.create("jrt:/")).resolve("/modules").resolve("lib").resolve("jrt-fs.jar");
 
-    private static final Map<String, String> DECOMPILED_CACHE = new ConcurrentHashMap<>();
+  private static final Map<String, String> DECOMPILED_CACHE = new ConcurrentHashMap<>();
 
-    private static final IResultSaver resultSaver = new IResultSaver() {
+  private static final IResultSaver resultSaver =
+      new IResultSaver() {
 
         @Override
-        public void saveFolder(String path) {
+        public void saveFolder(String path) {}
+
+        @Override
+        public void copyFile(String source, String path, String entryName) {}
+
+        @Override
+        public void saveClassFile(
+            String path, String qualifiedName, String entryName, String content, int[] mapping) {
+          DECOMPILED_CACHE.put(qualifiedName.replace("/", "."), content);
         }
 
         @Override
-        public void copyFile(String source, String path, String entryName) {
+        public void createArchive(String path, String archiveName, Manifest manifest) {}
+
+        @Override
+        public void saveDirEntry(String path, String archiveName, String entryName) {}
+
+        @Override
+        public void copyEntry(String source, String path, String archiveName, String entry) {}
+
+        @Override
+        public void saveClassEntry(
+            String path,
+            String archiveName,
+            String qualifiedName,
+            String entryName,
+            String content) {
+          DECOMPILED_CACHE.put(qualifiedName.replace("/", "."), content);
         }
 
         @Override
-        public void saveClassFile(String path, String qualifiedName, String entryName, String content, int[] mapping) {
-            DECOMPILED_CACHE.put(qualifiedName.replace("/", "."), content);
-        }
+        public void closeArchive(String path, String archiveName) {}
+      };
 
-        @Override
-        public void createArchive(String path, String archiveName, Manifest manifest) {
-        }
+  public VineflowerDecompiler(ClassLoader classLoader) {
+    this.classLoader = classLoader;
+  }
 
-        @Override
-        public void saveDirEntry(String path, String archiveName, String entryName) {
-        }
-
-        @Override
-        public void copyEntry(String source, String path, String archiveName, String entry) {
-        }
-
-        @Override
-        public void saveClassEntry(String path, String archiveName, String qualifiedName, String entryName, String content) {
-            DECOMPILED_CACHE.put(qualifiedName.replace("/", "."), content);
-        }
-
-        @Override
-        public void closeArchive(String path, String archiveName) {
-        }
-    };
-
-    public VineflowerDecompiler(ClassLoader classLoader) {
-        this.classLoader = classLoader;
+  @Override
+  public boolean canLoad(TypeElement typeElement) {
+    String decompileClassName =
+        getDecompileClassName(typeElement.getQualifiedName().toString(), classLoader);
+    try {
+      Class.forName(decompileClassName, false, classLoader);
+      return DECOMPILED_CACHE.containsKey(decompileClassName)
+          || decompileAndCache(decompileClassName);
+    } catch (ClassNotFoundException e) {
+      return false;
     }
+  }
 
-    @Override
-    public boolean canLoad(TypeElement typeElement) {
-        String decompileClassName = getDecompileClassName(typeElement.getQualifiedName().toString(), classLoader);
-        try {
-            Class.forName(decompileClassName, false, classLoader);
-            return DECOMPILED_CACHE.containsKey(decompileClassName) || decompileAndCache(decompileClassName);
-        } catch (ClassNotFoundException e) {
-            return false;
-        }
+  @Override
+  public String decompile(TypeElement typeElement) {
+    String decompileClassName =
+        getDecompileClassName(typeElement.getQualifiedName().toString(), classLoader);
+    if (DECOMPILED_CACHE.containsKey(decompileClassName) || decompileAndCache(decompileClassName)) {
+      return DECOMPILED_CACHE.get(decompileClassName);
     }
+    throw new RuntimeException(decompileClassName + " not find");
+  }
 
-    @Override
-    public String decompile(TypeElement typeElement) {
-        String decompileClassName = getDecompileClassName(typeElement.getQualifiedName().toString(), classLoader);
-        if (DECOMPILED_CACHE.containsKey(decompileClassName) || decompileAndCache(decompileClassName)) {
-            return DECOMPILED_CACHE.get(decompileClassName);
+  public boolean decompileAndCache(String decompileClassName) {
+    try {
+      Class<?> decompileClass = Class.forName(decompileClassName, false, classLoader);
+      CodeSource codeSource = decompileClass.getProtectionDomain().getCodeSource();
+      File file;
+      if (codeSource != null) {
+        file = Paths.get(codeSource.getLocation().toURI()).toFile();
+      } else {
+        URL resource =
+            classLoader.getResource(decompileClass.getName().replace(".", "/") + ".class");
+        if (resource == null) {
+          throw new RuntimeException("Class resource not found: " + decompileClass.getName());
         }
-        throw new RuntimeException(decompileClassName + " not find");
-    }
-
-    public boolean decompileAndCache(String decompileClassName) {
-        try {
-            Class<?> decompileClass = Class.forName(decompileClassName, false, classLoader);
-            CodeSource codeSource = decompileClass.getProtectionDomain().getCodeSource();
-            File file;
-            if (codeSource != null) {
-                file = Paths.get(codeSource.getLocation().toURI()).toFile();
-            } else {
-                URL resource = classLoader.getResource(decompileClass.getName().replace(".", "/") + ".class");
-                if (resource == null) {
-                    throw new RuntimeException("Class resource not found: " + decompileClass.getName());
-                }
-                try (URLClassLoader loader = new URLClassLoader(new URL[]{jrtPath.toUri().toURL()});
-                     FileSystem fs = FileSystems.newFileSystem(URI.create("jrt:/"), Collections.emptyMap(), loader)) {
-                    byte[] bytes = Files.readAllBytes(fs.getPath("/modules/" + resource.getPath()));
-                    file = File.createTempFile(decompileClass.getName(), ".class");
-                    file.deleteOnExit();
-                    Files.write(file.toPath(), bytes);
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
-            }
-
-            Decompiler decompiler = Decompiler
-                    .builder()
-                    .inputs(file)
-                    .output(resultSaver)
-                    .build();
-            decompiler.decompile();
-            return DECOMPILED_CACHE.containsKey(decompileClassName);
-        } catch (ClassNotFoundException | URISyntaxException e) {
-            throw new RuntimeException(e);
+        try (URLClassLoader loader = new URLClassLoader(new URL[] {jrtPath.toUri().toURL()});
+            FileSystem fs =
+                FileSystems.newFileSystem(URI.create("jrt:/"), Collections.emptyMap(), loader)) {
+          byte[] bytes = Files.readAllBytes(fs.getPath("/modules/" + resource.getPath()));
+          file = File.createTempFile(decompileClass.getName(), ".class");
+          file.deleteOnExit();
+          Files.write(file.toPath(), bytes);
+        } catch (IOException e) {
+          throw new RuntimeException(e);
         }
+      }
+
+      Decompiler decompiler = Decompiler.builder().inputs(file).output(resultSaver).build();
+      decompiler.decompile();
+      return DECOMPILED_CACHE.containsKey(decompileClassName);
+    } catch (ClassNotFoundException | URISyntaxException e) {
+      throw new RuntimeException(e);
     }
+  }
 }

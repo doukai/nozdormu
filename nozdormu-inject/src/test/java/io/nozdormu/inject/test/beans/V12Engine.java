@@ -9,7 +9,7 @@ import jakarta.inject.Named;
 @Priority(2)
 public class V12Engine implements IEngine {
 
-    public String getName() {
-        return "V12 Engine";
-    }
+  public String getName() {
+    return "V12 Engine";
+  }
 }
