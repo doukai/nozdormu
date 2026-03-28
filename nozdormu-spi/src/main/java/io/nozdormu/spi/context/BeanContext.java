@@ -324,6 +324,9 @@ public class BeanContext {
   }
 
   public static Map<String, Map<String, BeanSupplier>> getBeanImplSupplierMap() {
-    return BEAN_IMPL_SUPPLIER_MAP;
+    return BEAN_IMPL_SUPPLIER_MAP.entrySet().stream()
+        .collect(
+            Collectors.toUnmodifiableMap(
+                Map.Entry::getKey, entry -> Collections.unmodifiableMap(new HashMap<>(entry.getValue()))));
   }
 }

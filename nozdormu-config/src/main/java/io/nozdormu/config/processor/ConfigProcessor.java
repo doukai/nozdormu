@@ -168,7 +168,7 @@ public class ConfigProcessor extends AbstractProcessor {
                               .orElseThrow(
                                   () ->
                                       new InjectionProcessException(
-                                          CONFIG_PROPERTIES_PREFIX_NOT_EXIST.bind(qualifiedName)));
+                                          CONFIG_PROPERTIES_PREFIX_NOT_EXIST, qualifiedName));
 
                       ClassOrInterfaceDeclaration holderClassOrInterfaceDeclaration =
                           new ClassOrInterfaceDeclaration()

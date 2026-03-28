@@ -170,7 +170,7 @@ public class ProcessorManager {
       writer.close();
       Path path = Paths.get(tmp.toUri());
       Files.deleteIfExists(path);
-      Path generatedSourcePath = path.getParent();
+      Path generatedSourcePath = requireParentPath(path, 1, "generated source path");
       logger.info("generated source path: {}", generatedSourcePath.toString());
       return generatedSourcePath;
     } catch (IOException e) {
@@ -183,29 +183,14 @@ public class ProcessorManager {
   }
 
   private Path getSourcePath(Path generatedSourcePath) {
-    Path sourcePath =
-        generatedSourcePath
-            .getParent()
-            .getParent()
-            .getParent()
-            .getParent()
-            .getParent()
-            .getParent()
-            .resolve("src/main/java");
+    Path sourcePath = requireParentPath(generatedSourcePath, 6, "project source path").resolve("src/main/java");
     logger.info("source path: {}", sourcePath);
     return sourcePath;
   }
 
   private Path getTestSourcePath(Path generatedSourcePath) {
     Path sourcePath =
-        generatedSourcePath
-            .getParent()
-            .getParent()
-            .getParent()
-            .getParent()
-            .getParent()
-            .getParent()
-            .resolve("src/test/java");
+        requireParentPath(generatedSourcePath, 6, "project test source path").resolve("src/test/java");
     logger.info("test source path: {}", sourcePath);
     return sourcePath;
   }
@@ -302,7 +287,7 @@ public class ProcessorManager {
       writer.close();
       Path path = Paths.get(tmp.toUri());
       Files.deleteIfExists(path);
-      return path.getParent();
+      return requireParentPath(path, 1, "class output path");
     } catch (IOException e) {
       logger.error(e.getMessage(), e);
       processingEnv
@@ -318,8 +303,9 @@ public class ProcessorManager {
           decompileCacheDir.resolve(
               typeElement.getQualifiedName().toString().replace('.', File.separatorChar) + ".java");
       try {
-        if (!Files.exists(filePath.getParent())) {
-          Files.createDirectories(filePath.getParent());
+        Path parentPath = requireParentPath(filePath, 1, "decompile cache path");
+        if (!Files.exists(parentPath)) {
+          Files.createDirectories(parentPath);
         }
         Files.writeString(
             filePath,
@@ -331,6 +317,17 @@ public class ProcessorManager {
       } catch (IOException ignore) {
       }
     }
+  }
+
+  private Path requireParentPath(Path path, int levels, String description) {
+    Path current = path;
+    for (int i = 0; i < levels; i++) {
+      current = current.getParent();
+      if (current == null) {
+        throw new IllegalStateException("unable to determine " + description + " from " + path);
+      }
+    }
+    return current;
   }
 
   public Optional<CompilationUnit> getCompilationUnit(TypeElement typeElement) {
@@ -446,8 +443,8 @@ public class ProcessorManager {
                     .orElseThrow(
                         () ->
                             new InjectionProcessException(
-                                InjectionProcessErrorType.CANNOT_PARSER_SOURCE_CODE.bind(
-                                    ((TypeElement) element).getQualifiedName()))))
+                                InjectionProcessErrorType.CANNOT_PARSER_SOURCE_CODE,
+                                ((TypeElement) element).getQualifiedName())))
         .collect(Collectors.toList());
   }
 
@@ -464,8 +461,8 @@ public class ProcessorManager {
         .orElseThrow(
             () ->
                 new InjectionProcessException(
-                    InjectionProcessErrorType.CANNOT_PARSER_SOURCE_CODE.bind(
-                        getQualifiedName(annotationExpr))));
+                    InjectionProcessErrorType.CANNOT_PARSER_SOURCE_CODE,
+                    getQualifiedName(annotationExpr)));
   }
 
   public CompilationUnit getCompilationUnitOrError(TypeElement typeElement) {
@@ -473,8 +470,8 @@ public class ProcessorManager {
         .orElseThrow(
             () ->
                 new InjectionProcessException(
-                    InjectionProcessErrorType.CANNOT_PARSER_SOURCE_CODE.bind(
-                        (typeElement).getQualifiedName())));
+                    InjectionProcessErrorType.CANNOT_PARSER_SOURCE_CODE,
+                    (typeElement).getQualifiedName()));
   }
 
   public CompilationUnit getCompilationUnitOrError(String qualifiedName) {
@@ -482,7 +479,7 @@ public class ProcessorManager {
         .orElseThrow(
             () ->
                 new InjectionProcessException(
-                    InjectionProcessErrorType.CANNOT_PARSER_SOURCE_CODE.bind(qualifiedName)));
+                    InjectionProcessErrorType.CANNOT_PARSER_SOURCE_CODE, qualifiedName));
   }
 
   public Optional<ClassOrInterfaceDeclaration> getClassOrInterfaceDeclaration(
@@ -510,7 +507,7 @@ public class ProcessorManager {
         .orElseThrow(
             () ->
                 new InjectionProcessException(
-                    InjectionProcessErrorType.CLASS_NOT_EXIST.bind(qualifiedName)));
+                    InjectionProcessErrorType.CLASS_NOT_EXIST, qualifiedName));
   }
 
   public Stream<ResolvedType> getNodeReturnResolvedType(Node node) {
@@ -542,8 +539,7 @@ public class ProcessorManager {
         .orElseThrow(
             () ->
                 new InjectionProcessException(
-                    InjectionProcessErrorType.PUBLIC_CLASS_NOT_EXIST.bind(
-                        compilationUnit.toString())));
+                    InjectionProcessErrorType.PUBLIC_CLASS_NOT_EXIST, compilationUnit.toString()));
   }
 
   public Optional<AnnotationDeclaration> getPublicAnnotationDeclaration(
@@ -561,8 +557,8 @@ public class ProcessorManager {
         .orElseThrow(
             () ->
                 new InjectionProcessException(
-                    InjectionProcessErrorType.PUBLIC_ANNOTATION_NOT_EXIST.bind(
-                        compilationUnit.toString())));
+                    InjectionProcessErrorType.PUBLIC_ANNOTATION_NOT_EXIST,
+                    compilationUnit.toString()));
   }
 
   public String getQualifiedName(ClassOrInterfaceDeclaration classOrInterfaceDeclaration) {

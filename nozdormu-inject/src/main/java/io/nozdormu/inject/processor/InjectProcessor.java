@@ -783,7 +783,7 @@ public class InjectProcessor extends AbstractProcessor {
                                 .orElseThrow(
                                     () ->
                                         new InjectionProcessException(
-                                            ANNOTATION_NOT_EXIST.bind(qualifiedName)));
+                                            ANNOTATION_NOT_EXIST, qualifiedName));
 
                         suppliersCompilationUnit
                             .addImport(ReactorBeanScoped.class)
@@ -1118,10 +1118,10 @@ public class InjectProcessor extends AbstractProcessor {
                                   String scopedAnnotationName =
                                       processorManager
                                           .getScopedAnnotationName(producesMethodDeclaration)
-                                          .orElseThrow(
-                                              () ->
-                                                  new InjectionProcessException(
-                                                      ANNOTATION_NOT_EXIST.bind(qualifiedName)));
+                                .orElseThrow(
+                                    () ->
+                                        new InjectionProcessException(
+                                            ANNOTATION_NOT_EXIST, qualifiedName));
 
                                   suppliersCompilationUnit
                                       .addImport(ReactorBeanScoped.class)

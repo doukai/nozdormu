@@ -23,7 +23,6 @@ public enum InjectionProcessErrorType {
 
   private final int code;
   private final String description;
-  private Object[] variables;
 
   InjectionProcessErrorType(int code, String description) {
     this.code = code;
@@ -38,13 +37,12 @@ public enum InjectionProcessErrorType {
     return code;
   }
 
-  public InjectionProcessErrorType bind(Object... variables) {
-    this.variables = variables;
-    return this;
+  public String format(Object... variables) {
+    return code + ": " + String.format(description, variables);
   }
 
   @Override
   public String toString() {
-    return code + ": " + String.format(description, variables);
+    return format();
   }
 }

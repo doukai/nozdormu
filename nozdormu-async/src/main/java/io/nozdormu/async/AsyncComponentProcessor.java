@@ -711,10 +711,10 @@ public class AsyncComponentProcessor implements ComponentProxyProcessor {
                           .asAssignExpr()
                           .getTarget()
                           .asNameExpr())
-                  .orElseThrow(
-                      () ->
-                          new InjectionProcessException(
-                              VARIABLE_DECLARATOR_NOT_EXIST.bind(statement)));
+                    .orElseThrow(
+                        () ->
+                            new InjectionProcessException(
+                                VARIABLE_DECLARATOR_NOT_EXIST, statement));
           methodCallExpr =
               statement
                   .asExpressionStmt()

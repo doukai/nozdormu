@@ -133,7 +133,7 @@ public class TypesafeConfig implements Config {
       writer.close();
       Path path = Paths.get(tmp.toUri());
       Files.deleteIfExists(path);
-      Path generatedSourcePath = path.getParent();
+      Path generatedSourcePath = requireParentPath(path, 1, "generated source path");
       logger.info("generated source path: {}", generatedSourcePath.toString());
       return generatedSourcePath;
     } catch (IOException e) {
@@ -144,29 +144,27 @@ public class TypesafeConfig implements Config {
 
   private Path getResourcesPath(Path generatedSourcePath) {
     Path sourcePath =
-        generatedSourcePath
-            .getParent()
-            .getParent()
-            .getParent()
-            .getParent()
-            .getParent()
-            .getParent()
-            .resolve("src/main/resources");
+        requireParentPath(generatedSourcePath, 6, "project resources path").resolve("src/main/resources");
     logger.info("resources path: {}", sourcePath);
     return sourcePath;
   }
 
   private Path getTestResourcesPath(Path generatedSourcePath) {
     Path sourcePath =
-        generatedSourcePath
-            .getParent()
-            .getParent()
-            .getParent()
-            .getParent()
-            .getParent()
-            .getParent()
+        requireParentPath(generatedSourcePath, 6, "project test resources path")
             .resolve("src/test/resources");
     logger.info("test resources path: {}", sourcePath);
     return sourcePath;
+  }
+
+  private Path requireParentPath(Path path, int levels, String description) {
+    Path current = path;
+    for (int i = 0; i < levels; i++) {
+      current = current.getParent();
+      if (current == null) {
+        throw new IllegalStateException("unable to determine " + description + " from " + path);
+      }
+    }
+    return current;
   }
 }
