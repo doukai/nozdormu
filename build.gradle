@@ -1,10 +1,5 @@
-plugins {
-    id 'com.github.spotbugs' version '6.4.8' apply false
-}
-
 ext {
     nozdormuVersion = '0.1.0-SNAPSHOT'
-    spotbugsVersion = '4.9.8'
 }
 
 subprojects {
@@ -14,21 +9,4 @@ subprojects {
     }
 
     version "$nozdormuVersion"
-
-    pluginManager.withPlugin('java') {
-        apply plugin: 'com.github.spotbugs'
-
-        spotbugs {
-            toolVersion = spotbugsVersion
-        }
-
-        tasks.withType(com.github.spotbugs.snom.SpotBugsTask).configureEach {
-            ignoreFailures = true
-
-            reports {
-                html.required = true
-                xml.required = false
-            }
-        }
-    }
 }
