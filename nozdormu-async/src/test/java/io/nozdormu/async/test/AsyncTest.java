@@ -14,27 +14,28 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class AsyncTest {
 
-    @Test
-    void testUser() {
-        UserService userService = BeanContext.get(UserService.class);
-        Mono<User> userMono = userService.asyncInvoke("register", "nozdormu", 6);
-        StepVerifier.create(userMono)
-                .assertNext(user -> assertEquals(user.getEmail(), "nozdormu@nozdormu.com"))
-                .expectComplete()
-                .verify();
+  @Test
+  void testUser() {
+    UserService userService = BeanContext.get(UserService.class);
+    Mono<User> userMono = userService.asyncInvoke("register", "nozdormu", 6);
+    StepVerifier.create(userMono)
+        .assertNext(user -> assertEquals(user.getEmail(), "nozdormu@nozdormu.com"))
+        .expectComplete()
+        .verify();
 
-        String name = "kai";
-        String email = "kai@nozdormu.com";
-        String target = IntStream.range(0, name.length())
-                .mapToObj(index -> "" + (index + 1) * email.length())
-                .collect(Collectors.joining(""));
-        User user = new User();
-        user.setName(name);
+    String name = "kai";
+    String email = "kai@nozdormu.com";
+    String target =
+        IntStream.range(0, name.length())
+            .mapToObj(index -> "" + (index + 1) * email.length())
+            .collect(Collectors.joining(""));
+    User user = new User();
+    user.setName(name);
 
-        Mono<String> genPassword = userService.asyncInvoke("genPassword", user);
-        StepVerifier.create(genPassword)
-                .assertNext(password -> assertEquals(password, target))
-                .expectComplete()
-                .verify();
-    }
+    Mono<String> genPassword = userService.asyncInvoke("genPassword", user);
+    StepVerifier.create(genPassword)
+        .assertNext(password -> assertEquals(password, target))
+        .expectComplete()
+        .verify();
+  }
 }

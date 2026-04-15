@@ -7,13 +7,13 @@ import java.util.UUID;
 @ApplicationScoped
 public class Owner {
 
-    private final String name;
+  private final String name;
 
-    public Owner() {
-        name = "Mr." + UUID.randomUUID();
-    }
+  public Owner() {
+    name = "Mr." + UUID.randomUUID();
+  }
 
-    public String getName() {
-        return name;
-    }
+  public String getName() {
+    return name;
+  }
 }

@@ -1,1 +1,2 @@
-io.nozdormu.inject.processor.InjectProcessor,aggregating
+io.nozdormu.inject.processor.InjectProcessor,isolating
+io.nozdormu.inject.processor.BeanSuppliersServiceProcessor,aggregating

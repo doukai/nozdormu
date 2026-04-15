@@ -17,17 +17,21 @@ import java.util.List;
 @Interceptor
 public class SecondInstallInterceptor {
 
-    @SuppressWarnings("unchecked")
-    @AroundConstruct
-    public Object aroundConstruct(InvocationContext invocationContext) {
-        List<String> infoList = ((ArrayList<String>) invocationContext.getContextData().computeIfAbsent("infoList", (key) -> new ArrayList<String>()));
-        infoList.add("second stage ready ->");
-        try {
-            Satellite satellite = (Satellite) invocationContext.proceed();
-            satellite.setInfoList(infoList);
-            return satellite;
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
+  @SuppressWarnings("unchecked")
+  @AroundConstruct
+  public Object aroundConstruct(InvocationContext invocationContext) {
+    List<String> infoList =
+        ((ArrayList<String>)
+            invocationContext
+                .getContextData()
+                .computeIfAbsent("infoList", (key) -> new ArrayList<String>()));
+    infoList.add("second stage ready ->");
+    try {
+      Satellite satellite = (Satellite) invocationContext.proceed();
+      satellite.setInfoList(infoList);
+      return satellite;
+    } catch (Exception e) {
+      throw new RuntimeException(e);
     }
+  }
 }

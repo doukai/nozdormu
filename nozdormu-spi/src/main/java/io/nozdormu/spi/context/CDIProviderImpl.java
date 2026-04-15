@@ -7,10 +7,10 @@ import jakarta.enterprise.inject.spi.CDIProvider;
 @AutoService(CDIProvider.class)
 public class CDIProviderImpl implements CDIProvider {
 
-    private final static CDI<Object> cdi = new CDIImpl<>();
+  private static final CDI<Object> cdi = new CDIImpl<>();
 
-    @Override
-    public CDI<Object> getCDI() {
-        return cdi;
-    }
+  @Override
+  public CDI<Object> getCDI() {
+    return cdi;
+  }
 }

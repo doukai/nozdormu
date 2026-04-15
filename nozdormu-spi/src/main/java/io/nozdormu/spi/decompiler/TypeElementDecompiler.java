@@ -5,14 +5,14 @@ import java.util.Optional;
 
 public interface TypeElementDecompiler {
 
-    boolean canLoad(TypeElement typeElement);
+  boolean canLoad(TypeElement typeElement);
 
-    String decompile(TypeElement typeElement);
+  String decompile(TypeElement typeElement);
 
-    default Optional<String> decompileOrEmpty(TypeElement typeElement) {
-        if (canLoad(typeElement)) {
-            return Optional.of(decompile(typeElement));
-        }
-        return Optional.empty();
+  default Optional<String> decompileOrEmpty(TypeElement typeElement) {
+    if (canLoad(typeElement)) {
+      return Optional.of(decompile(typeElement));
     }
+    return Optional.empty();
+  }
 }

@@ -9,7 +9,7 @@ import jakarta.enterprise.inject.Default;
 @Priority(1)
 public class Engine implements IEngine {
 
-    public String getName() {
-        return "V8 Engine";
-    }
+  public String getName() {
+    return "V8 Engine";
+  }
 }

@@ -6,16 +6,15 @@ import io.nozdormu.common.ProcessorManager;
 
 public interface ComponentProxyProcessor {
 
-    default void init(ProcessorManager processorManager) {
-    }
+  default void init(ProcessorManager processorManager) {}
 
-    default void inProcess() {
-    }
+  default void inProcess() {}
 
-    default boolean processComponentProxy(CompilationUnit componentCompilationUnit,
-                                       ClassOrInterfaceDeclaration componentClassDeclaration,
-                                       CompilationUnit componentProxyCompilationUnit,
-                                       ClassOrInterfaceDeclaration componentProxyClassDeclaration) {
-        return false;
-    }
+  default boolean processComponentProxy(
+      CompilationUnit componentCompilationUnit,
+      ClassOrInterfaceDeclaration componentClassDeclaration,
+      CompilationUnit componentProxyCompilationUnit,
+      ClassOrInterfaceDeclaration componentProxyClassDeclaration) {
+    return false;
+  }
 }

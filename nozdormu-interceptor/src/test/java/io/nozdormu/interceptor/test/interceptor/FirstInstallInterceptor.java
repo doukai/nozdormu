@@ -16,15 +16,19 @@ import java.util.List;
 @Interceptor
 public class FirstInstallInterceptor {
 
-    @SuppressWarnings("unchecked")
-    @AroundConstruct
-    public Object aroundConstruct(InvocationContext invocationContext) {
-        List<String> infoList = ((ArrayList<String>) invocationContext.getContextData().computeIfAbsent("infoList", (key) -> new ArrayList<String>()));
-        infoList.add("first stage ready ->");
-        try {
-            return invocationContext.proceed();
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
+  @SuppressWarnings("unchecked")
+  @AroundConstruct
+  public Object aroundConstruct(InvocationContext invocationContext) {
+    List<String> infoList =
+        ((ArrayList<String>)
+            invocationContext
+                .getContextData()
+                .computeIfAbsent("infoList", (key) -> new ArrayList<String>()));
+    infoList.add("first stage ready ->");
+    try {
+      return invocationContext.proceed();
+    } catch (Exception e) {
+      throw new RuntimeException(e);
     }
+  }
 }

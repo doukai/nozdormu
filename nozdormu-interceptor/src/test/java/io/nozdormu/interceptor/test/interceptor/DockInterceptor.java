@@ -1,6 +1,6 @@
 package io.nozdormu.interceptor.test.interceptor;
 
-import io.nozdormu.interceptor.test.annotation.Launch;
+import io.nozdormu.interceptor.test.annotation.Bindings;
 import jakarta.annotation.Priority;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.interceptor.AroundInvoke;
@@ -8,15 +8,15 @@ import jakarta.interceptor.Interceptor;
 import jakarta.interceptor.InvocationContext;
 
 @ApplicationScoped
-@Launch
+@Bindings.Dock
 @Priority(0)
 @Interceptor
-public class FirstLaunchInterceptor {
+public class DockInterceptor {
 
   @AroundInvoke
   public Object aroundInvoke(InvocationContext invocationContext) {
     try {
-      return "first stage fired -> " + invocationContext.proceed();
+      return invocationContext.proceed() + " -> dock checked";
     } catch (Exception e) {
       throw new RuntimeException(e);
     }

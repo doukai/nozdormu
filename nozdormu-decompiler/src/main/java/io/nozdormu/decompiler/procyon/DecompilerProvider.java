@@ -6,8 +6,8 @@ import io.nozdormu.spi.decompiler.TypeElementDecompilerProvider;
 
 @AutoService(TypeElementDecompilerProvider.class)
 public class DecompilerProvider implements TypeElementDecompilerProvider {
-    @Override
-    public TypeElementDecompiler create(ClassLoader classLoader) {
-        return new ProcyonDecompiler(classLoader);
-    }
+  @Override
+  public TypeElementDecompiler create(ClassLoader classLoader) {
+    return new ProcyonDecompiler(classLoader);
+  }
 }

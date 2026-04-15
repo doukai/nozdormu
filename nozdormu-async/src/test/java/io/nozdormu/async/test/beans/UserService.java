@@ -11,24 +11,25 @@ import java.util.stream.Collectors;
 @ApplicationScoped
 public class UserService implements Asyncable {
 
-    private final UserInfo userInfo;
+  private final UserInfo userInfo;
 
-    @Inject
-    public UserService(UserInfo userInfo) {
-        this.userInfo = userInfo;
-    }
+  @Inject
+  public UserService(UserInfo userInfo) {
+    this.userInfo = userInfo;
+  }
 
-    @Async
-    public User register(String name, int age) {
-        User user = await(userInfo.getUser(name));
-        user.setAge(age);
-        return user;
-    }
+  @Async
+  public User register(String name, int age) {
+    User user = await(userInfo.getUser(name));
+    user.setAge(age);
+    return user;
+  }
 
-    @Async
-    public String genPassword(User user) {
-        User registedUser = await(userInfo.getUser(user.getName()));
-        List<Integer> passwords = await(userInfo.buildPassword(registedUser.getEmail(), registedUser.getName().length()));
-        return passwords.stream().map(Object::toString).collect(Collectors.joining(""));
-    }
+  @Async
+  public String genPassword(User user) {
+    User registedUser = await(userInfo.getUser(user.getName()));
+    List<Integer> passwords =
+        await(userInfo.buildPassword(registedUser.getEmail(), registedUser.getName().length()));
+    return passwords.stream().map(Object::toString).collect(Collectors.joining(""));
+  }
 }
