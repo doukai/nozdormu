@@ -1735,6 +1735,10 @@ public class AsyncComponentProcessor implements ComponentProxyProcessor {
                 .map(
                     switchEntry -> {
                       SwitchEntry asyncSwitchEntry = new SwitchEntry();
+                      asyncSwitchEntry.setType(switchEntry.getType());
+                      asyncSwitchEntry.setLabels(switchEntry.getLabels());
+                      asyncSwitchEntry.setDefault(switchEntry.isDefault());
+                      switchEntry.getGuard().ifPresent(asyncSwitchEntry::setGuard);
                       if (hasAwait(switchEntry.getStatements())
                           && !hasReturnOrThrowStmt(switchEntry.getStatements())) {
                         asyncSwitchEntry.setStatements(
