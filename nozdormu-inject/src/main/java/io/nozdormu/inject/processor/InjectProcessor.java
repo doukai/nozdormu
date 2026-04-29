@@ -54,6 +54,7 @@ import static io.nozdormu.spi.error.InjectionProcessErrorType.*;
   "jakarta.enterprise.context.SessionScoped",
   "jakarta.transaction.TransactionScoped"
 })
+@SupportedOptions({"rootProjectDir", "decompileCacheDir"})
 @AutoService(Processor.class)
 public class InjectProcessor extends AbstractProcessor {
 
